@@ -13,6 +13,12 @@ from utils.logger import log
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 2,
+    "auth": {
+        "uid": "",
+        "email": "",
+        "device_id": "",
+        "device_name": "",
+    },
     "capture": {
         "interval_seconds": 30,
         "regions": [],

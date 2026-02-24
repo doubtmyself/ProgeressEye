@@ -6,13 +6,18 @@ MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 
 import queue
 import sys
+import uuid
 from typing import Callable
 
 from PIL import Image as PILImage
 from PyQt6.QtCore import QRect, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
+from auth import AuthError  # pyright: ignore[reportImplicitRelativeImport]
+from auth.firebase_auth import FirebaseAuth  # pyright: ignore[reportImplicitRelativeImport]
+from auth.google_oauth import GoogleOAuth  # pyright: ignore[reportImplicitRelativeImport]
+from auth.token_manager import TokenManager  # pyright: ignore[reportImplicitRelativeImport]
 from config import Config
 from core.bar_analyzer import BarAnalyzer
 from core.bar_finder import BarFinder
@@ -49,6 +54,10 @@ class ProgressEyeApp:
             on_capture=self._on_capture,
             capturer=self._capturer,
         )
+        self._google_oauth = GoogleOAuth()
+        self._firebase_auth = FirebaseAuth()
+        self._token_manager = TokenManager()
+        self._firebase_id_token: str | None = None
 
         # UI
         self._main_window = MainWindow()
@@ -83,9 +92,92 @@ class ProgressEyeApp:
     def run(self) -> int:
         """애플리케이션을 실행한다."""
         log.info("ProgressEye 시작")
+        if not self._try_auto_login():
+            self._ensure_login()
         self._tray.start()
         self._main_window.show()
         return self._app.exec()
+
+    def _try_auto_login(self) -> bool:
+        """저장된 refresh_token으로 자동 로그인을 시도한다."""
+        try:
+            result = self._token_manager.load_tokens(self._firebase_auth)
+        except AuthError as exc:
+            log.warning("자동 로그인 실패: %s", exc)
+            return False
+        except Exception as exc:
+            log.warning("자동 로그인 중 알 수 없는 오류: %s", exc)
+            return False
+
+        if result is None:
+            return False
+
+        self._firebase_id_token = result["id_token"]
+        uid = result.get("uid", "")
+        email = result.get("email", "")
+        if uid:
+            self._config.set("auth.uid", uid)
+        if email:
+            self._config.set("auth.email", email)
+        log.info("자동 로그인 성공")
+        return True
+
+    def _ensure_login(self) -> None:
+        """로그인 실패 시 사용자에게 재시도 기회를 제공한다."""
+        while True:
+            try:
+                self._do_login()
+                return
+            except AuthError as exc:
+                retry = self._show_login_error(str(exc))
+                if not retry:
+                    log.warning("로그인 취소 - 비로그인 모드로 계속 진행")
+                    return
+            except Exception as exc:
+                retry = self._show_login_error(f"알 수 없는 로그인 오류: {exc}")
+                if not retry:
+                    log.warning("로그인 취소 - 비로그인 모드로 계속 진행")
+                    return
+
+    def _show_login_error(self, message: str) -> bool:
+        """로그인 에러 다이얼로그를 표시하고 재시도 여부를 반환한다."""
+        dialog = QMessageBox(self._main_window)
+        dialog.setWindowTitle("로그인 실패")
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText("Google/Firebase 인증에 실패했습니다.")
+        dialog.setInformativeText(message)
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel
+        )
+        dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
+        return dialog.exec() == QMessageBox.StandardButton.Retry
+
+    def _do_login(self) -> None:
+        """Google OAuth와 Firebase Auth를 통해 로그인한다."""
+        google_result = self._google_oauth.sign_in()
+        firebase_result = self._firebase_auth.sign_in_with_google(
+            google_result["id_token"]
+        )
+        self._firebase_id_token = firebase_result["id_token"]
+
+        uid = firebase_result["uid"]
+        email = firebase_result["email"]
+
+        device_id = str(self._config.get("auth.device_id", ""))
+        if not device_id:
+            device_id = f"pc_{uuid.uuid4().hex[:8]}"
+            self._config.set("auth.device_id", device_id)
+        self._config.set("auth.uid", uid)
+        self._config.set("auth.email", email)
+
+        self._token_manager.save_tokens(
+            uid=uid,
+            email=email,
+            display_name=firebase_result.get("display_name", ""),
+            refresh_token=firebase_result["refresh_token"],
+            id_token=firebase_result["id_token"],
+        )
+        log.info("로그인 완료: %s (%s)", email, uid)
 
     def _process_queued_actions(self) -> None:
         """큐에 쌍인 액션을 메인 스레드에서 실행한다.
@@ -105,8 +197,10 @@ class ProgressEyeApp:
         for region in self._config.regions:
             enabled = region.get("enabled", True)
             self._main_window.add_region_display(
-                region["id"], region.get("label", region["id"]),
-                region_type=region.get("type", "bar"), enabled=enabled,
+                region["id"],
+                region.get("label", region["id"]),
+                region_type=region.get("type", "bar"),
+                enabled=enabled,
             )
 
     def _start_area_selection(self) -> None:
@@ -186,7 +280,9 @@ class ProgressEyeApp:
                 else direction,
             }
             self._config.add_region(region)
-            self._main_window.add_region_display(region_id, region["label"], region_type="bar")
+            self._main_window.add_region_display(
+                region_id, region["label"], region_type="bar"
+            )
             final_progress = dialog.progress
             self._main_window.update_progress(
                 region_id, final_progress, region["label"]
@@ -233,7 +329,9 @@ class ProgressEyeApp:
                 "height": area["height"],
             }
             self._config.add_region(region)
-            self._main_window.add_region_display(region_id, region["label"], region_type="ocr")
+            self._main_window.add_region_display(
+                region_id, region["label"], region_type="ocr"
+            )
             final_progress = dialog.progress
             self._main_window.update_progress(
                 region_id, final_progress, region["label"]
@@ -467,7 +565,7 @@ class ProgressEyeApp:
     def _do_quit(self) -> None:
         """앱 종료 (메인 스레드)."""
         self._poll_timer.stop()
-        self._main_window._really_quit = True
+        setattr(self._main_window, "_really_quit", True)
         self._main_window.close()
         self._app.quit()
 
