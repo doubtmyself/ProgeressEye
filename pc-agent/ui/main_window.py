@@ -28,7 +28,6 @@ class RegionCard(QFrame):
     """모니터링 영역 카드 위젯."""
 
     toggled = pyqtSignal(str, bool)
-    edit_requested = pyqtSignal(str)
     delete_requested = pyqtSignal(str)
     view_requested = pyqtSignal(str)
 
@@ -84,22 +83,9 @@ class RegionCard(QFrame):
         # 마지막 업데이트 시간
         self._time_label = QLabel("대기 중")
         self._time_label.setStyleSheet("color: #888; font-size: 11px;")
-        # 편집 버튼 (시간 라벨 옆)
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self._time_label)
         bottom_row.addStretch()
-
-        self._btn_edit = QPushButton("✏️ 편집")
-        self._btn_edit.setFixedHeight(24)
-        self._btn_edit.setStyleSheet(
-            "QPushButton { background: #f0f0f0; border: 1px solid #ccc; "
-            "border-radius: 4px; padding: 0 10px; font-size: 11px; }"
-            "QPushButton:hover { background: #e0e0e0; }"
-        )
-        self._btn_edit.clicked.connect(
-            lambda: self.edit_requested.emit(self.region_id)
-        )
-        bottom_row.addWidget(self._btn_edit)
 
         self._btn_delete = QPushButton("🗑 삭제")
         self._btn_delete.setFixedHeight(24)
@@ -150,9 +136,9 @@ class MainWindow(QMainWindow):
     """
 
     select_area_requested = pyqtSignal()
+    select_ocr_area_requested = pyqtSignal()
     toggle_monitoring_requested = pyqtSignal()
     region_toggled = pyqtSignal(str, bool)
-    region_edit_requested = pyqtSignal(str)
     region_delete_requested = pyqtSignal(str)
     region_view_requested = pyqtSignal(str)
 
@@ -210,7 +196,7 @@ class MainWindow(QMainWindow):
 
         # 빈 상태 라벨
         self._empty_label = QLabel(
-            "등록된 모니터링 영역이 없습니다.\n아래 '영역 추가' 버튼을 눌러 시작하세요."
+            "등록된 모니터링 영역이 없습니다.\n아래 버튼을 눌러 시작하세요."
         )
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet("color: #aaa; padding: 40px; font-size: 13px;")
@@ -223,10 +209,15 @@ class MainWindow(QMainWindow):
         # 버튼 영역
         btn_layout = QHBoxLayout()
 
-        self._btn_add = QPushButton("영역 추가")
-        self._btn_add.setFixedHeight(36)
-        self._btn_add.clicked.connect(self.select_area_requested.emit)
-        btn_layout.addWidget(self._btn_add)
+        self._btn_add_bar = QPushButton("프로그래스바 영역 추가")
+        self._btn_add_bar.setFixedHeight(36)
+        self._btn_add_bar.clicked.connect(self.select_area_requested.emit)
+        btn_layout.addWidget(self._btn_add_bar)
+
+        self._btn_add_ocr = QPushButton("숫자 영역 추가")
+        self._btn_add_ocr.setFixedHeight(36)
+        self._btn_add_ocr.clicked.connect(self.select_ocr_area_requested.emit)
+        btn_layout.addWidget(self._btn_add_ocr)
 
         self._btn_toggle = QPushButton("모니터링 시작")
         self._btn_toggle.setFixedHeight(36)
@@ -253,7 +244,6 @@ class MainWindow(QMainWindow):
         card = RegionCard(region_id, label)
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
-        card.edit_requested.connect(self.region_edit_requested)
         card.delete_requested.connect(self.region_delete_requested)
         card.view_requested.connect(self.region_view_requested)
         self._region_cards[region_id] = card

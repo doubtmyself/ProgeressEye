@@ -1,0 +1,6 @@
+timestamp: 20260224_195738
+direction: horizontal
+progress: 0.0%
+bar_region: BarRegion(top=15, left=683, bottom=24, right=1123, confidence=0.86, direction='horizontal')
+full_size: (1928, 42)
+bar_size: (440, 9)
