@@ -2,6 +2,9 @@
 
 대략적으로 선택된 영역에서 실제 진행바의 범위를 자동으로 찾아
 불필요한 여백을 제거한다. 수평/수직 바 모두 지원.
+
+코너 색상이 서로 다를 때 (예: 상단 흰색 + 하단 검정)
+클러스터링으로 배경 후보를 분리하여 각각 시도한다.
 """
 
 from dataclasses import dataclass
@@ -60,6 +63,9 @@ class BarFinder:
     ) -> BarRegion | None:
         """이미지에서 진행바 영역을 탐지한다.
 
+        배경 후보가 여러 개면 각각 시도하여
+        가장 높은 신뢰도의 결과를 반환한다.
+
         Args:
             image: 대략적으로 캡처된 영역 (RGB).
             direction: "horizontal" (수평 바) 또는 "vertical" (수직 바).
@@ -76,12 +82,22 @@ class BarFinder:
         if h < 3 or w < 3:
             return None
 
-        bg = self._estimate_background(pixels)
-        dist = np.sqrt(np.sum((pixels - bg) ** 2, axis=2))
+        bg_candidates = self._estimate_backgrounds(pixels)
 
-        if direction == "vertical":
-            return self._find_vertical_bar(dist, h, w)
-        return self._find_horizontal_bar(dist, h, w)
+        best: BarRegion | None = None
+        for bg in bg_candidates:
+            dist = np.sqrt(np.sum((pixels - bg) ** 2, axis=2))
+
+            if direction == "vertical":
+                result = self._find_vertical_bar(dist, h, w)
+            else:
+                result = self._find_horizontal_bar(dist, h, w)
+
+            if result is not None:
+                if best is None or result.confidence > best.confidence:
+                    best = result
+
+        return best
 
     # -- 수평 바: 상/하 여백 제거 --
 
@@ -153,21 +169,76 @@ class BarFinder:
         )
         return region
 
-    # -- 내부 메서드 --
+    # -- 배경 추정 --
 
-    def _estimate_background(self, pixels: np.ndarray) -> np.ndarray:
-        """네 꼭짓점의 색상으로 배경색을 추정한다."""
+    def _estimate_backgrounds(
+        self,
+        pixels: np.ndarray,
+    ) -> list[np.ndarray]:
+        """배경색 후보를 반환한다.
+
+        4개 코너 색상이 유사하면 하나의 배경색을 반환.
+        코너가 두 그룹으로 갈리면 (예: 상단 흰색, 하단 검정)
+        양쪽 모두 후보로 반환하여 각각 시도할 수 있게 한다.
+        """
         h, w, _ = pixels.shape
         cs = max(2, min(8, h // 6, w // 6))
-        corners = np.concatenate(
+
+        corner_avgs = np.array(
             [
-                pixels[:cs, :cs].reshape(-1, 3),
-                pixels[:cs, -cs:].reshape(-1, 3),
-                pixels[-cs:, :cs].reshape(-1, 3),
-                pixels[-cs:, -cs:].reshape(-1, 3),
+                pixels[:cs, :cs].reshape(-1, 3).mean(axis=0),  # top-left
+                pixels[:cs, -cs:].reshape(-1, 3).mean(axis=0),  # top-right
+                pixels[-cs:, :cs].reshape(-1, 3).mean(axis=0),  # bottom-left
+                pixels[-cs:, -cs:].reshape(-1, 3).mean(axis=0),  # bottom-right
             ]
+        )  # (4, 3)
+
+        # 코너 간 pairwise 거리
+        pair_dists = []
+        pair_indices = []
+        for i in range(4):
+            for j in range(i + 1, 4):
+                d = float(np.sqrt(np.sum((corner_avgs[i] - corner_avgs[j]) ** 2)))
+                pair_dists.append(d)
+                pair_indices.append((i, j))
+
+        max_dist = max(pair_dists)
+
+        if max_dist < 60:
+            # 모든 코너가 유사 → 단일 배경
+            return [np.median(corner_avgs, axis=0)]
+
+        # 코너가 갈림 → 2-그룹 클러스터링
+        # 가장 먼 두 코너를 시드로 사용
+        farthest = pair_indices[pair_dists.index(max_dist)]
+        seed_a = corner_avgs[farthest[0]]
+        seed_b = corner_avgs[farthest[1]]
+
+        group_a: list[np.ndarray] = []
+        group_b: list[np.ndarray] = []
+        for avg in corner_avgs:
+            da = float(np.sqrt(np.sum((avg - seed_a) ** 2)))
+            db = float(np.sqrt(np.sum((avg - seed_b) ** 2)))
+            if da <= db:
+                group_a.append(avg)
+            else:
+                group_b.append(avg)
+
+        bg_a = np.mean(group_a, axis=0)
+        bg_b = np.mean(group_b, axis=0)
+
+        log.debug(
+            "코너 분리 감지: 그룹A=%s (%d개), 그룹B=%s (%d개), 거리=%.1f",
+            bg_a.astype(int).tolist(),
+            len(group_a),
+            bg_b.astype(int).tolist(),
+            len(group_b),
+            max_dist,
         )
-        return np.median(corners, axis=0)
+
+        return [bg_a, bg_b]
+
+    # -- 범위 탐색 --
 
     def _find_extent_by_rows(
         self,
