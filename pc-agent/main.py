@@ -1,6 +1,6 @@
 """ProgressEye PC Agent 엔트리포인트.
 
-영역 선택 → 캡처 → 막대 분석 → 진행률 표시 파이프라인을 실행한다.
+영역 선택 → 바 탐지 → 전환점 분석 → 진행률 표시 파이프라인을 실행한다.
 MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 """
 
@@ -15,11 +15,10 @@ from config import Config
 from core.bar_analyzer import BarAnalyzer
 from core.bar_finder import BarFinder
 from core.capturer import ScreenCapturer
-from core.color_detector import ColorDetector
 from core.freeze_detector import FreezeDetector
 from core.scheduler import CaptureScheduler
 from ui.area_selector import AreaSelector
-from ui.color_picker import ColorPreviewDialog
+from ui.color_picker import BarPreviewDialog
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
 from utils.logger import log
@@ -36,7 +35,6 @@ class ProgressEyeApp:
         self._config = Config()
         self._capturer = ScreenCapturer()
         self._analyzer = BarAnalyzer()
-        self._color_detector = ColorDetector()
         self._bar_finder = BarFinder()
         self._freeze_detector = FreezeDetector(
             timeout_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
@@ -114,7 +112,7 @@ class ProgressEyeApp:
     def _on_area_selected(self, area: dict) -> None:
         """영역 선택 완료 시 호출.
 
-        색상 감지 → 미리보기 다이얼로그 표시.
+        바 탐지 → 전환점 분석 → 미리보기 다이얼로그 표시.
         """
         log.info("영역 선택됨: %s", area)
 
@@ -129,29 +127,22 @@ class ProgressEyeApp:
         bar_region = self._bar_finder.find(image)
         bar_image = image.crop(bar_region.bbox) if bar_region else image
 
-        # 크롭된 바에서 색상 감지 및 분석
-        detection = self._color_detector.detect(bar_image)
-        result = self._analyzer.analyze(
-            bar_image, detection.fill_color, detection.empty_color
-        )
+        # 전환점 기반 진행률 분석 (색상 지정 불필요)
+        direction = bar_region.direction if bar_region else "horizontal"
+        result = self._analyzer.analyze(bar_image, direction=direction)
 
-        # 전체 이미지를 미리보기로 표시 (클릭으로 색상 지정)
+        # 미리보기 다이얼로그 표시
         qimage = self._pil_to_qimage(image)
-        dialog = ColorPreviewDialog(
+        dialog = BarPreviewDialog(
             image=qimage,
             full_image=image,
-            pil_image=bar_image,
-            fill_color=detection.fill_color,
-            empty_color=detection.empty_color,
+            bar_image=bar_image,
             detected_progress=result.progress,
             bar_region=bar_region,
         )
 
         if dialog.exec():
             # 확인 — 영역 등록
-            fill_color = dialog.fill_color
-            empty_color = dialog.empty_color
-
             self._task_counter += 1
             region_id = f"task_{self._task_counter:03d}"
 
@@ -163,10 +154,7 @@ class ProgressEyeApp:
                 "y": area["y"],
                 "width": area["width"],
                 "height": area["height"],
-                "fill_color": list(fill_color),
-                "empty_color": list(empty_color),
-                "color_tolerance": 30,
-                "direction": bar_region.direction if bar_region else "horizontal",
+                "direction": direction,
             }
 
             self._config.add_region(region)
@@ -182,7 +170,7 @@ class ProgressEyeApp:
             log.info("영역 등록: %s (%.1f%%)", region_id, result.progress)
         else:
             # 재선택
-            log.info("색상 미리보기에서 재선택 요청")
+            log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_area_selection)
 
     def _on_area_cancelled(self) -> None:
@@ -212,7 +200,7 @@ class ProgressEyeApp:
             if not regions:
                 log.warning("등록된 영역 없음 — 영역 먼저 추가하세요")
                 return
-            interval = self._config.get('capture.interval_seconds', 30)
+            interval = self._config.get("capture.interval_seconds", 30)
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True)
             self._tray.set_monitoring(True)
@@ -236,15 +224,13 @@ class ProgressEyeApp:
             log.warning("영역 설정을 찾을 수 없음: %s", region_id)
             return
 
-        empty_color = tuple(region_config["empty_color"])
         label = region_config.get("label", region_id)
-        # 바 영역 탐지 + 적응형 분석 (방향 자동 감지)
+
+        # 바 영역 탐지 + 전환점 분석 (색상 불필요)
         bar_region = self._bar_finder.find(image)
         direction = bar_region.direction if bar_region else "horizontal"
         bar_image = image.crop(bar_region.bbox) if bar_region else image
-        result = self._analyzer.analyze_adaptive(
-            bar_image, empty_color=empty_color, direction=direction
-        )
+        result = self._analyzer.analyze(bar_image, direction=direction)
 
         # 멈춤 감지
         freeze_state = self._freeze_detector.update(region_id, result.progress)
@@ -280,6 +266,7 @@ class ProgressEyeApp:
         self._main_window.show()
         self._main_window.activateWindow()
         self._main_window.raise_()
+
     def _quit(self) -> None:
         """애플리케이션을 종료한다.
         pystray 스레드에서 호출됨.
