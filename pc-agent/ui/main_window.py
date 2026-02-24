@@ -9,6 +9,7 @@ from datetime import datetime
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QFont, QMouseEvent
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -64,7 +65,7 @@ class RegionCard(QFrame):
         self._progress_bar.setRange(0, 1000)
         self._progress_bar.setValue(0)
         self._progress_bar.setFixedHeight(20)
-        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setTextVisible(True)
         progress_row.addWidget(self._progress_bar, stretch=1)
 
         self._percent_label = QLabel("0.0%")
@@ -125,6 +126,7 @@ class RegionCard(QFrame):
     def update_progress(self, progress: float) -> None:
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
+        self._progress_bar.setFormat(f"{progress:.1f}%")
         self._percent_label.setText(f"{progress:.1f}%")
         self._time_label.setText(f"업데이트: {datetime.now().strftime('%H:%M:%S')}")
 
@@ -145,11 +147,13 @@ class MainWindow(QMainWindow):
 
     select_area_requested = pyqtSignal()
     toggle_monitoring_requested = pyqtSignal()
-    quit_requested = pyqtSignal()
     region_toggled = pyqtSignal(str, bool)
     region_edit_requested = pyqtSignal(str)
     region_delete_requested = pyqtSignal(str)
     region_view_requested = pyqtSignal(str)
+    progress_update_requested = pyqtSignal(str, float, str)
+    show_requested = pyqtSignal()
+    quit_app_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -161,6 +165,11 @@ class MainWindow(QMainWindow):
         self.resize(420, 500)
 
         self._setup_ui()
+
+        # 스레드 안전 시그널 → 슬롯 연결 (pystray/백그라운드 스레드 → 메인 스레드 UI)
+        self.progress_update_requested.connect(self.update_progress)
+        self.show_requested.connect(self._show_and_activate)
+        self.quit_app_requested.connect(self._quit_app)
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -303,10 +312,19 @@ class MainWindow(QMainWindow):
                 "QPushButton:hover { background-color: #3367D6; }"
             )
 
-    def request_quit(self) -> None:
-        """실제 종료를 요청한다 (트레이 '종료' 전용)."""
+    def _show_and_activate(self) -> None:
+        """창을 표시하고 활성화한다 (show_requested 슬롯)."""
+        self.show()
+        self.activateWindow()
+        self.raise_()
+
+    def _quit_app(self) -> None:
+        """앱을 종료한다 (quit_app_requested 슬롯)."""
         self._really_quit = True
         self.close()
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""

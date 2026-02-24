@@ -49,8 +49,6 @@ class ProgressEyeApp:
         # UI
         self._main_window = MainWindow()
         self._tray = TrayIcon(
-            on_select_area=self._start_area_selection,
-            on_toggle_monitoring=self._toggle_monitoring,
             on_show_window=self._show_main_window,
             on_quit=self._quit,
         )
@@ -380,17 +378,13 @@ class ProgressEyeApp:
 
     def _toggle_monitoring(self) -> None:
         """모니터링 시작/정지 토글.
-
-        pystray 스레드에서 호출될 수 있으므로 메인 스레드로 마셜링.
         """
         QTimer.singleShot(0, self._do_toggle_monitoring)
-
     def _do_toggle_monitoring(self) -> None:
         """실제 모니터링 토글 (메인 스레드)."""
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
-            self._tray.set_monitoring(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
         else:
@@ -403,15 +397,12 @@ class ProgressEyeApp:
             interval = self._config.get("capture.interval_seconds", 30)
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True)
-            self._tray.set_monitoring(True)
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
 
     def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
         """캡처 콜백 — 분석 + UI 업데이트.
-
-        이 메서드는 백그라운드 스레드에서 호출된다.
-        UI 업데이트는 QTimer.singleShot으로 메인 스레드에서 실행.
+        pyqtSignal로 메인 스레드 UI 업데이트를 보장한다.
         """
         # 영역 설정 찾기
         region_config = None
@@ -419,31 +410,23 @@ class ProgressEyeApp:
             if r["id"] == region_id:
                 region_config = r
                 break
-
         if region_config is None:
             log.warning("영역 설정을 찾을 수 없음: %s", region_id)
             return
-
         label = region_config.get("label", region_id)
-
         # 바 영역 탐지 + 전환점 분석 (색상 불필요)
         bar_region = self._bar_finder.find(image)
         direction = bar_region.direction if bar_region else "horizontal"
         bar_image = image.crop(bar_region.bbox) if bar_region else image
         result = self._analyzer.analyze(bar_image, direction=direction)
+        log.info("[%s] 진행률: %.1f%%", region_id, result.progress)
 
         # 멈춤 감지
         freeze_state = self._freeze_detector.update(region_id, result.progress)
-
-        # 툴팁 업데이트
         self._tray.update_tooltip(f"ProgressEye - {label}: {result.progress:.1f}%")
-
-        # UI 업데이트 (메인 스레드)
-        QTimer.singleShot(
-            0,
-            lambda: self._main_window.update_progress(
-                region_id, result.progress, label
-            ),
+        # UI 업데이트 — 시그널로 메인 스레드 전달 (QueuedConnection)
+        self._main_window.progress_update_requested.emit(
+            region_id, result.progress, label
         )
 
         if freeze_state.is_frozen:
@@ -455,33 +438,14 @@ class ProgressEyeApp:
             )
 
     def _show_main_window(self) -> None:
-        """메인 창을 표시한다.
-
-        pystray 스레드에서 호출될 수 있으므로 메인 스레드로 마셜링.
-        """
-        QTimer.singleShot(0, self._do_show_main_window)
-
-    def _do_show_main_window(self) -> None:
-        """실제 메인 창 표시 (메인 스레드)."""
-        self._main_window.show()
-        self._main_window.activateWindow()
-        self._main_window.raise_()
-
+        """메인 창을 표시한다. pystray 스레드에서 호출됨."""
+        self._main_window.show_requested.emit()
     def _quit(self) -> None:
-        """애플리케이션을 종료한다.
-        pystray 스레드에서 호출됨.
-        _on_quit_clicked가 이후 tray.stop()을 호출하므로 여기서는 tray 정리 생략.
-        """
+        """애플리케이션을 종료한다. pystray 스레드에서 호출됨."""
         log.info("ProgressEye 종료")
         self._scheduler.stop()
         self._capturer.close()
-        # 메인 스레드에서 창 닫기 + 이벤트 루프 종료
-        QTimer.singleShot(0, self._do_quit)
-
-    def _do_quit(self) -> None:
-        """실제 종료 수행 (메인 스레드)."""
-        self._main_window.request_quit()
-        self._app.quit()
+        self._main_window.quit_app_requested.emit()
 
     @staticmethod
     def _pil_to_qimage(pil_image: PILImage.Image) -> QImage:
