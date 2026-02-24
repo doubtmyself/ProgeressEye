@@ -43,3 +43,4 @@ winget install UB-Mannheim.TesseractOCR
 - `opencv-python-headless` - 진행바 탐지 (OpenCV 4전략)
 - `pytesseract` - OCR 숫자 감지
 - `pystray` - 시스템 트레이
+- `UI 테마` - 다크 테마 (커스텀 색상 팔레트)

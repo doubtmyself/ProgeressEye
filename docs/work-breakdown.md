@@ -158,6 +158,8 @@
 | exe 크기 | ~50MB | **~15MB (바 탐지만) / ~160MB (OCR 포함)** |
 | 범용성 | 숫자 텍스트 있는 진행바만 | **텍스트 없는 진행바도 지원, 숫자 있으면 OCR도 사용 가능** |
 | 삭제된 항목 | 페어링 코드, cleanupExpiredPairs | — |
+| UI 테마 | 기본 OS 스타일 | **다크 테마 (#0f0f1a 배경, 커스텀 색상 팔레트)** |
+| OCR 매칭 | fullmatch (정확 일치만) | **search (앞뒤 문자 포함 감지)** |
 | 추가된 항목 | — | 바 탐지 엔진(OpenCV), OCR 엔진(pytesseract), Tesseract 번들, 색상 감지, Google Auth, onUserCreate |
 
 ---

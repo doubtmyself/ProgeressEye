@@ -37,7 +37,7 @@ pc-agent/
 │   ├── freeze_detector.py   # 진행 멈춤 감지
 │   └── scheduler.py         # Timer 기반 주기 캡처
 ├── ui/
-│   ├── main_window.py       # 메인 창 (RegionCard에 타입 배지)
+│   ├── main_window.py       # 메인 창 (다크 테마, 색상 팔레트 27개 상수)
 │   ├── area_selector.py     # 드래그 영역 선택 오버레이
 │   ├── color_picker.py      # InteractiveBarPreview + BarPreviewDialog
 │   ├── ocr_preview.py       # OCR 탐지 미리보기 (빨간+시안 사각형)
@@ -159,6 +159,7 @@ class OcrReader:
         - "45%" 형태: % 기호와 함께 인식
         - "45" + "%" 분리 인식: 두 요소가 근접한 경우 합산
         - 단독 숫자 "45": % 없이 0~100 범위의 숫자만 있어도 감지
+        - 앞뒤 문자 포함 텍스트에서도 추출 (search 매칭)
         
         신뢰도 기반 필터링으로 오인식 최소화.
         """
@@ -166,7 +167,7 @@ class OcrReader:
         return self._parse_percentage(text)
     
     def _parse_percentage(self, text):
-        # "45%", "45 %", 단독 "45" (0~100 범위) 모두 처리
+        # "45%", "45 %", 단독 "45" (0~100 범위), "진행르45%완료" 등 모두 처리
         ...
 ```
 
