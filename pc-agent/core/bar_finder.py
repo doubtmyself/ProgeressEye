@@ -1,10 +1,10 @@
 """진행바 자동 탐지 모듈.
 
-OpenCV 기반으로 이미지 내 가로/세로로 긴 직사각형 틀을 찾아
-진행바의 바운딩 박스와 방향을 자동 판별한다.
-
-다중 전략: Canny (Otsu 기반) + 적응형 이진화를 병행하여
-배경이 복잡한 이미지에서도 안정적으로 탐지한다.
+다중 전략으로 이미지 내 진행바 영역을 찾아낸다:
+  1. Canny 에지 + 수직 모폴로지 — 테두리 있는 바
+  2. 적응형 이진화 — 미세한 대비 차
+  3. HSV 채도 분할 — 채색된 fill 영역 직접 탐지
+  4. 배경 제거 — 코너 색상 기준 비-배경 영역
 """
 
 from dataclasses import dataclass
@@ -41,49 +41,32 @@ class BarRegion:
         return self.bottom - self.top
 
 
+# ── 최소 두께: 이보다 얇은 후보는 에지 아티팩트로 간주 ──
+_MIN_THICKNESS = 6
+
+
 class BarFinder:
-    """OpenCV 기반 진행바 자동 탐지기.
-
-    1. Grayscale → GaussianBlur
-    2. 다중 Canny 임계값 (Otsu 기반) + 적응형 이진화로 에지 탐지
-    3. Morphological Closing → findContours
-    4. 직사각형 필터링 (종횡비, rectangularity)
-    5. 가장 "바 형태"인 후보 선택 (elongation 우선)
-
-    종횡비로 수평/수직 방향을 자동 판별한다.
-    """
+    """다중 전략 기반 진행바 자동 탐지기."""
 
     def __init__(
         self,
-        min_area_ratio: float = 0.02,
+        min_area_ratio: float = 0.01,
         max_area_ratio: float = 0.95,
-        min_rectangularity: float = 0.5,
+        min_rectangularity: float = 0.40,
         aspect_threshold: float = 2.0,
     ) -> None:
-        """
-        Args:
-            min_area_ratio: 후보 최소 면적 비율 (이미지 대비).
-            max_area_ratio: 후보 최대 면적 비율.
-            min_rectangularity: 윤곽 면적 / 바운딩 박스 면적 최소 비율.
-            aspect_threshold: 수평 판정 최소 종횡비 (수직은 역수).
-        """
         self._min_area_ratio = min_area_ratio
         self._max_area_ratio = max_area_ratio
         self._min_rect = min_rectangularity
         self._aspect_th = aspect_threshold
 
+    # ── 공개 API ─────────────────────────────────────────
+
     def find(self, image: Image.Image) -> BarRegion | None:
-        """이미지에서 진행바 영역을 자동 탐지한다.
+        """이미지에서 진행바 영역을 탐지한다.
 
-        다중 전략으로 에지를 탐지하고, 가장 바 형태에 가까운
-        직사각형 윤곽을 선택한다. 방향은 종횡비로 자동 판별.
-
-        Args:
-            image: 대략적으로 캡처된 영역 (RGB).
-
-        Returns:
-            BarRegion. 탐지 실패 시에도 전체 영역을 fallback으로 반환.
-            이미지가 너무 작으면 None.
+        탐지 실패 시에도 전체 영역을 fallback으로 반환.
+        이미지가 너무 작으면 None.
         """
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -98,10 +81,10 @@ class BarFinder:
         if result is not None:
             return result
 
-        # fallback: 이미지 종횡비로 방향만 추정
+        # fallback
         aspect = w / max(h, 1)
         direction = "vertical" if aspect < (1.0 / self._aspect_th) else "horizontal"
-        log.info("윤곽 미탐지 — 방향 추정: %s (비율=%.1f)", direction, aspect)
+        log.info("윤곽 미탐지 — fallback (전체 이미지, 방향=%s)", direction)
         return BarRegion(
             top=0,
             left=0,
@@ -111,54 +94,95 @@ class BarFinder:
             direction=direction,
         )
 
-    def _detect(
-        self,
-        img: np.ndarray,
-        h: int,
-        w: int,
-    ) -> BarRegion | None:
-        """다중 전략으로 직사각형 탐지를 시도한다."""
+    # ── 핵심 탐지 ────────────────────────────────────────
 
+    def _detect(self, img: np.ndarray, h: int, w: int) -> BarRegion | None:
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
 
         candidates: list[BarRegion] = []
 
-        # ── 전략 1: Canny + Otsu 기반 임계값 ──
+        # ── 전략 1: Canny + Otsu (수직 모폴로지로 에지 브릿지) ──
         otsu_val, _ = cv2.threshold(
             blurred,
             0,
             255,
             cv2.THRESH_BINARY + cv2.THRESH_OTSU,
         )
-        # Otsu 기반으로 여러 감도 시도
         for factor in (0.5, 0.33):
             lower = max(10, int(otsu_val * factor))
             upper = max(30, int(otsu_val * factor * 2))
             edges = cv2.Canny(blurred, lower, upper)
 
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=1)
-
+            # 작은 커널 (기존)
+            k_small = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, k_small, iterations=1)
             contours, _ = cv2.findContours(
                 closed,
-                cv2.RETR_LIST,
+                cv2.RETR_EXTERNAL,
                 cv2.CHAIN_APPROX_SIMPLE,
             )
             candidates.extend(self._filter_contours(contours, h, w))
 
-        # ── 전략 2: 적응형 이진화 (국소 대비로 미세한 테두리 탐지) ──
+            # 큰 수직 커널 — 상/하 에지를 브릿지하여 바 본체 형성
+            kh = max(7, h // 6)
+            k_tall = cv2.getStructuringElement(cv2.MORPH_RECT, (3, kh))
+            bridged = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, k_tall, iterations=1)
+            contours, _ = cv2.findContours(
+                bridged,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )
+            candidates.extend(self._filter_contours(contours, h, w))
+
+        # ── 전략 2: 적응형 이진화 ──
+        block_size = max(15, (min(h, w) // 10) | 1)
         binary = cv2.adaptiveThreshold(
             blurred,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY_INV,
-            blockSize=15,
+            blockSize=block_size,
             C=3,
         )
         contours, _ = cv2.findContours(
             binary,
-            cv2.RETR_LIST,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        candidates.extend(self._filter_contours(contours, h, w))
+
+        # ── 전략 3: HSV 채도 분할 (fill 색상 영역) ──
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+        sat_mask = ((hsv[:, :, 1] > 30) & (hsv[:, :, 2] > 30)).astype(np.uint8) * 255
+        k_color = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
+        sat_cleaned = cv2.morphologyEx(sat_mask, cv2.MORPH_CLOSE, k_color, iterations=2)
+        sat_cleaned = cv2.morphologyEx(
+            sat_cleaned, cv2.MORPH_OPEN, k_color, iterations=1
+        )
+        contours, _ = cv2.findContours(
+            sat_cleaned,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        # fill 영역 → 트랙 확장 시도
+        for cnt in contours:
+            expanded = self._expand_to_track(img, cnt, h, w)
+            if expanded is not None:
+                candidates.append(expanded)
+
+        # ── 전략 4: 배경 제거 (코너 기반) ──
+        bg = self._estimate_background(img)
+        diff = np.sqrt(
+            np.sum((img.astype(np.float64) - bg.astype(np.float64)) ** 2, axis=2)
+        )
+        fg_mask = (diff > 25).astype(np.uint8) * 255
+        k_fg = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        fg_cleaned = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, k_fg, iterations=2)
+        fg_cleaned = cv2.morphologyEx(fg_cleaned, cv2.MORPH_OPEN, k_fg, iterations=1)
+        contours, _ = cv2.findContours(
+            fg_cleaned,
+            cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE,
         )
         candidates.extend(self._filter_contours(contours, h, w))
@@ -166,10 +190,7 @@ class BarFinder:
         if not candidates:
             return None
 
-        # 중복 제거 (겹치는 영역 병합)
         candidates = self._deduplicate(candidates)
-
-        # 가장 "바 형태"인 후보 선택: elongation(얼마나 길쭉한지) 우선
         best = max(candidates, key=self._bar_score)
 
         log.info(
@@ -185,14 +206,14 @@ class BarFinder:
         )
         return best
 
+    # ── 컨투어 필터링 ────────────────────────────────────
+
     def _filter_contours(
         self,
-        contours: list[np.ndarray],
+        contours: list,
         h: int,
         w: int,
     ) -> list[BarRegion]:
-        """윤곽 목록에서 바 후보를 필터링한다."""
-
         img_area = h * w
         min_area = img_area * self._min_area_ratio
         max_area = img_area * self._max_area_ratio
@@ -235,32 +256,145 @@ class BarFinder:
 
         return results
 
+    # ── 트랙 확장 (fill → 전체 바 영역) ──────────────────
+    def _expand_to_track(
+        self,
+        img: np.ndarray,
+        fill_contour: np.ndarray,
+        h: int,
+        w: int,
+    ) -> BarRegion | None:
+        """fill 영역에서 Sobel 경계 + 배경 제거로 전체 바 트랙을 복원한다.
+
+        1단계: Sobel-x(수직 에지)로 fill 좌우의 트랙 경계를 탐지
+        2단계: 배경 제거로 추가 확장 (경계 없는 pill 바 대응)
+        3단계: 두 결과 중 넓은 쪽 채택
+        """
+        x, y, bw, bh = cv2.boundingRect(fill_contour)
+        if bw * bh < h * w * self._min_area_ratio:
+            return None
+
+        y_start = max(y + 1, 0)
+        y_end = min(y + bh - 1, h)
+        if y_end <= y_start:
+            y_start, y_end = y, min(y + bh, h)
+        fill_left = x
+        fill_right = x + bw
+
+        # ── 1단계: Sobel-x 경계 탐지 ──
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        sobel_x = np.abs(cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3))
+        # fill 행 범위의 median 프로파일
+        profile = np.median(sobel_x[y_start:y_end, :], axis=0)
+        edge_th = max(float(np.percentile(profile, 70)), 10.0)
+        strong = np.where(profile > edge_th)[0]
+
+        # fill 좌측 이내의 에지 → 좌측 경계
+        left_edges = strong[strong <= fill_left + 5]
+        grad_left = int(left_edges[0]) if len(left_edges) > 0 else fill_left
+
+        # fill 우측 이후의 에지 → 우측 경계 (최우측 채택)
+        right_edges = strong[strong >= fill_right - 5]
+        grad_right = (
+            int(right_edges[-1]) + 1
+            if len(right_edges) > 0
+            else fill_right
+        )
+
+        # ── 2단계: 배경 제거 기반 확장 ──
+        cy = y + bh // 2
+        if 0 <= cy < h:
+            bg = self._estimate_background(img)
+            row = img[cy].astype(np.float64)
+            row_diff = np.sqrt(
+                np.sum((row - bg.astype(np.float64)) ** 2, axis=1)
+            )
+            fill_diff = float(row_diff[x:x + bw].mean())
+            threshold = max(fill_diff * 0.15, 10.0)
+            non_bg = np.where(row_diff > threshold)[0]
+            if len(non_bg) > 0:
+                bg_left = int(non_bg[0])
+                bg_right = int(non_bg[-1]) + 1
+            else:
+                bg_left, bg_right = fill_left, fill_right
+        else:
+            bg_left, bg_right = fill_left, fill_right
+
+        # ── 3단계: 두 결과 중 넓은 쪽 채택 ──
+        track_left = min(grad_left, bg_left)
+        track_right = max(grad_right, bg_right)
+
+        # 이미지 거의 전체면 과확장 — fill 기준으로 제한
+        if (track_right - track_left) > w * 0.97:
+            track_left = fill_left
+            track_right = fill_right
+        track_width = track_right - track_left
+        if track_width < bh * self._aspect_th:
+            return None
+        aspect = track_width / max(bh, 1)
+        if aspect >= self._aspect_th:
+            direction = "horizontal"
+        elif aspect <= (1.0 / self._aspect_th):
+            direction = "vertical"
+        else:
+            return None
+        return BarRegion(
+            top=y, left=track_left, bottom=y + bh, right=track_right,
+            confidence=0.65, direction=direction,
+        )
+
+    # ── 배경 추정 ────────────────────────────────────────
+
+    @staticmethod
+    def _estimate_background(img: np.ndarray) -> np.ndarray:
+        """이미지 4개 코너의 중앙값으로 배경색을 추정한다."""
+        h, w = img.shape[:2]
+        patch = max(3, min(h // 8, w // 8, 10))
+        corners = [
+            img[:patch, :patch],
+            img[:patch, -patch:],
+            img[-patch:, :patch],
+            img[-patch:, -patch:],
+        ]
+        all_pixels = np.concatenate(
+            [c.reshape(-1, 3) for c in corners],
+            axis=0,
+        )
+        return np.median(all_pixels, axis=0).astype(np.uint8)
+
+    # ── 스코어링 ─────────────────────────────────────────
+
     @staticmethod
     def _bar_score(region: BarRegion) -> tuple[float, float]:
-        """바 후보의 점수를 계산한다.
+        """바 후보의 점수: elongation × 두께 보정, 면적.
 
-        elongation(길쭉한 정도)이 높을수록, 면적이 클수록 높은 점수.
-        단순히 큰 직사각형이 아니라, "바 형태"를 우선 선택한다.
+        에지 아티팩트(6px 미만)를 크게 감점한다.
         """
         longer = max(region.width, region.height)
         shorter = max(min(region.width, region.height), 1)
-        elongation = longer / shorter  # 높을수록 바 형태
-        return (elongation, region.width * region.height)
+        elongation = longer / shorter
+
+        # 헤어라인 감점: 6px 미만이면 점수 1/10
+        thickness_factor = min(shorter / _MIN_THICKNESS, 1.0)
+
+        return (elongation * thickness_factor, region.width * region.height)
+
+    # ── 중복 제거 ────────────────────────────────────────
 
     @staticmethod
     def _deduplicate(
         candidates: list[BarRegion],
-        iou_threshold: float = 0.6,
+        iou_threshold: float = 0.5,
     ) -> list[BarRegion]:
-        """겹치는 후보를 병합한다 (IoU 기반)."""
         if len(candidates) <= 1:
             return candidates
 
-        # bar_score 높은 순 정렬
         scored = sorted(
             candidates,
             key=lambda r: (
-                max(r.width, r.height) / max(min(r.width, r.height), 1),
+                max(r.width, r.height)
+                / max(min(r.width, r.height), 1)
+                * min(min(r.width, r.height) / _MIN_THICKNESS, 1.0),
                 r.width * r.height,
             ),
             reverse=True,
@@ -280,7 +414,6 @@ class BarFinder:
 
 
 def _iou(a: BarRegion, b: BarRegion) -> float:
-    """두 영역의 IoU(Intersection over Union)를 계산한다."""
     x1 = max(a.left, b.left)
     y1 = max(a.top, b.top)
     x2 = min(a.right, b.right)
