@@ -23,6 +23,34 @@ from PyQt6.QtWidgets import (
 
 from utils.logger import log
 
+# ── Color Palette ──────────────────────────────────────────────
+APP_BG = "#0f0f1a"
+CARD_BG = "#1c1c30"
+CARD_BORDER = "#2a2a45"
+TITLE_TEXT = "#ffffff"
+SUBTITLE_TEXT = "#8888aa"
+STATUS_GREEN = "#4ade80"
+STATUS_GRAY = "#666688"
+CHECKBOX_BLUE = "#3b82f6"
+CARD_LABEL = "#ffffff"
+BAR_TRACK = "#252540"
+BAR_GRAD_L = "#3b82f6"
+BAR_GRAD_R = "#22d3ee"
+BAR_TEXT = "#ffffff"
+UPDATE_TEXT = "#666688"
+DELETE_TEXT = "#666688"
+DELETE_BG = "#2a2a45"
+DELETE_BORDER = "#3a3a55"
+BTN_ADD_BG = "#1c1c30"
+BTN_ADD_TEXT = "#8888aa"
+BTN_ADD_BORDER = "#3a3a55"
+BTN_STOP_BG = "#ef4444"
+BTN_START_BG = "#3b82f6"
+BTN_ACTION_TEXT = "#ffffff"
+EMPTY_TEXT = "#666688"
+SCROLLBAR_BG = "#0f0f1a"
+SCROLLBAR_HANDLE = "#2a2a45"
+
 
 class RegionCard(QFrame):
     """모니터링 영역 카드 위젯."""
@@ -32,64 +60,100 @@ class RegionCard(QFrame):
     view_requested = pyqtSignal(str)
 
     def __init__(
-        self, region_id: str, label: str, region_type: str = "bar",
+        self,
+        region_id: str,
+        label: str,
+        region_type: str = "bar",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.region_id = region_id
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setStyleSheet(
-            "RegionCard { background: white; border: 1px solid #e0e0e0; "
-            "border-radius: 8px; padding: 12px; margin: 4px; }"
+            f"RegionCard {{"
+            f"  background: {CARD_BG};"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 12px;"
+            f"  padding: 14px;"
+            f"  margin: 4px 0px;"
+            f"}}"
         )
         layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        # 체크박스 + 타입 라벨 + 영역 라벨 (헤더 행)
+        layout.setSpacing(8)
+
+        # ── Header row: checkbox + type label + region label ──
         header_row = QHBoxLayout()
         self._checkbox = QCheckBox()
         self._checkbox.setChecked(True)
+        self._checkbox.setStyleSheet(
+            f"QCheckBox::indicator {{"
+            f"  width: 16px; height: 16px;"
+            f"  border: 2px solid {CARD_BORDER};"
+            f"  border-radius: 4px;"
+            f"  background: {APP_BG};"
+            f"}}"
+            f"QCheckBox::indicator:checked {{"
+            f"  background: {CHECKBOX_BLUE};"
+            f"  border-color: {CHECKBOX_BLUE};"
+            f"  image: none;"
+            f"}}"
+        )
         self._checkbox.stateChanged.connect(self._on_check_changed)
         header_row.addWidget(self._checkbox)
-        # 타입 표시: "진행률 바" 또는 "진행률 퍼센트"
-        type_text = "진행률 퍼센트" if region_type == "ocr" else "진행률 바"
-        type_color = "#E67E22" if region_type == "ocr" else "#4285F4"
+
+        type_text = "진행률 숫자" if region_type == "ocr" else "진행률 바"
         self._type_label = QLabel(type_text)
         self._type_label.setStyleSheet(
-            f"color: white; background: {type_color}; border-radius: 3px; "
-            "padding: 1px 6px; font-size: 10px; font-weight: bold;"
+            f"color: {CARD_LABEL};"
+            f"background: transparent;"
+            f"font-size: 12px;"
+            f"font-weight: bold;"
+            f"border: none;"
+            f"padding: 0px;"
         )
         header_row.addWidget(self._type_label)
+
         self._label = QLabel(label)
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self._label.setStyleSheet(
+            f"color: {CARD_LABEL}; background: transparent; border: none;"
+        )
         header_row.addWidget(self._label, stretch=1)
         layout.addLayout(header_row)
 
-        # 프로그레스바 + 퍼센트
-        progress_row = QHBoxLayout()
+        # ── Progress bar (percentage shown ON bar, no separate label) ──
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 1000)
         self._progress_bar.setValue(0)
-        self._progress_bar.setFixedHeight(20)
+        self._progress_bar.setFixedHeight(24)
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setFormat("0.0%")
         self._progress_bar.setStyleSheet(
-            "QProgressBar { text-align: center; font-size: 11px; color: #333; }"
-            "QProgressBar::chunk { background-color: #4285F4; }"
+            f"QProgressBar {{"
+            f"  text-align: center;"
+            f"  font-size: 11px;"
+            f"  font-weight: bold;"
+            f"  color: {BAR_TEXT};"
+            f"  background: {BAR_TRACK};"
+            f"  border: none;"
+            f"  border-radius: 8px;"
+            f"}}"
+            f"QProgressBar::chunk {{"
+            f"  border-radius: 8px;"
+            f"  background: qlineargradient("
+            f"    x1:0, y1:0, x2:1, y2:0,"
+            f"    stop:0 {BAR_GRAD_L}, stop:1 {BAR_GRAD_R}"
+            f"  );"
+            f"}}"
         )
-        progress_row.addWidget(self._progress_bar, stretch=1)
+        layout.addWidget(self._progress_bar)
 
-        self._percent_label = QLabel("0.0%")
-        self._percent_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self._percent_label.setMinimumWidth(55)
-        self._percent_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        progress_row.addWidget(self._percent_label)
-        layout.addLayout(progress_row)
-
-        # 마지막 업데이트 시간
+        # ── Bottom row: timestamp + delete button ──
         self._time_label = QLabel("대기 중")
-        self._time_label.setStyleSheet("color: #888; font-size: 11px;")
+        self._time_label.setStyleSheet(
+            f"color: {UPDATE_TEXT}; font-size: 11px;"
+            f"background: transparent; border: none;"
+        )
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self._time_label)
         bottom_row.addStretch()
@@ -97,9 +161,17 @@ class RegionCard(QFrame):
         self._btn_delete = QPushButton("🗑 삭제")
         self._btn_delete.setFixedHeight(24)
         self._btn_delete.setStyleSheet(
-            "QPushButton { background: #f0f0f0; border: 1px solid #ccc; "
-            "border-radius: 4px; padding: 0 10px; font-size: 11px; color: #c00; }"
-            "QPushButton:hover { background: #ffe0e0; }"
+            f"QPushButton {{"
+            f"  background: {DELETE_BG};"
+            f"  border: 1px solid {DELETE_BORDER};"
+            f"  border-radius: 4px;"
+            f"  padding: 0 10px;"
+            f"  font-size: 11px;"
+            f"  color: {DELETE_TEXT};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: {CARD_BORDER};"
+            f"}}"
         )
         self._btn_delete.clicked.connect(
             lambda: self.delete_requested.emit(self.region_id)
@@ -107,10 +179,8 @@ class RegionCard(QFrame):
         bottom_row.addWidget(self._btn_delete)
         layout.addLayout(bottom_row)
 
-
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         """카드 클릭 시 뷰어 표시 요청."""
-        # 자식 위젯(버튼, 체크박스)이 이미 처리한 이벤트는 여기 도달하지 않음
         if event.button() == Qt.MouseButton.LeftButton:
             self.view_requested.emit(self.region_id)
         super().mousePressEvent(event)
@@ -124,8 +194,7 @@ class RegionCard(QFrame):
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
         self._progress_bar.setFormat(f"{progress:.1f}%")
-        self._percent_label.setText(f"{progress:.1f}%")
-        self._time_label.setText(f"업데이트: {datetime.now().strftime('%H:%M:%S')}")
+        self._time_label.setText(f"⏱ 업데이트: {datetime.now().strftime('%H:%M:%S')}")
 
     def set_label(self, label: str) -> None:
         """라벨을 변경한다."""
@@ -160,78 +229,131 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
 
-
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
         central = QWidget()
+        central.setStyleSheet(f"background: {APP_BG};")
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
 
-        # 헤더
+        # ── Header ──
         title = QLabel("ProgressEye")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent;")
         layout.addWidget(title)
 
         subtitle = QLabel("진행률 모니터링")
-        subtitle.setStyleSheet("color: #666; font-size: 13px; margin-bottom: 8px;")
+        subtitle.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 13px;"
+            f"margin-bottom: 4px; background: transparent;"
+        )
         layout.addWidget(subtitle)
 
-        # 상태 표시
+        # ── Status indicator ──
         self._status_label = QLabel("● 대기 중")
         self._status_label.setStyleSheet(
-            "color: #888; font-size: 13px; font-weight: bold;"
+            f"color: {STATUS_GRAY}; font-size: 13px;"
+            f"font-weight: bold; background: transparent;"
         )
         layout.addWidget(self._status_label)
 
-        # 구분선
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #e0e0e0;")
-        layout.addWidget(line)
-
-        # 영역 목록 (스크롤)
+        # ── Scroll area for region cards ──
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(
+            f"QScrollArea {{"
+            f"  background: transparent;"
+            f"  border: none;"
+            f"}}"
+            f"QScrollBar:vertical {{"
+            f"  background: {SCROLLBAR_BG};"
+            f"  width: 8px;"
+            f"  border-radius: 4px;"
+            f"  margin: 0;"
+            f"}}"
+            f"QScrollBar::handle:vertical {{"
+            f"  background: {SCROLLBAR_HANDLE};"
+            f"  min-height: 30px;"
+            f"  border-radius: 4px;"
+            f"}}"
+            f"QScrollBar::add-line:vertical,"
+            f"QScrollBar::sub-line:vertical {{"
+            f"  height: 0px;"
+            f"}}"
+            f"QScrollBar::add-page:vertical,"
+            f"QScrollBar::sub-page:vertical {{"
+            f"  background: none;"
+            f"}}"
+        )
 
         self._region_container = QWidget()
+        self._region_container.setStyleSheet("background: transparent;")
         self._region_layout = QVBoxLayout(self._region_container)
         self._region_layout.setSpacing(8)
         self._region_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 빈 상태 라벨
+        # ── Empty state label ──
         self._empty_label = QLabel(
             "등록된 모니터링 영역이 없습니다.\n아래 버튼을 눌러 시작하세요."
         )
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet("color: #aaa; padding: 40px; font-size: 13px;")
+        self._empty_label.setStyleSheet(
+            f"color: {EMPTY_TEXT}; padding: 40px;"
+            f"font-size: 13px; background: transparent;"
+        )
         self._region_layout.addWidget(self._empty_label)
 
         self._region_layout.addStretch()
         scroll.setWidget(self._region_container)
         layout.addWidget(scroll, stretch=1)
 
-        # 버튼 영역
+        # ── Bottom button bar ──
         btn_layout = QHBoxLayout()
 
-        self._btn_add_bar = QPushButton("프로그래스바 영역 추가")
+        _btn_add_style = (
+            f"QPushButton {{"
+            f"  background: {BTN_ADD_BG};"
+            f"  border: 1px solid {BTN_ADD_BORDER};"
+            f"  border-radius: 8px;"
+            f"  color: {BTN_ADD_TEXT};"
+            f"  font-size: 12px;"
+            f"  padding: 0 12px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: {CARD_BORDER};"
+            f"}}"
+        )
+
+        self._btn_add_bar = QPushButton("진행률 바 추가")
         self._btn_add_bar.setFixedHeight(36)
+        self._btn_add_bar.setStyleSheet(_btn_add_style)
         self._btn_add_bar.clicked.connect(self.select_area_requested.emit)
         btn_layout.addWidget(self._btn_add_bar)
 
-        self._btn_add_ocr = QPushButton("숫자 영역 추가")
+        self._btn_add_ocr = QPushButton("진행률 숫자 추가")
         self._btn_add_ocr.setFixedHeight(36)
+        self._btn_add_ocr.setStyleSheet(_btn_add_style)
         self._btn_add_ocr.clicked.connect(self.select_ocr_area_requested.emit)
         btn_layout.addWidget(self._btn_add_ocr)
 
         self._btn_toggle = QPushButton("모니터링 시작")
         self._btn_toggle.setFixedHeight(36)
         self._btn_toggle.setStyleSheet(
-            "QPushButton { background-color: #4285F4; color: white; "
-            "border-radius: 4px; font-weight: bold; padding: 0 20px; }"
-            "QPushButton:hover { background-color: #3367D6; }"
+            f"QPushButton {{"
+            f"  background-color: {BTN_START_BG};"
+            f"  color: {BTN_ACTION_TEXT};"
+            f"  border: none;"
+            f"  border-radius: 8px;"
+            f"  font-weight: bold;"
+            f"  font-size: 12px;"
+            f"  padding: 0 20px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: #2563eb;"
+            f"}}"
         )
         self._btn_toggle.clicked.connect(self.toggle_monitoring_requested.emit)
         btn_layout.addWidget(self._btn_toggle)
@@ -239,7 +361,10 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_layout)
 
     def add_region_display(
-        self, region_id: str, label: str, region_type: str = "bar",
+        self,
+        region_id: str,
+        label: str,
+        region_type: str = "bar",
         enabled: bool = True,
     ) -> None:
         """영역 카드를 추가한다."""
@@ -263,7 +388,6 @@ class MainWindow(QMainWindow):
             return
         self._region_layout.removeWidget(card)
         card.deleteLater()
-        # 카드가 모두 삭제되면 빈 상태 라벨 표시
         if not self._region_cards:
             self._empty_label.show()
         log.info("영역 카드 제거: %s", region_id)
@@ -284,30 +408,49 @@ class MainWindow(QMainWindow):
         if active:
             self._status_label.setText("● 모니터링 중")
             self._status_label.setStyleSheet(
-                "color: #34A853; font-size: 13px; font-weight: bold;"
+                f"color: {STATUS_GREEN}; font-size: 13px;"
+                f"font-weight: bold; background: transparent;"
             )
-            self._btn_toggle.setText("모니터링 정지")
+            self._btn_toggle.setText("● 모니터링 정지")
             self._btn_toggle.setStyleSheet(
-                "QPushButton { background-color: #EA4335; color: white; "
-                "border-radius: 4px; font-weight: bold; padding: 0 20px; }"
-                "QPushButton:hover { background-color: #C5221F; }"
+                f"QPushButton {{"
+                f"  background-color: {BTN_STOP_BG};"
+                f"  color: {BTN_ACTION_TEXT};"
+                f"  border: none;"
+                f"  border-radius: 8px;"
+                f"  font-weight: bold;"
+                f"  font-size: 12px;"
+                f"  padding: 0 20px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  background-color: #dc2626;"
+                f"}}"
             )
         else:
             self._status_label.setText("● 대기 중")
             self._status_label.setStyleSheet(
-                "color: #888; font-size: 13px; font-weight: bold;"
+                f"color: {STATUS_GRAY}; font-size: 13px;"
+                f"font-weight: bold; background: transparent;"
             )
             self._btn_toggle.setText("모니터링 시작")
             self._btn_toggle.setStyleSheet(
-                "QPushButton { background-color: #4285F4; color: white; "
-                "border-radius: 4px; font-weight: bold; padding: 0 20px; }"
-                "QPushButton:hover { background-color: #3367D6; }"
+                f"QPushButton {{"
+                f"  background-color: {BTN_START_BG};"
+                f"  color: {BTN_ACTION_TEXT};"
+                f"  border: none;"
+                f"  border-radius: 8px;"
+                f"  font-weight: bold;"
+                f"  font-size: 12px;"
+                f"  padding: 0 20px;"
+                f"}}"
+                f"QPushButton:hover {{"
+                f"  background-color: #2563eb;"
+                f"}}"
             )
-
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""
-        if getattr(self, '_really_quit', False):
+        if getattr(self, "_really_quit", False):
             event.accept()
             log.info("메인 창 종료")
             return
