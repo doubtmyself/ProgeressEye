@@ -4,7 +4,9 @@
 MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 """
 
+import queue
 import sys
+from typing import Callable
 
 from PIL import Image as PILImage
 from PyQt6.QtCore import QRect, QTimer
@@ -57,6 +59,12 @@ class ProgressEyeApp:
         self._region_viewer: RegionViewer | None = None
         self._task_counter = len(self._config.regions)
 
+        # 크로스-스레드 액션 큐 (pystray/Timer → Qt 메인 스레드)
+        self._action_queue: queue.Queue[Callable[[], None]] = queue.Queue()
+        self._poll_timer = QTimer()
+        self._poll_timer.timeout.connect(self._process_queued_actions)
+        self._poll_timer.start(50)
+
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
         self._main_window.toggle_monitoring_requested.connect(self._toggle_monitoring)
@@ -74,6 +82,19 @@ class ProgressEyeApp:
         self._tray.start()
         self._main_window.show()
         return self._app.exec()
+
+    def _process_queued_actions(self) -> None:
+        """큐에 쌍인 액션을 메인 스레드에서 실행한다.
+
+        pystray/threading.Timer 등 비-Qt 스레드에서 큐에 넣은 작업을
+        50ms 주기로 폴링하여 Qt 메인 스레드에서 실행한다.
+        """
+        while not self._action_queue.empty():
+            try:
+                action = self._action_queue.get_nowait()
+                action()
+            except queue.Empty:
+                break
 
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
@@ -401,8 +422,9 @@ class ProgressEyeApp:
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
 
     def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
-        """캡처 콜백 — 분석 + UI 업데이트.
-        pyqtSignal로 메인 스레드 UI 업데이트를 보장한다.
+        """캐처 콜백 — 분석 + UI 업데이트.
+
+        Timer 스레드에서 호출되므로 Queue로 메인 스레드 UI 업데이트를 보장한다.
         """
         # 영역 설정 찾기
         region_config = None
@@ -424,9 +446,11 @@ class ProgressEyeApp:
         # 멈춤 감지
         freeze_state = self._freeze_detector.update(region_id, result.progress)
         self._tray.update_tooltip(f"ProgressEye - {label}: {result.progress:.1f}%")
-        # UI 업데이트 — 시그널로 메인 스레드 전달 (QueuedConnection)
-        self._main_window.progress_update_requested.emit(
-            region_id, result.progress, label
+        # UI 업데이트 — 큐로 메인 스레드 전달 (Timer 스레드에서 호출되므로)
+        progress = result.progress
+        self._action_queue.put(
+            lambda _id=region_id, _p=progress, _l=label:
+                self._main_window.update_progress(_id, _p, _l)
         )
 
         if freeze_state.is_frozen:
@@ -439,13 +463,27 @@ class ProgressEyeApp:
 
     def _show_main_window(self) -> None:
         """메인 창을 표시한다. pystray 스레드에서 호출됨."""
-        self._main_window.show_requested.emit()
+        self._action_queue.put(self._do_show_main_window)
+
+    def _do_show_main_window(self) -> None:
+        """메인 창 표시 (메인 스레드)."""
+        self._main_window.show()
+        self._main_window.activateWindow()
+        self._main_window.raise_()
+
     def _quit(self) -> None:
         """애플리케이션을 종료한다. pystray 스레드에서 호출됨."""
         log.info("ProgressEye 종료")
         self._scheduler.stop()
         self._capturer.close()
-        self._main_window.quit_app_requested.emit()
+        self._action_queue.put(self._do_quit)
+
+    def _do_quit(self) -> None:
+        """앱 종료 (메인 스레드)."""
+        self._poll_timer.stop()
+        self._main_window._really_quit = True
+        self._main_window.close()
+        self._app.quit()
 
     @staticmethod
     def _pil_to_qimage(pil_image: PILImage.Image) -> QImage:
