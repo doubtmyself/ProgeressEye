@@ -117,3 +117,8 @@ class Config:
                 regions[i].update(updates)
                 break
         self.set("capture.regions", regions)
+
+    def remove_region(self, region_id: str) -> None:
+        """특정 영역을 제거한다."""
+        regions = [r for r in self.regions if r.get("id") != region_id]
+        self.set("capture.regions", regions)

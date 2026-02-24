@@ -7,7 +7,7 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QCloseEvent, QFont
+from PyQt6.QtGui import QCloseEvent, QFont, QMouseEvent
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -29,6 +29,8 @@ class RegionCard(QFrame):
 
     toggled = pyqtSignal(str, bool)
     edit_requested = pyqtSignal(str)
+    delete_requested = pyqtSignal(str)
+    view_requested = pyqtSignal(str)
 
     def __init__(
         self, region_id: str, label: str, parent: QWidget | None = None
@@ -93,7 +95,27 @@ class RegionCard(QFrame):
             lambda: self.edit_requested.emit(self.region_id)
         )
         bottom_row.addWidget(self._btn_edit)
+
+        self._btn_delete = QPushButton("🗑 삭제")
+        self._btn_delete.setFixedHeight(24)
+        self._btn_delete.setStyleSheet(
+            "QPushButton { background: #f0f0f0; border: 1px solid #ccc; "
+            "border-radius: 4px; padding: 0 10px; font-size: 11px; color: #c00; }"
+            "QPushButton:hover { background: #ffe0e0; }"
+        )
+        self._btn_delete.clicked.connect(
+            lambda: self.delete_requested.emit(self.region_id)
+        )
+        bottom_row.addWidget(self._btn_delete)
         layout.addLayout(bottom_row)
+
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """카드 클릭 시 뷰어 표시 요청."""
+        # 자식 위젯(버튼, 체크박스)이 이미 처리한 이벤트는 여기 도달하지 않음
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.view_requested.emit(self.region_id)
+        super().mousePressEvent(event)
 
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
@@ -126,6 +148,8 @@ class MainWindow(QMainWindow):
     quit_requested = pyqtSignal()
     region_toggled = pyqtSignal(str, bool)
     region_edit_requested = pyqtSignal(str)
+    region_delete_requested = pyqtSignal(str)
+    region_view_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -224,10 +248,24 @@ class MainWindow(QMainWindow):
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
         card.edit_requested.connect(self.region_edit_requested)
+        card.delete_requested.connect(self.region_delete_requested)
+        card.view_requested.connect(self.region_view_requested)
         self._region_cards[region_id] = card
         # addStretch 앞에 삽입
         self._region_layout.insertWidget(self._region_layout.count() - 1, card)
         log.info("영역 카드 추가: %s (%s)", region_id, label)
+
+    def remove_region_display(self, region_id: str) -> None:
+        """영역 카드를 제거한다."""
+        card = self._region_cards.pop(region_id, None)
+        if card is None:
+            return
+        self._region_layout.removeWidget(card)
+        card.deleteLater()
+        # 카드가 모두 삭제되면 빈 상태 라벨 표시
+        if not self._region_cards:
+            self._empty_label.show()
+        log.info("영역 카드 제거: %s", region_id)
 
     def update_progress(self, region_id: str, progress: float, label: str = "") -> None:
         """영역의 진행률을 업데이트한다."""

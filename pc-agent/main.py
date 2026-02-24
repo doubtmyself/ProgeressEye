@@ -7,8 +7,8 @@ MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 import sys
 
 from PIL import Image as PILImage
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QImage
+from PyQt6.QtCore import QRect, QTimer
+from PyQt6.QtGui import QGuiApplication, QImage
 from PyQt6.QtWidgets import QApplication
 
 from config import Config
@@ -20,6 +20,7 @@ from core.scheduler import CaptureScheduler
 from ui.area_selector import AreaSelector
 from ui.color_picker import BarPreviewDialog
 from ui.region_editor import RegionEditor
+from ui.region_viewer import RegionViewer
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
 from utils.logger import log
@@ -55,6 +56,7 @@ class ProgressEyeApp:
         )
         self._area_selector: AreaSelector | None = None
         self._region_editor: RegionEditor | None = None
+        self._region_viewer: RegionViewer | None = None
         self._task_counter = len(self._config.regions)
 
         # 시그널 연결
@@ -63,6 +65,8 @@ class ProgressEyeApp:
 
         self._main_window.region_toggled.connect(self._on_region_toggled)
         self._main_window.region_edit_requested.connect(self._start_region_edit)
+        self._main_window.region_delete_requested.connect(self._on_region_deleted)
+        self._main_window.region_view_requested.connect(self._show_region_view)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -159,20 +163,21 @@ class ProgressEyeApp:
                 "y": area["y"],
                 "width": area["width"],
                 "height": area["height"],
-                "direction": direction,
+                "direction": dialog.bar_region.direction if dialog.bar_region else direction,
             }
 
             self._config.add_region(region)
             self._main_window.add_region_display(region_id, region["label"])
+            final_progress = dialog.progress
             self._main_window.update_progress(
-                region_id, result.progress, region["label"]
+                region_id, final_progress, region["label"]
             )
 
             # 스케줄러에 추가 (실행 중이면)
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
 
-            log.info("영역 등록: %s (%.1f%%)", region_id, result.progress)
+            log.info("영역 등록: %s (%.1f%%)", region_id, final_progress)
         else:
             # 재선택
             log.info("미리보기에서 재선택 요청")
@@ -265,6 +270,113 @@ class ProgressEyeApp:
                 # 비활성화 — 스케줄러에서 영역 제거
                 self._scheduler.remove_region(region_id)
         log.info("영역 토글: %s → %s", region_id, "활성" if enabled else "비활성")
+
+    def _on_region_deleted(self, region_id: str) -> None:
+        """영역 삭제 요청 시 호출."""
+        # 스케줄러에서 제거
+        if self._scheduler.is_running:
+            self._scheduler.remove_region(region_id)
+        # config에서 제거
+        self._config.remove_region(region_id)
+        # UI에서 제거
+        self._main_window.remove_region_display(region_id)
+        log.info("영역 삭제: %s", region_id)
+
+
+    def _show_region_view(self, region_id: str) -> None:
+        """영역의 바 탐지 결과를 전체 화면에 표시한다."""
+        QTimer.singleShot(0, lambda: self._do_show_region_view(region_id))
+
+    def _do_show_region_view(self, region_id: str) -> None:
+        """실제 뷰어 표시 (메인 스레드)."""
+        # 1. config에서 영역 정보 조회
+        area = None
+        for r in self._config.regions:
+            if r["id"] == region_id:
+                area = r
+                break
+        if area is None:
+            return
+
+        # 2. 영역 캕처
+        try:
+            image = self._capturer.capture(area)
+        except Exception as e:
+            log.error("영역 캕처 실패: %s", e)
+            return
+
+        # 3. 바 탐지
+        bar_region = self._bar_finder.find(image)
+
+        # 4. 진행률 분석
+        bar_image = image.crop(bar_region.bbox) if bar_region else image
+        direction = bar_region.direction if bar_region else "horizontal"
+        result = self._analyzer.analyze(bar_image, direction=direction)
+
+        # 5. mss 좌표 → Qt 위젯 좌표 변환
+        region_rect = self._mss_to_qt_rect(area)
+
+        # 바 영역의 Qt 좌표 (영역 내 상대 좌표 → 절대 Qt 좌표)
+        bar_qt_rect = None
+        if bar_region is not None:
+            bar_area = {
+                "monitor": area.get("monitor", 0),
+                "x": area["x"] + bar_region.left,
+                "y": area["y"] + bar_region.top,
+                "width": bar_region.width,
+                "height": bar_region.height,
+            }
+            bar_qt_rect = self._mss_to_qt_rect(bar_area)
+
+        # 6. 뷰어 생성 + 표시
+        if self._region_viewer is not None:
+            try:
+                self._region_viewer.close()
+            except RuntimeError:
+                pass
+
+        self._region_viewer = RegionViewer(region_rect, bar_qt_rect, result.progress)
+        self._region_viewer.closed.connect(self._on_region_viewer_closed)
+        self._region_viewer.show()
+
+    def _mss_to_qt_rect(self, area: dict) -> QRect:
+        """mss 좌표를 Qt 위젯 좌표로 변환한다."""
+        import mss as mss_lib
+
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return QRect(area["x"], area["y"], area["width"], area["height"])
+
+        virtual_geo = screen.virtualGeometry()
+
+        try:
+            with mss_lib.mss() as sct:
+                full = sct.monitors[0]
+                mon_idx = area.get("monitor", 0)
+
+                if mon_idx > 0 and mon_idx < len(sct.monitors):
+                    mon = sct.monitors[mon_idx]
+                    mss_global_x = area["x"] + mon["left"]
+                    mss_global_y = area["y"] + mon["top"]
+                else:
+                    mss_global_x = area["x"]
+                    mss_global_y = area["y"]
+
+                scale_x = virtual_geo.width() / full["width"]
+                scale_y = virtual_geo.height() / full["height"]
+                qt_x = int((mss_global_x - full["left"]) * scale_x)
+                qt_y = int((mss_global_y - full["top"]) * scale_y)
+                qt_w = int(area["width"] * scale_x)
+                qt_h = int(area["height"] * scale_y)
+                return QRect(qt_x, qt_y, qt_w, qt_h)
+        except Exception:
+            return QRect(area["x"], area["y"], area["width"], area["height"])
+
+    def _on_region_viewer_closed(self) -> None:
+        """뷰어 닫힘."""
+        if self._region_viewer is not None:
+            self._region_viewer.deleteLater()
+            self._region_viewer = None
 
     def _toggle_monitoring(self) -> None:
         """모니터링 시작/정지 토글.
