@@ -475,7 +475,12 @@ class ProgressEyeApp:
         log.info("ProgressEye 종료")
         self._scheduler.stop()
         self._capturer.close()
-        # QApplication.quit()는 이벤트 루프에 종료 이벤트를 포스팅 (스레드 안전)
+        # 메인 스레드에서 창 닫기 + 이벤트 루프 종료
+        QTimer.singleShot(0, self._do_quit)
+
+    def _do_quit(self) -> None:
+        """실제 종료 수행 (메인 스레드)."""
+        self._main_window.request_quit()
         self._app.quit()
 
     @staticmethod

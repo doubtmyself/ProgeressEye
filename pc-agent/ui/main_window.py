@@ -303,8 +303,17 @@ class MainWindow(QMainWindow):
                 "QPushButton:hover { background-color: #3367D6; }"
             )
 
+    def request_quit(self) -> None:
+        """실제 종료를 요청한다 (트레이 '종료' 전용)."""
+        self._really_quit = True
+        self.close()
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """닫기 → 트레이로 최소화 (종료하지 않음)."""
+        """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""
+        if getattr(self, '_really_quit', False):
+            event.accept()
+            log.info("메인 창 종료")
+            return
         event.ignore()
         self.hide()
         log.info("메인 창 트레이로 최소화")
