@@ -3,6 +3,8 @@
 mss 라이브러리를 사용하여 지정 영역 또는 전체 화면을 캡처한다.
 """
 
+
+import threading
 from typing import Any
 
 import mss
@@ -18,18 +20,15 @@ class CaptureError(Exception):
 
 class ScreenCapturer:
     """mss 기반 화면 캡처 엔진.
-
-    지정 영역 또는 전체 화면을 캡처하여 PIL Image로 반환한다.
+    mss GDI 핸들은 thread-local이므로 스레드별 인스턴스를 관리한다.
     """
-
     def __init__(self) -> None:
-        self._sct: mss.mss | None = None
-
+        self._local = threading.local()
     def _get_sct(self) -> mss.mss:
-        """mss 인스턴스를 반환한다 (lazy init)."""
-        if self._sct is None:
-            self._sct = mss.mss()
-        return self._sct
+        """현재 스레드의 mss 인스턴스를 반환한다 (thread-local lazy init)."""
+        if not hasattr(self._local, "sct") or self._local.sct is None:
+            self._local.sct = mss.mss()
+        return self._local.sct
 
     def capture(self, region: dict[str, Any]) -> Image.Image:
         """지정 영역을 캡처한다.
@@ -136,10 +135,10 @@ class ScreenCapturer:
         return list(sct.monitors)
 
     def close(self) -> None:
-        """mss 리소스를 해제한다."""
-        if self._sct is not None:
+        """현재 스레드의 mss 리소스를 해제한다."""
+        if hasattr(self._local, "sct") and self._local.sct is not None:
             try:
-                self._sct.close()
+                self._local.sct.close()
             except (AttributeError, OSError):
-                pass  # 다른 스레드에서 호출 시 thread-local 핸들 없음
-            self._sct = None
+                pass  # 이미 해제되었거나 다른 스레드에서 호출됨
+            self._local.sct = None
