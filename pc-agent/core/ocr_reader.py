@@ -86,11 +86,12 @@ class OcrReader:
 
     def find_percentages(self, image: PILImage.Image) -> list[OcrResult]:
         """이미지에서 숫자(%) 패턴을 찾아 바운딩 박스와 함께 반환한다.
-
+        앞뒤에 문자가 붙어있어도 숫자(%)를 추출한다.
+        예: '진행률45%완료' → 45%, '45%done' → 45%
         탐지 우선순위:
-        1. "45%" — 숫자+% 단일 단어
-        2. "45" + "%" — 분리 인식
-        3. "45" — 단독 숫자 (0~100 범위)
+        1. '45%', '진행률45%완료' — 숫자+% 포함 단어 (search)
+        2. '45' + '%' — 분리 인식
+        3. '45', '진행률45' — 단독 숫자 (0~100 범위)
         """
         if pytesseract is None:
             log.error("pytesseract가 설치되지 않아 OCR을 수행할 수 없습니다.")
@@ -123,7 +124,7 @@ class OcrReader:
                 continue
 
             # Case 1: "45%" 또는 "45.5%" 단일 단어
-            match = self._PERCENT_RE.fullmatch(text)
+            match = self._PERCENT_RE.search(text)
             if match:
                 value = float(match.group(1))
                 results.append(
@@ -145,10 +146,10 @@ class OcrReader:
                 continue
 
             # Case 2: "45" + "%" 분리 인식
-            num_match = self._NUMBER_RE.fullmatch(text)
+            num_match = self._NUMBER_RE.search(text)
             if num_match and i + 1 < n_boxes:
                 next_text = data["text"][i + 1].strip()
-                if next_text == "%":
+                if "%" in next_text:
                     value = float(num_match.group(1))
                     x1 = data["left"][i]
                     y1 = min(data["top"][i], data["top"][i + 1])
@@ -185,7 +186,7 @@ class OcrReader:
             conf = float(data["conf"][j])
             if conf < 0 or not text:
                 continue
-            num_match = self._NUMBER_RE.fullmatch(text)
+            num_match = self._NUMBER_RE.search(text)
             if num_match:
                 value = float(num_match.group(1))
                 if 0.0 <= value <= 100.0:
