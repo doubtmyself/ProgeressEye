@@ -26,7 +26,7 @@
 | 1.6 | 화면 영역 선택 UI | PyQt6 반투명 오버레이, 마우스 드래그 영역 지정 | P0 |
 | 1.7 | 색상 자동 감지 | 선택 영역에서 채움 색상 / 빈 색상 자동 판별, 수동 조정 UI | P0 |
 | 1.8 | 화면 캡처 모듈 | mss 기반 지정 영역 캡처, 주기적 실행 (스케줄러) | P0 |
-| 1.9 | 막대 픽셀 분석 엔진 | Pillow+NumPy 기반 열별 색상 분석, 채움 비율 → 진행률(%) 산출 | P0 |
+| 1.9 | OpenCV 바 탐지 + pytesseract OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + pytesseract OCR 숫자 감지 | P0 |
 | 1.10 | Firebase 데이터 전송 | `users/{uid}/tasks/{pcId}/{taskId}` 에 진행률 쓰기 | P0 |
 | 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 |
 
@@ -100,7 +100,7 @@
 
 | # | 작업 | 설명 | 우선순위 |
 |---|------|------|----------|
-| 3.1 | PyInstaller 빌드 | 단일 .exe 패키징 (~15MB, Tesseract 불필요) | P1 |
+| 3.1 | PyInstaller 빌드 | 단일 .exe 패키징 (Tesseract 번들 미포함 ~15MB, 포함 ~160MB) | P1 |
 | 3.2 | Windows 시작프로그램 등록 | 자동 시작 옵션 구현 | P1 |
 | 3.3 | 멀티 모니터 지원 | 다중 모니터 영역 선택 | P2 |
 | 3.4 | 멀티 태스크 모니터링 | 동시 5개 영역 모니터링 | P2 |
@@ -152,13 +152,13 @@
 |------|-----------|-----------|
 | 인증 | 익명 인증 + 6자리 페어링 코드 | **Google OAuth 2.0** |
 | 연결 | pairs/ + links/ 노드 | **같은 uid = 자동 연결** |
-| 감지 방식 | Tesseract OCR 숫자 인식 | **막대 픽셀 분석 (색상 비율)** |
+| 감지 방식 | Tesseract OCR 숫자 인식 | **바 탐지(OpenCV) + OCR(pytesseract) 이중 모드** |
 | DB 구조 | 최상위에 분산 | **`users/{uid}/` 아래 통합** |
-| 외부 의존성 | Tesseract OCR 번들 (30MB+) | **순수 Python (Pillow+NumPy)** |
-| exe 크기 | ~50MB | **~15MB** |
-| 범용성 | 숫자 텍스트 있는 진행바만 | **텍스트 없는 진행바도 지원** |
-| 삭제된 항목 | OCR 엔진, 페어링 코드, tessdata, cleanupExpiredPairs | — |
-| 추가된 항목 | — | 막대 분석 엔진, 색상 감지, Google Auth, onUserCreate |
+| 외부 의존성 | Tesseract OCR 번들 (30MB+) | **바 탐지: 순수 Python (opencv-python-headless), OCR: Tesseract 번들 선택** |
+| exe 크기 | ~50MB | **~15MB (바 탐지만) / ~160MB (OCR 포함)** |
+| 범용성 | 숫자 텍스트 있는 진행바만 | **텍스트 없는 진행바도 지원, 숫자 있으면 OCR도 사용 가능** |
+| 삭제된 항목 | 페어링 코드, cleanupExpiredPairs | — |
+| 추가된 항목 | — | 바 탐지 엔진(OpenCV), OCR 엔진(pytesseract), Tesseract 번들, 색상 감지, Google Auth, onUserCreate |
 
 ---
 

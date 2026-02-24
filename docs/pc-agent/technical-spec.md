@@ -8,16 +8,17 @@
 |------|------|------|
 | 언어 | Python 3.11+ | 이미지 처리 생태계 풍부, 빠른 프로토타이핑 |
 | GUI 프레임워크 | PyQt6 | 영역 선택 오버레이, 설정 창 구현 |
-| 화면 캡처 | mss | PIL 대비 3~5배 빠른 부분 캡처 |
-| 이미지 분석 | Pillow + NumPy | 픽셀 색상 분석, 채움 비율 계산 |
+| 화면 캡처 | mss | PIL 대비 3~5배 빠른 부분 캡처, thread-local GDI |
+| 바 탐지 | opencv-python-headless | OpenCV 4전략 기반 진행바 자동 탐지 |
+| OCR 감지 | pytesseract + Tesseract OCR | 숫자가 보이는 진행바에서 % 수치 직접 인식 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
 | Firebase | firebase-admin SDK | Realtime DB 읽기/쓰기, Auth |
-| 시스템 트레이 | pystray | 크로스플랫폼 트레이 아이콘 |
+| 시스템 트레이 | pystray | 크로스플랫폼 트레이 아이콘 (queue.Queue + QTimer 폴링) |
 | 패키징 | PyInstaller | 단일 .exe 생성 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
 | 토큰 저장 | keyring | OS 자격증명 저장소에 안전하게 토큰 보관 |
 
-> **Tesseract OCR 제거**: 막대 픽셀 분석 방식 채택으로 OCR 엔진 불필요. exe 크기 30MB+ 절감.
+> **이중 감지 모드**: 진행바 픽셀 분석(OpenCV)과 OCR 숫자 감지(pytesseract) 두 가지 모드를 지원한다. 숫자가 화면에 표시되는 경우 OCR 모드를, 그렇지 않은 경우 바 탐지 모드를 사용한다.
 
 ---
 
@@ -25,41 +26,31 @@
 
 ```
 pc-agent/
-├── main.py                  # 엔트리포인트, 앱 초기화
-├── config.py                # 설정 관리 (JSON 읽기/쓰기)
+├── main.py                  # 엔트리포인트, 앱 초기화 + 이중 모드 플로우
+├── config.py                # 설정 관리 (JSON)
+├── setup_tesseract.py       # Tesseract OCR 번들 설치 스크립트
 ├── core/
-│   ├── __init__.py
-│   ├── capturer.py          # 화면 캡처 엔진
-│   ├── bar_analyzer.py      # 진행바 막대 픽셀 분석 엔진
-│   ├── color_detector.py    # 채움/빈 색상 자동 감지
-│   ├── freeze_detector.py   # 진행 멈춤 감지 로직
-│   └── scheduler.py         # 캡처 주기 스케줄러
-├── auth/
-│   ├── __init__.py
-│   ├── google_auth.py       # Google OAuth 2.0 브라우저 로그인
-│   └── token_manager.py     # 토큰 저장/갱신/만료 관리
-├── firebase/
-│   ├── __init__.py
-│   ├── client.py            # Firebase 초기화 + 인증 연동
-│   ├── sync.py              # 진행률 데이터 동기화
-│   ├── device_register.py   # PC 기기 등록 + Presence 관리
-│   └── command_listener.py  # 원격 명령 수신
+│   ├── bar_finder.py        # OpenCV 4전략 바 탐지 + Sobel 트랙 확장
+│   ├── bar_analyzer.py      # 전환점 분석 (그라데이션 지원)
+│   ├── ocr_reader.py        # pytesseract 기반 숫자% 탐지 (단독 숫자 포함)
+│   ├── capturer.py          # mss 기반 화면 캡처 (thread-local GDI)
+│   ├── freeze_detector.py   # 진행 멈춤 감지
+│   └── scheduler.py         # Timer 기반 주기 캡처
 ├── ui/
-│   ├── __init__.py
-│   ├── login_window.py      # Google 로그인 안내 창
+│   ├── main_window.py       # 메인 창 (RegionCard에 타입 배지)
 │   ├── area_selector.py     # 드래그 영역 선택 오버레이
-│   ├── color_picker.py      # 채움/빈 색상 미리보기 및 수동 조정
-│   ├── main_window.py       # 메인 설정/상태 창
-│   └── tray_icon.py         # 시스템 트레이
+│   ├── color_picker.py      # InteractiveBarPreview + BarPreviewDialog
+│   ├── ocr_preview.py       # OCR 탐지 미리보기 (빨간+시안 사각형)
+│   ├── region_viewer.py     # 전체 화면 탐지 결과 오버레이
+│   └── tray_icon.py         # 시스템 트레이 (간소화)
+├── tesseract/               # Tesseract OCR 번들 (바이너리, .gitignore)
+│   ├── tesseract.exe
+│   ├── *.dll
+│   └── tessdata/eng.traineddata, osd.traineddata
 ├── utils/
-│   ├── __init__.py
-│   ├── logger.py            # 로깅 유틸
-│   └── system_commands.py   # PC 종료/절전 명령 실행
-├── resources/
-│   ├── icon.ico             # 앱 아이콘
-│   └── client_secret.json   # Google OAuth 클라이언트 설정
-├── requirements.txt
-└── build.spec               # PyInstaller 빌드 설정
+│   └── logger.py
+└── resources/
+    └── icon.ico
 ```
 
 ---
@@ -81,109 +72,114 @@ pc-agent/
   └─ 토큰 없음 ──→ 로그인 화면 ──→ Google 로그인 ──→ 메인 화면
 ```
 
-### 3.2 캡처 → 막대 분석 → 전송 사이클
+### 3.2 영역 선택 → 모드 분기 → 탐지 → 등록 플로우
+
+```
+메인 화면
+  │
+  ├─ [프로그래스바 영역 추가] ──→ 드래그 영역 선택
+  │                                  │
+  │                                  ▼
+  │                            OpenCV 바 탐지 (4전략)
+  │                                  │
+  │                                  ▼
+  │                            InteractiveBarPreview
+  │                            (파워포인트식 리사이즈 핸들)
+  │                                  │
+  │                                  ▼
+  │                            [확인] → "진행률 바" 배지로 등록
+  │
+  └─ [숫자 영역 추가] ──→ 드래그 영역 선택
+                             │
+                             ▼
+                       OCR 탐지 미리보기
+                       (빨간+시안 사각형으로 감지 결과 표시)
+                             │
+                             ▼
+                       [확인] → "진행률 퍼센트" 배지로 등록
+```
+
+### 3.2 바 탐지 파이프라인 (OpenCV 4전략)
 
 ```python
 # 의사코드
-class CaptureLoop:
-    def run_cycle(self):
-        # 1. 지정 영역 캡처 (메모리 내)
-        screenshot = capturer.capture(region=self.selected_area)
+class BarFinder:
+    def find(self, image):
+        """
+        OpenCV 4전략으로 진행바 후보 영역을 탐지한다.
         
-        # 2. 막대 픽셀 분석
-        result = bar_analyzer.analyze(
-            image=screenshot,
-            fill_color=self.fill_color,      # 채움 색상 (RGB)
-            empty_color=self.empty_color,    # 빈 색상 (RGB)
-            tolerance=self.color_tolerance   # 색상 허용 오차
-        )
-        #   → { progress: 73.2, confidence: 0.95 }
+        전략 1: Canny + Otsu 엣지 기반 탐지
+        전략 2: 적응형 이진화 (Adaptive Threshold)
+        전략 3: HSV 채도 분할 (색상 있는 바 탐지)
+        전략 4: 배경 제거 (배경색과 다른 영역 추출)
         
-        # 3. 신뢰도 검증
-        if result.confidence < THRESHOLD:
-            log.warn("Low confidence, keeping previous value")
-            return
+        각 전략의 결과를 앙상블하여 최종 바 영역 반환.
+        Sobel 트랙 확장으로 바 경계를 정밀하게 보정.
+        """
+        candidates = []
+        candidates += self._canny_otsu(image)
+        candidates += self._adaptive_threshold(image)
+        candidates += self._hsv_saturation(image)
+        candidates += self._background_removal(image)
         
-        # 4. 멈춤 감지
-        freeze_detector.update(result.progress)
-        
-        # 5. Firebase 전송 (users/{uid}/tasks/{pcId}/{taskId})
-        firebase_sync.push(uid=self.uid, pc_id=self.pc_id, result=result)
+        return self._ensemble(candidates)
 ```
 
-### 3.3 막대 픽셀 분석 엔진 상세
+### 3.3 바 분석 엔진 (전환점 분석)
 
 ```python
 # 의사코드
 class BarAnalyzer:
-    def analyze(self, image, fill_color, empty_color, tolerance=30):
+    def analyze(self, image):
         """
         진행바 이미지에서 채움 비율을 계산한다.
         
         원리:
-        1. 이미지의 각 열(column)에 대해 평균 색상을 구함
-        2. 평균 색상이 fill_color에 가까우면 "채움"
-        3. 평균 색상이 empty_color에 가까우면 "빈"
-        4. 채운 열 수 / 전체 열 수 = 진행률
+        1. 슬라이딩 윈도우로 열(column)별 색상 변화를 추적
+        2. 채움 영역에서 빈 영역으로 전환되는 지점(전환점) 탐지
+        3. 그라데이션 진행바도 지원 (색상 연속 변화 허용)
+        4. 전환점 위치 / 전체 너비 = 진행률(%)
         """
-        pixels = np.array(image)       # (height, width, 3)
-        column_means = pixels.mean(axis=0)  # (width, 3) — 열별 평균색
-        
-        fill_distances = color_distance(column_means, fill_color)
-        empty_distances = color_distance(column_means, empty_color)
-        
-        # 각 열이 채움인지 빈인지 판정
-        is_filled = fill_distances < empty_distances
-        
-        # 좌→우 진행 방향: 첫 번째 빈 열의 위치가 진행 경계
-        if is_filled.any():
-            # 연속된 채움 영역의 끝 찾기
-            filled_count = np.argmin(is_filled) if not is_filled.all() else len(is_filled)
-        else:
-            filled_count = 0
-        
-        total_columns = len(is_filled)
-        progress = (filled_count / total_columns) * 100
-        
-        # 신뢰도: 채움/빈 색상이 얼마나 명확하게 구분되는지
-        confidence = calculate_confidence(fill_distances, empty_distances)
-        
-        return AnalysisResult(progress=round(progress, 1), confidence=confidence)
+        pixels = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        transition_point = self._find_transition(pixels)
+        progress = (transition_point / image.shape[1]) * 100
+        return round(progress, 1)
 ```
 
-### 3.4 색상 자동 감지 플로우
+### 3.4 OCR 탐지 파이프라인 (pytesseract)
 
-```
-영역 선택 완료
-  │
-  ▼
-캡처 이미지 분석
-  │
-  ├─ 좌측 1/4 영역의 주요 색상 → 채움 색상 후보
-  ├─ 우측 1/4 영역의 주요 색상 → 빈 색상 후보
-  │
-  ▼
-미리보기 팝업
-  │
-  ├─ "채움 색상: ██ #4285F4"
-  ├─ "빈 색상:   ██ #E0E0E0"
-  ├─ "감지된 진행률: 73%"
-  │
-  ├─ [확인] → 색상 저장, 모니터링 시작
-  ├─ [색상 수동 조정] → 컬러 피커 표시
-  └─ [재선택] → 영역 선택으로 복귀
+```python
+# 의사코드
+class OcrReader:
+    def read(self, image):
+        """
+        pytesseract로 진행률 숫자를 인식한다.
+        
+        인식 패턴:
+        - "45%" 형태: % 기호와 함께 인식
+        - "45" + "%" 분리 인식: 두 요소가 근접한 경우 합산
+        - 단독 숫자 "45": % 없이 0~100 범위의 숫자만 있어도 감지
+        
+        신뢰도 기반 필터링으로 오인식 최소화.
+        """
+        text = pytesseract.image_to_string(image, config='--psm 7')
+        return self._parse_percentage(text)
+    
+    def _parse_percentage(self, text):
+        # "45%", "45 %", 단독 "45" (0~100 범위) 모두 처리
+        ...
 ```
 
 ### 3.5 영역 선택 플로우
 
 ```
-1. 사용자가 "영역 선택" 클릭
-2. 전체 화면 반투명 오버레이 표시
+1. 사용자가 "프로그래스바 영역 추가" 또는 "숫자 영역 추가" 클릭
+2. 전체 화면 반투명 오버레이 표시 (멀티모니터 지원, mss 좌표 ↔ Qt 좌표 변환)
 3. 마우스 드래그로 사각형 영역 지정
-4. 선택 영역 하이라이트 + 색상 자동 감지
-5. 미리보기: 감지된 채움/빈 색상 + 현재 진행률 표시
-6. [확인] → 좌표 + 색상 저장, 모니터링 시작
-   [색상 조정] → 컬러 피커로 수동 지정
+4. 모드에 따라 미리보기 표시:
+   - 바 탐지 모드: InteractiveBarPreview (파워포인트식 리사이즈 핸들로 영역 편집 가능)
+   - OCR 모드: OcrPreview (빨간+시안 사각형으로 감지된 숫자 위치 표시)
+5. [확인] → 좌표 + 모드 저장, 모니터링 시작
    [재선택] → 2로 복귀
    [취소] → 오버레이 닫기
 ```
@@ -208,6 +204,7 @@ class BarAnalyzer:
       {
         "id": "task_001",
         "label": "프리미어 렌더링",
+        "type": "bar",
         "monitor": 0,
         "x": 520, "y": 980,
         "width": 300, "height": 20,
@@ -215,6 +212,14 @@ class BarAnalyzer:
         "empty_color": [224, 224, 224],
         "color_tolerance": 30,
         "direction": "left_to_right"
+      },
+      {
+        "id": "task_002",
+        "label": "Blender 렌더링",
+        "type": "ocr",
+        "monitor": 0,
+        "x": 800, "y": 600,
+        "width": 80, "height": 24
       }
     ]
   },
@@ -249,21 +254,26 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 
+# Tesseract 번들 설치 (OCR 모드 포함 빌드 시)
+python setup_tesseract.py
+
 # 단일 exe 빌드
 pyinstaller build.spec
-# → dist/ProgressEye.exe (약 15MB — Tesseract 불포함)
+# → dist/ProgressEye.exe
+#   Tesseract 번들 포함: 약 160MB
+#   Tesseract 번들 미포함: 약 15MB
 ```
 
 ### PyInstaller 포함 항목
 
 - Python 런타임
 - PyQt6 라이브러리
-- Pillow + NumPy (이미지 분석)
+- opencv-python-headless (바 탐지)
+- pytesseract (OCR 인터페이스)
 - Firebase Admin SDK + Google Auth 라이브러리
 - Google OAuth 클라이언트 설정 (client_secret.json)
 - 앱 아이콘 및 리소스
-
-> **이전 대비 제거**: Tesseract OCR 엔진 + tessdata 학습 데이터 (~30MB 절감)
+- tesseract/ 폴더 (Tesseract 바이너리 + tessdata, 번들 포함 시)
 
 ---
 
@@ -273,7 +283,8 @@ pyinstaller build.spec
 |------|------|
 | Google 로그인 실패 | 에러 메시지 표시, 재시도 안내 |
 | 토큰 갱신 실패 | 자동 재로그인 시도, 실패 시 로그인 화면 표시 |
-| 색상 감지 실패 | 수동 색상 지정 안내, 컬러 피커 표시 |
+| 바 탐지 실패 | 4전략 모두 실패 시 수동 색상 지정 안내 |
+| OCR 인식 실패 | Tesseract 미설치 안내 또는 이전 값 유지 |
 | 분석 신뢰도 낮음 | 이전 값 유지, 3회 연속 시 "분석 오류" 상태 전송 |
 | 네트워크 끊김 | 로컬 큐에 데이터 저장, 재연결 시 일괄 전송 |
 | 캡처 영역 사라짐 | 대상 창 최소화/닫힘 감지 → "대기중" 상태 전환 |
