@@ -72,10 +72,13 @@ class OcrPreviewDialog(QDialog):
 
         # 탐지 상태 텍스트
         if self._ocr_results:
-            texts = [r.text for r in self._ocr_results]
+            texts = [
+                f"{r.text}{'%' if not r.has_percent_sign else ''}"
+                for r in self._ocr_results
+            ]
             detect_label = QLabel(f"탐지된 텍스트: {', '.join(texts)}")
         else:
-            detect_label = QLabel("숫자(%)를 감지하지 못했습니다.")
+            detect_label = QLabel("숫자를 감지하지 못했습니다.")
         detect_label.setStyleSheet("color: #888; font-size: 11px;")
         detect_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(detect_label)
