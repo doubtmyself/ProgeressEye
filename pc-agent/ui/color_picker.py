@@ -1,24 +1,91 @@
-"""색상 미리보기 및 수동 조정 다이얼로그.
+"""색상 미리보기 및 클릭 지정 다이얼로그.
 
 영역 선택 후 감지된 채움/빈 색상을 보여주고,
-사용자가 확인하거나 수동 조정할 수 있다.
+스크린샷을 클릭하여 색상을 직접 지정할 수 있다.
+수평/수직 방향 전환, 영역 체크(빨간 사각형), 디버그 저장 기능 포함.
 """
 
+from datetime import datetime
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap, QColor
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QDialog,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QProgressBar,
-    QColorDialog,
-    QFrame,
+    QPushButton,
+    QVBoxLayout,
     QWidget,
 )
+from PIL import Image as PILImage
 
+from core.bar_analyzer import BarAnalyzer
+from core.bar_finder import BarFinder, BarRegion
+from core.color_detector import ColorDetector
 from utils.logger import log
+
+
+class ClickablePreview(QLabel):
+    """클릭으로 픽셀 색상을 추출하는 이미지 미리보기.
+
+    좌클릭 → 채움 색상, 우클릭 → 빈 색상을 해당 픽셀에서 추출한다.
+    표시 이미지와 색상 추출 이미지를 분리하여
+    빨간 사각형 오버레이 시에도 원본 색상을 추출할 수 있다.
+    """
+
+    fill_picked = pyqtSignal(int, int, int)  # r, g, b
+    empty_picked = pyqtSignal(int, int, int)  # r, g, b
+
+    def __init__(
+        self, qimage: QImage, max_width: int = 340, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._qimage = qimage  # 색상 추출용 원본
+        self._max_width = max_width
+
+        self._apply_pixmap(qimage)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def _apply_pixmap(self, qimage: QImage) -> None:
+        """QImage를 표시 크기에 맞춰 설정한다."""
+        pixmap = QPixmap.fromImage(qimage)
+        display_w = min(self._max_width, pixmap.width())
+
+        if pixmap.width() > display_w:
+            displayed = pixmap.scaledToWidth(
+                display_w, Qt.TransformationMode.SmoothTransformation
+            )
+        else:
+            displayed = pixmap
+
+        self._scale_x = self._qimage.width() / max(displayed.width(), 1)
+        self._scale_y = self._qimage.height() / max(displayed.height(), 1)
+
+        self.setPixmap(displayed)
+        self.setFixedSize(displayed.size())
+
+    def set_display_image(self, qimage: QImage) -> None:
+        """표시 이미지만 변경한다 (색상 추출은 원본 유지)."""
+        self._apply_pixmap(qimage)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        """클릭 위치의 픽셀 색상을 추출하여 시그널로 전달한다."""
+        pos = event.pos()
+
+        orig_x = max(0, min(int(pos.x() * self._scale_x), self._qimage.width() - 1))
+        orig_y = max(0, min(int(pos.y() * self._scale_y), self._qimage.height() - 1))
+
+        pixel = self._qimage.pixelColor(orig_x, orig_y)
+        r, g, b = pixel.red(), pixel.green(), pixel.blue()
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.fill_picked.emit(r, g, b)
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.empty_picked.emit(r, g, b)
 
 
 class ColorSwatch(QFrame):
@@ -53,7 +120,8 @@ class ColorPreviewDialog(QDialog):
     """색상 미리보기 및 조정 다이얼로그.
 
     감지된 채움/빈 색상과 진행률을 보여주고,
-    확인/수동조정/재선택 옵션을 제공한다.
+    스크린샷 클릭으로 색상을 직접 지정할 수 있다.
+    수평/수직 방향 전환, 영역 체크, 디버그 저장 기능 포함.
     """
 
     colors_confirmed = pyqtSignal(tuple, tuple)
@@ -61,16 +129,27 @@ class ColorPreviewDialog(QDialog):
     def __init__(
         self,
         image: QImage,
+        full_image: PILImage.Image,
+        pil_image: PILImage.Image,
         fill_color: tuple[int, int, int],
         empty_color: tuple[int, int, int],
         detected_progress: float,
+        bar_region: BarRegion | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._image = image
+        self._image = image  # 전체 캡처 QImage (미리보기용)
+        self._full_image = full_image  # 전체 캡처 PIL Image
+        self._pil_image = pil_image  # 크롭된 바 PIL Image
         self._fill_color = fill_color
         self._empty_color = empty_color
         self._progress = detected_progress
+        self._bar_region = bar_region
+        self._direction = "horizontal"
+
+        self._analyzer = BarAnalyzer()
+        self._bar_finder = BarFinder()
+        self._color_detector = ColorDetector()
 
         self.setWindowTitle("색상 감지 결과")
         self.setFixedWidth(380)
@@ -81,44 +160,46 @@ class ColorPreviewDialog(QDialog):
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        # 캡처 이미지 미리보기
-        preview_label = QLabel()
-        pixmap = QPixmap.fromImage(self._image)
-        scaled = pixmap.scaledToWidth(
-            min(340, pixmap.width()),
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        preview_label.setPixmap(scaled)
-        preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        preview_label.setStyleSheet(
-            "border: 1px solid #ddd; padding: 4px; background: #f5f5f5;"
-        )
-        layout.addWidget(preview_label)
+        # 클릭 가능한 이미지 미리보기
+        self._preview = ClickablePreview(self._image, max_width=340)
+        self._preview.fill_picked.connect(self._on_fill_picked)
+        self._preview.empty_picked.connect(self._on_empty_picked)
+        layout.addWidget(self._preview, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # 채움 색상
-        fill_row = QHBoxLayout()
-        fill_row.addWidget(QLabel("채움 색상:"))
+        # 클릭 안내
+        hint = QLabel("좌클릭: 채움 색상 지정  |  우클릭: 빈 색상 지정")
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hint)
+
+        # 채움/빈 색상 — 같은 행에 컴팩트하게
+        color_row = QHBoxLayout()
+
+        color_row.addWidget(QLabel("채움:"))
         self._fill_swatch = ColorSwatch(self._fill_color)
-        fill_row.addWidget(self._fill_swatch)
+        color_row.addWidget(self._fill_swatch)
         self._fill_hex = QLabel(self._color_hex(self._fill_color))
-        self._fill_hex.setStyleSheet("font-family: 'Consolas'; color: #555;")
-        fill_row.addWidget(self._fill_hex)
-        fill_row.addStretch()
-        layout.addLayout(fill_row)
+        self._fill_hex.setStyleSheet(
+            "font-family: 'Consolas'; color: #555; font-size: 11px;"
+        )
+        color_row.addWidget(self._fill_hex)
 
-        # 빈 색상
-        empty_row = QHBoxLayout()
-        empty_row.addWidget(QLabel("빈 색상:"))
+        color_row.addSpacing(12)
+
+        color_row.addWidget(QLabel("빈:"))
         self._empty_swatch = ColorSwatch(self._empty_color)
-        empty_row.addWidget(self._empty_swatch)
+        color_row.addWidget(self._empty_swatch)
         self._empty_hex = QLabel(self._color_hex(self._empty_color))
-        self._empty_hex.setStyleSheet("font-family: 'Consolas'; color: #555;")
-        empty_row.addWidget(self._empty_hex)
-        empty_row.addStretch()
-        layout.addLayout(empty_row)
+        self._empty_hex.setStyleSheet(
+            "font-family: 'Consolas'; color: #555; font-size: 11px;"
+        )
+        color_row.addWidget(self._empty_hex)
+
+        color_row.addStretch()
+        layout.addLayout(color_row)
 
         # 감지된 진행률
         self._progress_label = QLabel(f"감지된 진행률: {self._progress:.1f}%")
@@ -133,12 +214,41 @@ class ColorPreviewDialog(QDialog):
         self._progress_bar.setFixedHeight(24)
         layout.addWidget(self._progress_bar)
 
+        # 방향 + 영역 체크 행
+        direction_row = QHBoxLayout()
+
+        self._btn_horizontal = QPushButton("수평")
+        self._btn_horizontal.setCheckable(True)
+        self._btn_horizontal.setChecked(True)
+        self._btn_vertical = QPushButton("수직")
+        self._btn_vertical.setCheckable(True)
+
+        self._direction_group = QButtonGroup(self)
+        self._direction_group.addButton(self._btn_horizontal, 0)
+        self._direction_group.addButton(self._btn_vertical, 1)
+        self._direction_group.idClicked.connect(self._on_direction_changed)
+
+        direction_row.addWidget(QLabel("방향:"))
+        direction_row.addWidget(self._btn_horizontal)
+        direction_row.addWidget(self._btn_vertical)
+        direction_row.addStretch()
+
+        # 영역 체크 버튼
+        self._btn_area_check = QPushButton("🔍 영역 체크")
+        self._btn_area_check.setToolTip("탐지된 바 영역을 빨간 사각형으로 표시")
+        self._btn_area_check.clicked.connect(self._on_area_check)
+        direction_row.addWidget(self._btn_area_check)
+
+        # 디버그 저장 버튼
+        self._btn_debug_save = QPushButton("💾 디버그 저장")
+        self._btn_debug_save.setToolTip("temp/ 폴더에 디버그 이미지 저장")
+        self._btn_debug_save.clicked.connect(self._on_debug_save)
+        direction_row.addWidget(self._btn_debug_save)
+
+        layout.addLayout(direction_row)
+
         # 버튼 영역
         btn_layout = QHBoxLayout()
-
-        self._btn_adjust = QPushButton("색상 수동 조정")
-        self._btn_adjust.clicked.connect(self._on_adjust_colors)
-        btn_layout.addWidget(self._btn_adjust)
 
         self._btn_reselect = QPushButton("재선택")
         self._btn_reselect.clicked.connect(self.reject)
@@ -156,44 +266,134 @@ class ColorPreviewDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+    # ── 색상 클릭 핸들러 ─────────────────────────────────
+
+    def _on_fill_picked(self, r: int, g: int, b: int) -> None:
+        """이미지 좌클릭 — 채움 색상 지정."""
+        self._fill_color = (r, g, b)
+        self._fill_swatch.set_color(self._fill_color)
+        self._fill_hex.setText(self._color_hex(self._fill_color))
+        log.info("채움 색상 지정: %s", self._fill_color)
+        self._re_analyze()
+
+    def _on_empty_picked(self, r: int, g: int, b: int) -> None:
+        """이미지 우클릭 — 빈 색상 지정."""
+        self._empty_color = (r, g, b)
+        self._empty_swatch.set_color(self._empty_color)
+        self._empty_hex.setText(self._color_hex(self._empty_color))
+        log.info("빈 색상 지정: %s", self._empty_color)
+        self._re_analyze()
+
+    # ── 방향 전환 ────────────────────────────────────────
+
+    def _on_direction_changed(self, button_id: int) -> None:
+        """방향 토글 시 바 재탐지 + 재분석."""
+        self._direction = "horizontal" if button_id == 0 else "vertical"
+        log.info("방향 전환: %s", self._direction)
+
+        # 전체 이미지에서 바 재탐지
+        bar_region = self._bar_finder.find(self._full_image, direction=self._direction)
+        self._bar_region = bar_region
+        if bar_region:
+            self._pil_image = self._full_image.crop(bar_region.bbox)
+        else:
+            self._pil_image = self._full_image
+
+        # 크롭된 바에서 색상 재감지
+        detection = self._color_detector.detect(self._pil_image)
+        self._fill_color = detection.fill_color
+        self._empty_color = detection.empty_color
+
+        # UI 업데이트
+        self._fill_swatch.set_color(self._fill_color)
+        self._fill_hex.setText(self._color_hex(self._fill_color))
+        self._empty_swatch.set_color(self._empty_color)
+        self._empty_hex.setText(self._color_hex(self._empty_color))
+
+        self._re_analyze()
+
+    # ── 영역 체크 (빨간 사각형 오버레이) ─────────────────
+
+    def _on_area_check(self) -> None:
+        """탐지된 바 영역을 빨간 사각형으로 표시한다."""
+        if self._bar_region is None:
+            log.warning("탐지된 바 영역 없음 — 영역 체크 불가")
+            return
+
+        # 원본 QImage 복사 후 빨간 사각형 그리기
+        overlay = self._image.copy()
+        painter = QPainter(overlay)
+        pen = QPen(QColor(255, 0, 0), 2)
+        painter.setPen(pen)
+
+        br = self._bar_region
+        painter.drawRect(br.left, br.top, br.width, br.height)
+        painter.end()
+
+        # 표시만 변경 (색상 추출은 원본 유지)
+        self._preview.set_display_image(overlay)
+        log.info(
+            "영역 체크 표시: (%d,%d)-(%d,%d)",
+            br.left,
+            br.top,
+            br.right,
+            br.bottom,
+        )
+
+    # ── 디버그 저장 ──────────────────────────────────────
+
+    def _on_debug_save(self) -> None:
+        """디버그 이미지를 temp/ 폴더에 저장한다."""
+        temp_dir = Path(__file__).resolve().parent.parent / "temp"
+        temp_dir.mkdir(exist_ok=True)
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 전체 이미지
+        full_path = temp_dir / f"{ts}_full.png"
+        self._full_image.save(str(full_path))
+
+        # 크롭된 바 이미지
+        bar_path = temp_dir / f"{ts}_bar.png"
+        self._pil_image.save(str(bar_path))
+
+        # 정보 파일
+        info_path = temp_dir / f"{ts}_info.txt"
+        lines = [
+            f"timestamp: {ts}",
+            f"direction: {self._direction}",
+            f"fill_color: {self._fill_color}",
+            f"empty_color: {self._empty_color}",
+            f"progress: {self._progress:.1f}%",
+            f"bar_region: {self._bar_region}",
+            f"full_size: {self._full_image.size}",
+            f"bar_size: {self._pil_image.size}",
+        ]
+        info_path.write_text("\n".join(lines), encoding="utf-8")
+
+        log.info("디버그 저장 완료: %s", temp_dir / ts)
+
+    # ── 재분석 ───────────────────────────────────────────
+
+    def _re_analyze(self) -> None:
+        """변경된 색상/방향으로 진행률을 재분석한다."""
+        result = self._analyzer.analyze(
+            self._pil_image,
+            self._fill_color,
+            self._empty_color,
+            direction=self._direction,
+        )
+        self._progress = result.progress
+        self._progress_label.setText(f"감지된 진행률: {self._progress:.1f}%")
+        self._progress_bar.setValue(int(self._progress * 10))
+        self._progress_bar.setFormat(f"{self._progress:.1f}%")
+
+    # ── 확인/취소 ────────────────────────────────────────
+
     def _on_confirm(self) -> None:
         """확인 버튼 클릭."""
         self.colors_confirmed.emit(self._fill_color, self._empty_color)
         self.accept()
-
-    def _on_adjust_colors(self) -> None:
-        """색상 수동 조정 버튼 클릭."""
-        # 채움 색상 선택
-        fill_qcolor = QColorDialog.getColor(
-            QColor(*self._fill_color),
-            self,
-            "채움 색상 선택",
-        )
-        if fill_qcolor.isValid():
-            self._fill_color = (
-                fill_qcolor.red(),
-                fill_qcolor.green(),
-                fill_qcolor.blue(),
-            )
-            self._fill_swatch.set_color(self._fill_color)
-            self._fill_hex.setText(self._color_hex(self._fill_color))
-
-        # 빈 색상 선택
-        empty_qcolor = QColorDialog.getColor(
-            QColor(*self._empty_color),
-            self,
-            "빈 색상 선택",
-        )
-        if empty_qcolor.isValid():
-            self._empty_color = (
-                empty_qcolor.red(),
-                empty_qcolor.green(),
-                empty_qcolor.blue(),
-            )
-            self._empty_swatch.set_color(self._empty_color)
-            self._empty_hex.setText(self._color_hex(self._empty_color))
-
-        log.info("색상 수동 조정: 채움=%s, 빈=%s", self._fill_color, self._empty_color)
 
     @staticmethod
     def _color_hex(color: tuple[int, int, int]) -> str:
@@ -207,3 +407,8 @@ class ColorPreviewDialog(QDialog):
     @property
     def empty_color(self) -> tuple[int, int, int]:
         return self._empty_color
+
+    @property
+    def direction(self) -> str:
+        """선택된 방향: "horizontal" 또는 "vertical"."""
+        return self._direction
