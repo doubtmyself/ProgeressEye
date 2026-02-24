@@ -157,21 +157,23 @@ class BarPreviewDialog(QDialog):
             return self._bar_region.direction
         return "horizontal"
 
-    # ── 영역 체크 (빨간 사각형 오버레이) ─────────────────
-
+    # ── 영역 체크 (빨간+시안 2줄 사각형 오버레이) ─────────────────
     def _on_area_check(self) -> None:
-        """탐지된 바 영역을 빨간 사각형으로 표시한다."""
+        """탐지된 바 영역을 빨간+시안 2줄 사각형으로 표시한다."""
         if self._bar_region is None:
             log.warning("탐지된 바 영역 없음 — 영역 체크 불가")
             return
-
         overlay = self._image.copy()
         painter = QPainter(overlay)
-        pen = QPen(QColor(255, 0, 0), 2)
-        painter.setPen(pen)
-
         br = self._bar_region
+        # 외곽: 빨간 (255, 0, 0) 2px
+        pen_red = QPen(QColor(255, 0, 0), 2)
+        painter.setPen(pen_red)
         painter.drawRect(br.left, br.top, br.width, br.height)
+        # 내곽: 시안 (0, 255, 255) 2px — 빨간보다 2px 안쪽
+        pen_cyan = QPen(QColor(0, 255, 255), 2)
+        painter.setPen(pen_cyan)
+        painter.drawRect(br.left + 2, br.top + 2, br.width - 4, br.height - 4)
         painter.end()
 
         self._preview.set_display_image(overlay)

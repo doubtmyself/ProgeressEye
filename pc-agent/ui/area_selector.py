@@ -122,10 +122,14 @@ class AreaSelector(QWidget):
             if self._screenshot is not None:
                 painter.drawPixmap(rect, self._screenshot, rect)
 
-            # 선택 영역 테두리 (시안 2px)
-            pen = QPen(QColor(0, 255, 255), 2)
-            painter.setPen(pen)
+            # 선택 영역 테두리 (빨간 외곽 + 시안 내곽 2줄)
+            pen_red = QPen(QColor(255, 0, 0), 2)
+            painter.setPen(pen_red)
             painter.drawRect(rect)
+            inner = rect.adjusted(2, 2, -2, -2)
+            pen_cyan = QPen(QColor(0, 255, 255), 2)
+            painter.setPen(pen_cyan)
+            painter.drawRect(inner)
 
             # 크기 표시 라벨
             w = rect.width()
