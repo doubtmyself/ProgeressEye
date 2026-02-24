@@ -4,6 +4,8 @@
 MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 """
 
+# pyright: reportMissingImports=false, reportMissingModuleSource=false, reportMissingTypeArgument=false
+
 import queue
 import sys
 import uuid
@@ -18,20 +20,21 @@ from auth import AuthError  # pyright: ignore[reportImplicitRelativeImport]
 from auth.firebase_auth import FirebaseAuth  # pyright: ignore[reportImplicitRelativeImport]
 from auth.google_oauth import GoogleOAuth  # pyright: ignore[reportImplicitRelativeImport]
 from auth.token_manager import TokenManager  # pyright: ignore[reportImplicitRelativeImport]
-from config import Config
-from core.bar_analyzer import BarAnalyzer
-from core.bar_finder import BarFinder
-from core.capturer import ScreenCapturer
-from core.freeze_detector import FreezeDetector
-from core.scheduler import CaptureScheduler
-from ui.area_selector import AreaSelector
-from ui.color_picker import BarPreviewDialog
-from core.ocr_reader import OcrReader
-from ui.ocr_preview import OcrPreviewDialog
-from ui.region_viewer import RegionViewer
-from ui.main_window import MainWindow
-from ui.tray_icon import TrayIcon
-from utils.logger import log
+from config import Config  # pyright: ignore[reportImplicitRelativeImport]
+from firebase import RealtimeDB, DeviceManager  # pyright: ignore[reportImplicitRelativeImport]
+from core.bar_analyzer import BarAnalyzer  # pyright: ignore[reportImplicitRelativeImport]
+from core.bar_finder import BarFinder  # pyright: ignore[reportImplicitRelativeImport]
+from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
+from core.freeze_detector import FreezeDetector  # pyright: ignore[reportImplicitRelativeImport]
+from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRelativeImport]
+from ui.area_selector import AreaSelector  # pyright: ignore[reportImplicitRelativeImport]
+from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
+from core.ocr_reader import OcrReader  # pyright: ignore[reportImplicitRelativeImport]
+from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
+from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
+from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
+from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
+from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
 class ProgressEyeApp:
@@ -58,6 +61,9 @@ class ProgressEyeApp:
         self._firebase_auth = FirebaseAuth()
         self._token_manager = TokenManager()
         self._firebase_id_token: str | None = None
+        self._realtime_db: RealtimeDB | None = None
+        self._device_manager: DeviceManager | None = None
+        self._heartbeat_timer: QTimer | None = None
 
         # UI
         self._main_window = MainWindow()
@@ -119,6 +125,9 @@ class ProgressEyeApp:
             self._config.set("auth.uid", uid)
         if email:
             self._config.set("auth.email", email)
+        device_id = str(self._config.get("auth.device_id", ""))
+        if uid and device_id:
+            self._init_firebase(uid, device_id, result["id_token"])
         log.info("자동 로그인 성공")
         return True
 
@@ -177,7 +186,53 @@ class ProgressEyeApp:
             refresh_token=firebase_result["refresh_token"],
             id_token=firebase_result["id_token"],
         )
+        self._init_firebase(uid, device_id, firebase_result["id_token"])
         log.info("로그인 완료: %s (%s)", email, uid)
+
+    def _init_firebase(self, uid: str, device_id: str, id_token: str) -> None:
+        """Firebase 서비스를 초기화하고 기기를 등록한다."""
+
+        def get_token() -> str:
+            return self._firebase_id_token or id_token
+
+        self._realtime_db = RealtimeDB(
+            db_url="https://progresseye-49244-default-rtdb.firebaseio.com",
+            get_id_token=get_token,
+        )
+        self._device_manager = DeviceManager(self._realtime_db, uid, device_id)
+        try:
+            self._device_manager.register()
+            log.info("Firebase 기기 등록 완료: %s", device_id)
+        except Exception as exc:
+            log.warning("Firebase 기기 등록 실패: %s", exc)
+
+        # 프로필 저장
+        try:
+            import time
+
+            profile_data = {
+                "email": self._config.get("auth.email", ""),
+                "displayName": self._token_manager.load_display_name() or "",
+                "lastLoginAt": int(time.time() * 1000),
+            }
+            self._realtime_db.patch(f"users/{uid}/profile", profile_data)
+        except Exception as exc:
+            log.debug("프로필 저장 실패: %s", exc)
+
+        # 하트비트 타이머 (30초)
+        if self._heartbeat_timer:
+            self._heartbeat_timer.stop()
+        heartbeat_timer = QTimer()
+        heartbeat_timer.timeout.connect(self._send_heartbeat)
+        heartbeat_timer.start(30_000)
+        self._heartbeat_timer = heartbeat_timer
+
+    def _send_heartbeat(self) -> None:
+        if self._device_manager:
+            try:
+                self._device_manager.heartbeat()
+            except Exception as exc:
+                log.debug("하트비트 전송 실패: %s", exc)
 
     def _process_queued_actions(self) -> None:
         """큐에 쌍인 액션을 메인 스레드에서 실행한다.
@@ -529,6 +584,26 @@ class ProgressEyeApp:
 
         # 멈춤 감지
         freeze_state = self._freeze_detector.update(region_id, progress)
+
+        # Firebase 전송
+        if self._realtime_db and self._firebase_id_token:
+            uid = str(self._config.get("auth.uid", ""))
+            device_id = str(self._config.get("auth.device_id", ""))
+            if uid and device_id:
+                import time
+
+                task_data = {
+                    "label": label,
+                    "progress": round(progress, 1),
+                    "status": "freeze" if freeze_state.is_frozen else "running",
+                    "updatedAt": int(time.time() * 1000),
+                }
+                try:
+                    path = f"users/{uid}/tasks/{device_id}/{region_id}"
+                    self._realtime_db.patch(path, task_data)
+                except Exception as exc:
+                    log.debug("Firebase 전송 실패 [%s]: %s", region_id, exc)
+
         self._tray.update_tooltip(f"ProgressEye - {label}: {progress:.1f}%")
         # UI 업데이트 — 큐로 메인 스레드 전달
         self._action_queue.put(
@@ -560,6 +635,13 @@ class ProgressEyeApp:
         log.info("ProgressEye 종료")
         self._scheduler.stop()
         self._capturer.close()
+        if self._heartbeat_timer:
+            self._heartbeat_timer.stop()
+        if self._device_manager:
+            try:
+                self._device_manager.set_offline()
+            except Exception:
+                pass
         self._action_queue.put(self._do_quit)
 
     def _do_quit(self) -> None:
