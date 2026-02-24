@@ -26,5 +26,9 @@ Desktop.ini
 # Tesseract OCR 번들 (바이너리 — git에 포함하지 않음)
 pc-agent/tesseract/
 
+# OAuth credentials (보안 — 절대 커밋하지 않음)
+pc-agent/client_secret.json
+pc-agent/token.json
+
 # Stray files
 C
