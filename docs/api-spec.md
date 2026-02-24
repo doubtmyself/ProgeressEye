@@ -137,7 +137,7 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 
 > **이전 대비 삭제**: `progressRaw`, `timeRemaining`, `timeRemainingRaw`, `ocrConfidence` — OCR 관련 필드 전부 제거. 막대 분석은 순수 숫자만 산출.
 
-**쓰기**: PC Agent
+**쓰기**: PC Agent (Firebase REST API, `requests` 라이브러리 직접 호출)
 **읽기**: Mobile App, Cloud Functions
 
 ---

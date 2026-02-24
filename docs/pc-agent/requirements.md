@@ -15,9 +15,9 @@ PC Agent는 Windows 데스크탑에서 동작하는 Python 기반 경량 프로�
 | 항목 | 내용 |
 |------|------|
 | 설명 | Google 계정으로 로그인하여 Firebase 인증 |
-| 상세 | - 시스템 기본 브라우저를 통한 Google OAuth 2.0 로그인 |
-|  | - 로그인 완료 시 localhost 리다이렉트로 토큰 수신 |
-|  | - 인증 토큰 로컬 안전 저장 (재실행 시 자동 로그인) |
+| 상세 | - `google-auth-oauthlib`의 `InstalledAppFlow.run_local_server(port=8080)`로 브라우저 팝업 → `localhost:8080` 리다이렉트로 토큰 수신 |
+|  | - 수신한 `id_token`을 Firebase REST API (`signInWithIdp`)로 교환하여 Firebase uid 획득 |
+|  | - 인증 토큰 로컈 안전 저장 (keyring → Windows 자격증명 관리자, 재실행 시 자동 로그인) |
 |  | - 토큰 만료 시 자동 갱신 (사용자 개입 불필요) |
 |  | - 로그아웃 기능 제공 |
 |  | - 로그인 상태 트레이 아이콘에 표시 |
@@ -71,8 +71,9 @@ PC Agent는 Windows 데스크탑에서 동작하는 Python 기반 경량 프로�
 | 설명 | 분석 결과를 Firebase Realtime DB에 전송 |
 | 상세 | - 전송 경로: `users/{uid}/tasks/{pcId}/{taskId}` |
 |  | - 전송 데이터: 진행률(%), 타임스탬프 |
+|  | - 전송 방식: `requests` 라이브러리로 Firebase REST API 직접 호출 (`{DB_URL}/{path}.json?auth={idToken}`) |
 |  | - 이미지 원본은 절대 전송하지 않음 |
-|  | - 네트워크 끊김 시 로컬 큐잉 후 재연결 시 전송 |
+|  | - 네트워크 끊김 시 로컈 큐잌 후 재연결 시 전송 |
 |  | - 마지막 전송 상태 트레이에 표시 |
 | 우선순위 | **필수 (P0)** |
 
@@ -81,10 +82,11 @@ PC Agent는 Windows 데스크탑에서 동작하는 Python 기반 경량 프로�
 | 항목 | 내용 |
 |------|------|
 | 설명 | 로그인 시 자동으로 Firebase에 PC 정보 등록 |
-| 상세 | - 최초 로그인 시 PC ID 자동 생성 및 등록 |
+| 상세 | - 최초 로그인 시 PC ID 자동 생성 및 등록 (`DeviceManager` 클래스 기반) |
 |  | - 등록 경로: `users/{uid}/devices/{pcId}` |
 |  | - PC 이름 설정 가능 (기본값: 컴퓨터 이름) |
-|  | - 온라인/오프라인 상태 자동 관리 (Firebase Presence) |
+|  | - 30초 하트비트로 `lastSeen` 자동 갱신 |
+|  | - 앱 종료 시 `status: offline` 기록 |
 | 우선순위 | **필수 (P0)** |
 
 ### FR-PC-007: 원격 명령 수신 (Remote Command)

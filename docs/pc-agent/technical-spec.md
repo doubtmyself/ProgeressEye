@@ -12,7 +12,7 @@
 | 바 탐지 | opencv-python-headless | OpenCV 4전략 기반 진행바 자동 탐지 |
 | OCR 감지 | pytesseract + Tesseract OCR | 숫자가 보이는 진행바에서 % 수치 직접 인식 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
-| Firebase | firebase-admin SDK | Realtime DB 읽기/쓰기, Auth |
+| Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`{DB_URL}/{path}.json?auth={idToken}`), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
 | 시스템 트레이 | pystray | 크로스플랫폼 트레이 아이콘 (queue.Queue + QTimer 폴링) |
 | 패키징 | PyInstaller | 단일 .exe 생성 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
@@ -26,9 +26,16 @@
 
 ```
 pc-agent/
-├── main.py                  # 엔트리포인트, 앱 초기화 + 이중 모드 플로우
+├── main.py                  # 엔트리포인트, 앱 초기화 + 인증 통합 + Firebase 연동
 ├── config.py                # 설정 관리 (JSON)
 ├── setup_tesseract.py       # Tesseract OCR 번들 설치 스크립트
+├── auth/
+│   ├── google_oauth.py      # InstalledAppFlow.run_local_server(port=8080)으로 브라우저 팝업 → id_token 획득
+│   ├── firebase_auth.py     # Firebase REST API (signInWithIdp + refresh_token)로 Firebase 로그인
+│   └── token_manager.py     # keyring으로 Windows 자격증명 저장소에 토큰 보관, 자동 갱신
+├── firebase/
+│   ├── realtime_db.py       # RealtimeDB 클래스, REST API 래퍼 (get/put/patch/delete)
+│   └── device_manager.py    # DeviceManager 클래스, 기기 등록/상태/하트비트/오프라인
 ├── core/
 │   ├── bar_finder.py        # OpenCV 4전략 바 탐지 + Sobel 트랙 확장
 │   ├── bar_analyzer.py      # 전환점 분석 (그라데이션 지원)
@@ -62,14 +69,18 @@ pc-agent/
 ```
 앱 시작
   │
-  ├─ 저장된 토큰 있음 ──→ 토큰 유효성 검증
+  ├─ keyring에 저장된 토큰 있음 ──→ refresh_token으로 Firebase 자동 로그인 (_try_auto_login)
   │                          │
-  │                          ├─ 유효 ──→ 자동 로그인 ──→ 메인 화면
-  │                          └─ 만료 ──→ 자동 갱신 ──→ 메인 화면
-  │                                        │
-  │                                        └─ 갱신 실패 ──→ 로그인 화면
+  │                          ├─ 성공 ──→ Firebase 초기화 (기기 등록 + 프로필 저장 + 30초 하트비트)
+  │                          └─ 실패 ──→ 수동 로그인 다이얼로그 (_ensure_login)
   │
-  └─ 토큰 없음 ──→ 로그인 화면 ──→ Google 로그인 ──→ 메인 화면
+  └─ 토큰 없음 ──→ 수동 로그인 다이얼로그 (Retry/Cancel)
+                 │
+                 └─ Google OAuth (InstalledAppFlow.run_local_server(port=8080))
+                       │
+                       └─ id_token → signInWithIdp REST API → Firebase uid 획득
+                             │
+                             └─ keyring 저장 → Firebase 초기화 → 메인 화면
 ```
 
 ### 3.2 영역 선택 → 모드 분기 → 탐지 → 등록 플로우
@@ -271,7 +282,7 @@ pyinstaller build.spec
 - PyQt6 라이브러리
 - opencv-python-headless (바 탐지)
 - pytesseract (OCR 인터페이스)
-- Firebase Admin SDK + Google Auth 라이브러리
+- Google Auth + requests 라이브러리 (google-auth, google-auth-oauthlib, requests, keyring)
 - Google OAuth 클라이언트 설정 (client_secret.json)
 - 앱 아이콘 및 리소스
 - tesseract/ 폴더 (Tesseract 바이너리 + tessdata, 번들 포함 시)

@@ -16,19 +16,19 @@
 
 ### PC Agent
 
-| # | 작업 | 설명 | 우선순위 |
-|---|------|------|----------|
-| 1.1 | 프로젝트 초기 설정 | Python 프로젝트 구조, venv, requirements.txt | P0 |
-| 1.2 | Google OAuth 로그인 | google-auth-oauthlib 브라우저 OAuth, 토큰 발급/저장 | P0 |
-| 1.3 | 토큰 관리 | keyring 기반 토큰 안전 저장, 자동 갱신, 재로그인 | P0 |
-| 1.4 | Firebase 인증 연동 | Google credential → Firebase Auth 로그인, uid 획득 | P0 |
-| 1.5 | PC 기기 자동 등록 | 로그인 시 `users/{uid}/devices/{pcId}` 자동 등록, Presence | P0 |
-| 1.6 | 화면 영역 선택 UI | PyQt6 반투명 오버레이, 마우스 드래그 영역 지정 | P0 |
-| 1.7 | 색상 자동 감지 | 선택 영역에서 채움 색상 / 빈 색상 자동 판별, 수동 조정 UI | P0 |
-| 1.8 | 화면 캡처 모듈 | mss 기반 지정 영역 캡처, 주기적 실행 (스케줄러) | P0 |
-| 1.9 | OpenCV 바 탐지 + pytesseract OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + pytesseract OCR 숫자 감지 | P0 |
-| 1.10 | Firebase 데이터 전송 | `users/{uid}/tasks/{pcId}/{taskId}` 에 진행률 쓰기 | P0 |
-| 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 |
+| # | 작업 | 설명 | 우선순위 | 상태 |
+|---|------|------|----------|--------|
+| 1.1 | 프로젝트 초기 설정 | Python 프로젝트 구조, venv, requirements.txt | P0 | ✅ 완료 |
+| 1.2 | Google OAuth 로그인 | google-auth-oauthlib 브라우저 OAuth, 토큰 발급/저장 | P0 | ✅ 완료 |
+| 1.3 | 토큰 관리 | keyring 기반 토큰 안전 저장, 자동 갱신, 재로그인 | P0 | ✅ 완료 |
+| 1.4 | Firebase 인증 연동 | Google credential → Firebase Auth 로그인, uid 획득 | P0 | ✅ 완료 |
+| 1.5 | PC 기기 자동 등록 | 로그인 시 `users/{uid}/devices/{pcId}` 자동 등록, Presence | P0 | ✅ 완료 |
+| 1.6 | 화면 영역 선택 UI | PyQt6 반투명 오버레이, 마우스 드래그 영역 지정 | P0 | ✅ 완료 |
+| 1.7 | 색상 자동 감지 | 선택 영역에서 채움 색상 / 빈 색상 자동 판별, 수동 조정 UI | P0 | ✅ 완료 |
+| 1.8 | 화면 캡처 모듈 | mss 기반 지정 영역 캡처, 주기적 실행 (스케줄러) | P0 | ✅ 완료 |
+| 1.9 | OpenCV 바 탐지 + pytesseract OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + pytesseract OCR 숫자 감지 | P0 | ✅ 완료 |
+| 1.10 | Firebase 데이터 전송 | `users/{uid}/tasks/{pcId}/{taskId}` 에 진행률 쓰기 | P0 | ✅ 완료 |
+| 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 | ✅ 완료 |
 
 ### Firebase (Cloud)
 
@@ -161,6 +161,8 @@
 | UI 테마 | 기본 OS 스타일 | **다크 테마 (#0f0f1a 배경, 커스텀 색상 팔레트)** |
 | OCR 매칭 | fullmatch (정확 일치만) | **search (앞뒤 문자 포함 감지)** |
 | 추가된 항목 | — | 바 탐지 엔진(OpenCV), OCR 엔진(pytesseract), Tesseract 번들, 색상 감지, Google Auth, onUserCreate |
+| Firebase 연동 | firebase-admin SDK | **Firebase REST API (requests)** |
+| 인증 토큰 교환 | 미정 | **Google OAuth → signInWithIdp REST API → keyring 저장** |
 
 ---
 
