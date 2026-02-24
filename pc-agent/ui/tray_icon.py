@@ -23,17 +23,11 @@ class TrayIcon:
 
     def __init__(
         self,
-        on_select_area: Callable[[], None] | None = None,
-        on_toggle_monitoring: Callable[[], None] | None = None,
         on_show_window: Callable[[], None] | None = None,
         on_quit: Callable[[], None] | None = None,
     ) -> None:
-        self.on_select_area = on_select_area
-        self.on_toggle_monitoring = on_toggle_monitoring
         self.on_show_window = on_show_window
         self.on_quit = on_quit
-
-        self._monitoring = False
         self._icon: pystray.Icon | None = None
         self._thread: threading.Thread | None = None
 
@@ -70,35 +64,16 @@ class TrayIcon:
         if self._icon is not None:
             self._icon.title = text
 
-    def set_monitoring(self, active: bool) -> None:
-        """모니터링 상태를 변경한다."""
-        self._monitoring = active
-        if self._icon is not None:
-            self._icon.menu = self._build_menu()
-            self._icon.update_menu()
-
     def _build_menu(self) -> Menu:
         """컨텍스트 메뉴를 빌드한다."""
-        monitoring_label = "모니터링 정지" if self._monitoring else "모니터링 시작"
-
         return Menu(
             MenuItem("ProgressEye", None, enabled=False),
-            Menu.SEPARATOR,
-            MenuItem("영역 선택", self._on_select_area),
-            MenuItem(monitoring_label, self._on_toggle_monitoring),
             Menu.SEPARATOR,
             MenuItem("메인 창 열기", self._on_show_window),
             Menu.SEPARATOR,
             MenuItem("종료", self._on_quit_clicked),
         )
 
-    def _on_select_area(self, icon, item) -> None:
-        if self.on_select_area:
-            self.on_select_area()
-
-    def _on_toggle_monitoring(self, icon, item) -> None:
-        if self.on_toggle_monitoring:
-            self.on_toggle_monitoring()
 
     def _on_show_window(self, icon, item) -> None:
         if self.on_show_window:
