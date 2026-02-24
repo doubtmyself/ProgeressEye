@@ -54,18 +54,21 @@ class BarAnalyzer:
         fill_color: tuple[int, int, int],
         empty_color: tuple[int, int, int],
         tolerance: int = 30,
+        direction: str = "horizontal",
     ) -> AnalysisResult:
         """진행바 이미지를 분석하여 진행률을 산출한다.
-
         Args:
             image: 캡처된 진행바 PIL 이미지 (RGB).
             fill_color: 채움 색상 (R, G, B).
             empty_color: 빈 색상 (R, G, B).
             tolerance: 색상 허용 오차 (유클리드 거리).
-
+            direction: "horizontal" 또는 "vertical".
         Returns:
             AnalysisResult — 진행률, 신뢰도, 채움/전체 열 수.
         """
+        # 수직 바: 90° CW 회전 → 아래→위가 왼→오른쪽이 됨
+        if direction == "vertical":
+            image = image.transpose(Image.Transpose.ROTATE_270)
         # RGB 변환
         if image.mode != "RGB":
             image = image.convert("RGB")
@@ -169,3 +172,144 @@ class BarAnalyzer:
 
         raw_confidence = float(np.mean(scores)) * 0.7 + separation_score * 0.3
         return round(min(max(raw_confidence, 0.0), 1.0), 2)
+
+    # ── 적응형 분석 (색상 변화 대응) ──────────────────────────────
+
+    def analyze_adaptive(
+        self,
+        image: Image.Image,
+        empty_color: tuple[int, int, int] | None = None,
+        direction: str = "horizontal",
+    ) -> AnalysisResult:
+        """색상 변화에 강건한 적응형 진행률 분석.
+        찾아 진행률을 산출한다. 채움 색상이 변해도 동작한다.
+        Args:
+            image: 크롭된 진행바 이미지 (RGB).
+            empty_color: 빈 색상 (0%/100% 판정용).
+            direction: "horizontal" 또는 "vertical".
+        Returns:
+            AnalysisResult.
+        """
+        # 수직 바: 90° CW 회전 → 아래→위가 왼→오른쪽이 됨
+        if direction == "vertical":
+            image = image.transpose(Image.Transpose.ROTATE_270)
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        pixels = np.array(image, dtype=np.float64)
+        height, width, _ = pixels.shape
+
+        if width < 3 or height < 1:
+            log.warning("이미지가 너무 작아 적응형 분석 불가 (%dx%d)", width, height)
+            return AnalysisResult(
+                progress=0.0, confidence=0.0, filled_columns=0, total_columns=0
+            )
+
+        # 열별 평균 색상
+        col_means = pixels.mean(axis=0)  # (W, 3)
+
+        # 스무딩 (노이즈 제거)
+        k = max(3, width // 30)
+        smoothed = self._smooth_columns(col_means, k)
+
+        # 슬라이딩 윈도우 전환 점수
+        window = max(3, width // 15)
+        scores = self._transition_scores(smoothed, window)
+
+        if len(scores) == 0:
+            return self._judge_uniform(col_means, empty_color, width)
+
+        peak_idx = int(np.argmax(scores))
+        peak_score = float(scores[peak_idx])
+
+        # 전환점 열 위치
+        transition_col = window + peak_idx
+
+        # 유의미한 전환인지 판단
+        median_score = float(np.median(scores))
+        noise_floor = max(median_score * 3.0, 12.0)
+
+        if peak_score < noise_floor:
+            return self._judge_uniform(col_means, empty_color, width)
+
+        filled_count = transition_col
+        progress = round((filled_count / width) * 100, 1)
+        confidence = round(min(peak_score / 80.0, 1.0), 2)
+
+        log.debug(
+            "적응형 분석: %.1f%% (전환 col=%d/%d, 점수=%.1f, 신뢰도=%.2f)",
+            progress, transition_col, width, peak_score, confidence,
+        )
+
+        return AnalysisResult(
+            progress=progress,
+            confidence=confidence,
+            filled_columns=filled_count,
+            total_columns=width,
+        )
+
+    @staticmethod
+    def _smooth_columns(
+        col_means: NDArray[np.float64], k: int,
+    ) -> NDArray[np.float64]:
+        """열 평균 색상을 이동평균으로 스무딩한다."""
+        kernel = np.ones(k) / k
+        smoothed = np.empty_like(col_means)
+        for ch in range(col_means.shape[1]):
+            smoothed[:, ch] = np.convolve(col_means[:, ch], kernel, mode="same")
+        return smoothed
+
+    @staticmethod
+    def _transition_scores(
+        smoothed: NDArray[np.float64], window: int,
+    ) -> NDArray[np.float64]:
+        """각 열 위치의 좌/우 윈도우 간 색상 차이를 계산한다.
+
+        누적합으로 O(W) 시간에 윈도우 평균을 산출한다.
+        """
+        w = len(smoothed)
+        if w < 2 * window + 1:
+            return np.array([], dtype=np.float64)
+
+        cumsum = np.zeros((w + 1, 3), dtype=np.float64)
+        cumsum[1:] = np.cumsum(smoothed, axis=0)
+
+        positions = np.arange(window, w - window)
+        left_sums = cumsum[positions] - cumsum[positions - window]
+        right_sums = cumsum[positions + window + 1] - cumsum[positions + 1]
+
+        left_avgs = left_sums / window
+        right_avgs = right_sums / window
+
+        return np.sqrt(np.sum((left_avgs - right_avgs) ** 2, axis=1))
+
+    def _judge_uniform(
+        self,
+        col_means: NDArray[np.float64],
+        empty_color: tuple[int, int, int] | None,
+        width: int,
+    ) -> AnalysisResult:
+        """균일 바(전환점 없음)의 0%/100%를 판정한다."""
+        avg = col_means.mean(axis=0)
+
+        if empty_color is not None:
+            dist = float(
+                np.sqrt(np.sum((avg - np.array(empty_color, dtype=np.float64)) ** 2))
+            )
+            if dist < 35:
+                log.debug("균일 바 → 빈 색상 일치 (dist=%.1f) → 0%%", dist)
+                return AnalysisResult(
+                    progress=0.0, confidence=0.8,
+                    filled_columns=0, total_columns=width,
+                )
+            log.debug("균일 바 → 빈 색상 불일치 (dist=%.1f) → 100%%", dist)
+            return AnalysisResult(
+                progress=100.0, confidence=0.8,
+                filled_columns=width, total_columns=width,
+            )
+
+        log.debug("균일 바, 참조색 없음 → 0%%로 가정")
+        return AnalysisResult(
+            progress=0.0, confidence=0.3,
+            filled_columns=0, total_columns=width,
+        )
