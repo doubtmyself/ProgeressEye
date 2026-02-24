@@ -32,7 +32,8 @@ class RegionCard(QFrame):
     view_requested = pyqtSignal(str)
 
     def __init__(
-        self, region_id: str, label: str, parent: QWidget | None = None
+        self, region_id: str, label: str, region_type: str = "bar",
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.region_id = region_id
@@ -41,17 +42,23 @@ class RegionCard(QFrame):
             "RegionCard { background: white; border: 1px solid #e0e0e0; "
             "border-radius: 8px; padding: 12px; margin: 4px; }"
         )
-
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
-
-        # 체크박스 + 라벨 (헤더 행)
+        # 체크박스 + 타입 라벨 + 영역 라벨 (헤더 행)
         header_row = QHBoxLayout()
         self._checkbox = QCheckBox()
         self._checkbox.setChecked(True)
         self._checkbox.stateChanged.connect(self._on_check_changed)
         header_row.addWidget(self._checkbox)
-
+        # 타입 표시: "진행률 바" 또는 "진행률 퍼센트"
+        type_text = "진행률 퍼센트" if region_type == "ocr" else "진행률 바"
+        type_color = "#E67E22" if region_type == "ocr" else "#4285F4"
+        self._type_label = QLabel(type_text)
+        self._type_label.setStyleSheet(
+            f"color: white; background: {type_color}; border-radius: 3px; "
+            "padding: 1px 6px; font-size: 10px; font-weight: bold;"
+        )
+        header_row.addWidget(self._type_label)
         self._label = QLabel(label)
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         header_row.addWidget(self._label, stretch=1)
@@ -232,16 +239,14 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_layout)
 
     def add_region_display(
-        self, region_id: str, label: str, enabled: bool = True
+        self, region_id: str, label: str, region_type: str = "bar",
+        enabled: bool = True,
     ) -> None:
         """영역 카드를 추가한다."""
         if region_id in self._region_cards:
             return
-
-        # 빈 상태 라벨 숨김
         self._empty_label.hide()
-
-        card = RegionCard(region_id, label)
+        card = RegionCard(region_id, label, region_type=region_type)
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
         card.delete_requested.connect(self.region_delete_requested)

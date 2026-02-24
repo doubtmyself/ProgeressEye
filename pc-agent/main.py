@@ -105,7 +105,8 @@ class ProgressEyeApp:
         for region in self._config.regions:
             enabled = region.get("enabled", True)
             self._main_window.add_region_display(
-                region["id"], region.get("label", region["id"]), enabled=enabled
+                region["id"], region.get("label", region["id"]),
+                region_type=region.get("type", "bar"), enabled=enabled,
             )
 
     def _start_area_selection(self) -> None:
@@ -185,7 +186,7 @@ class ProgressEyeApp:
                 else direction,
             }
             self._config.add_region(region)
-            self._main_window.add_region_display(region_id, region["label"])
+            self._main_window.add_region_display(region_id, region["label"], region_type="bar")
             final_progress = dialog.progress
             self._main_window.update_progress(
                 region_id, final_progress, region["label"]
@@ -232,7 +233,7 @@ class ProgressEyeApp:
                 "height": area["height"],
             }
             self._config.add_region(region)
-            self._main_window.add_region_display(region_id, region["label"])
+            self._main_window.add_region_display(region_id, region["label"], region_type="ocr")
             final_progress = dialog.progress
             self._main_window.update_progress(
                 region_id, final_progress, region["label"]
