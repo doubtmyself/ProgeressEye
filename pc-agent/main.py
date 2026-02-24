@@ -212,6 +212,7 @@ class ProgressEyeApp:
             if not regions:
                 log.warning("등록된 영역 없음 — 영역 먼저 추가하세요")
                 return
+            interval = self._config.get('capture.interval_seconds', 30)
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True)
             self._tray.set_monitoring(True)
