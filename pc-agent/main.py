@@ -125,7 +125,7 @@ class ProgressEyeApp:
             log.error("영역 캡처 실패: %s", e)
             return
 
-        # 바 영역 자동 탐지 (상/하 여백 제거)
+        # 바 영역 자동 탐지 (OpenCV contour 기반)
         bar_region = self._bar_finder.find(image)
         bar_image = image.crop(bar_region.bbox) if bar_region else image
 
@@ -166,7 +166,7 @@ class ProgressEyeApp:
                 "fill_color": list(fill_color),
                 "empty_color": list(empty_color),
                 "color_tolerance": 30,
-                "direction": dialog.direction,
+                "direction": bar_region.direction if bar_region else "horizontal",
             }
 
             self._config.add_region(region)
@@ -237,9 +237,9 @@ class ProgressEyeApp:
 
         empty_color = tuple(region_config["empty_color"])
         label = region_config.get("label", region_id)
-        # 바 영역 탐지 + 적응형 분석
-        direction = region_config.get("direction", "horizontal")
-        bar_region = self._bar_finder.find(image, direction=direction)
+        # 바 영역 탐지 + 적응형 분석 (방향 자동 감지)
+        bar_region = self._bar_finder.find(image)
+        direction = bar_region.direction if bar_region else "horizontal"
         bar_image = image.crop(bar_region.bbox) if bar_region else image
         result = self._analyzer.analyze_adaptive(
             bar_image, empty_color=empty_color, direction=direction

@@ -2,7 +2,8 @@
 
 영역 선택 후 감지된 채움/빈 색상을 보여주고,
 스크린샷을 클릭하여 색상을 직접 지정할 수 있다.
-수평/수직 방향 전환, 영역 체크(빨간 사각형), 디버그 저장 기능 포함.
+영역 체크(빨간 사각형), 디버그 저장 기능 포함.
+방향(수평/수직)은 BarFinder가 자동 판별한다.
 """
 
 from datetime import datetime
@@ -11,7 +12,6 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QButtonGroup,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -24,8 +24,7 @@ from PyQt6.QtWidgets import (
 from PIL import Image as PILImage
 
 from core.bar_analyzer import BarAnalyzer
-from core.bar_finder import BarFinder, BarRegion
-from core.color_detector import ColorDetector
+from core.bar_finder import BarRegion
 from utils.logger import log
 
 
@@ -121,7 +120,7 @@ class ColorPreviewDialog(QDialog):
 
     감지된 채움/빈 색상과 진행률을 보여주고,
     스크린샷 클릭으로 색상을 직접 지정할 수 있다.
-    수평/수직 방향 전환, 영역 체크, 디버그 저장 기능 포함.
+    영역 체크, 디버그 저장 기능 포함.
     """
 
     colors_confirmed = pyqtSignal(tuple, tuple)
@@ -145,17 +144,21 @@ class ColorPreviewDialog(QDialog):
         self._empty_color = empty_color
         self._progress = detected_progress
         self._bar_region = bar_region
-        self._direction = "horizontal"
 
         self._analyzer = BarAnalyzer()
-        self._bar_finder = BarFinder()
-        self._color_detector = ColorDetector()
 
         self.setWindowTitle("색상 감지 결과")
         self.setFixedWidth(380)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
         self._setup_ui()
+
+    @property
+    def _direction(self) -> str:
+        """bar_region에서 자동 감지된 방향."""
+        if self._bar_region is not None:
+            return self._bar_region.direction
+        return "horizontal"
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -214,38 +217,21 @@ class ColorPreviewDialog(QDialog):
         self._progress_bar.setFixedHeight(24)
         layout.addWidget(self._progress_bar)
 
-        # 방향 + 영역 체크 행
-        direction_row = QHBoxLayout()
+        # 도구 행: 영역 체크 + 디버그 저장
+        tools_row = QHBoxLayout()
+        tools_row.addStretch()
 
-        self._btn_horizontal = QPushButton("수평")
-        self._btn_horizontal.setCheckable(True)
-        self._btn_horizontal.setChecked(True)
-        self._btn_vertical = QPushButton("수직")
-        self._btn_vertical.setCheckable(True)
-
-        self._direction_group = QButtonGroup(self)
-        self._direction_group.addButton(self._btn_horizontal, 0)
-        self._direction_group.addButton(self._btn_vertical, 1)
-        self._direction_group.idClicked.connect(self._on_direction_changed)
-
-        direction_row.addWidget(QLabel("방향:"))
-        direction_row.addWidget(self._btn_horizontal)
-        direction_row.addWidget(self._btn_vertical)
-        direction_row.addStretch()
-
-        # 영역 체크 버튼
         self._btn_area_check = QPushButton("🔍 영역 체크")
         self._btn_area_check.setToolTip("탐지된 바 영역을 빨간 사각형으로 표시")
         self._btn_area_check.clicked.connect(self._on_area_check)
-        direction_row.addWidget(self._btn_area_check)
+        tools_row.addWidget(self._btn_area_check)
 
-        # 디버그 저장 버튼
         self._btn_debug_save = QPushButton("💾 디버그 저장")
         self._btn_debug_save.setToolTip("temp/ 폴더에 디버그 이미지 저장")
         self._btn_debug_save.clicked.connect(self._on_debug_save)
-        direction_row.addWidget(self._btn_debug_save)
+        tools_row.addWidget(self._btn_debug_save)
 
-        layout.addLayout(direction_row)
+        layout.addLayout(tools_row)
 
         # 버튼 영역
         btn_layout = QHBoxLayout()
@@ -284,34 +270,6 @@ class ColorPreviewDialog(QDialog):
         log.info("빈 색상 지정: %s", self._empty_color)
         self._re_analyze()
 
-    # ── 방향 전환 ────────────────────────────────────────
-
-    def _on_direction_changed(self, button_id: int) -> None:
-        """방향 토글 시 바 재탐지 + 재분석."""
-        self._direction = "horizontal" if button_id == 0 else "vertical"
-        log.info("방향 전환: %s", self._direction)
-
-        # 전체 이미지에서 바 재탐지
-        bar_region = self._bar_finder.find(self._full_image, direction=self._direction)
-        self._bar_region = bar_region
-        if bar_region:
-            self._pil_image = self._full_image.crop(bar_region.bbox)
-        else:
-            self._pil_image = self._full_image
-
-        # 크롭된 바에서 색상 재감지
-        detection = self._color_detector.detect(self._pil_image)
-        self._fill_color = detection.fill_color
-        self._empty_color = detection.empty_color
-
-        # UI 업데이트
-        self._fill_swatch.set_color(self._fill_color)
-        self._fill_hex.setText(self._color_hex(self._fill_color))
-        self._empty_swatch.set_color(self._empty_color)
-        self._empty_hex.setText(self._color_hex(self._empty_color))
-
-        self._re_analyze()
-
     # ── 영역 체크 (빨간 사각형 오버레이) ─────────────────
 
     def _on_area_check(self) -> None:
@@ -320,7 +278,6 @@ class ColorPreviewDialog(QDialog):
             log.warning("탐지된 바 영역 없음 — 영역 체크 불가")
             return
 
-        # 원본 QImage 복사 후 빨간 사각형 그리기
         overlay = self._image.copy()
         painter = QPainter(overlay)
         pen = QPen(QColor(255, 0, 0), 2)
@@ -330,14 +287,14 @@ class ColorPreviewDialog(QDialog):
         painter.drawRect(br.left, br.top, br.width, br.height)
         painter.end()
 
-        # 표시만 변경 (색상 추출은 원본 유지)
         self._preview.set_display_image(overlay)
         log.info(
-            "영역 체크 표시: (%d,%d)-(%d,%d)",
+            "영역 체크 표시: (%d,%d)-(%d,%d) [%s]",
             br.left,
             br.top,
             br.right,
             br.bottom,
+            br.direction,
         )
 
     # ── 디버그 저장 ──────────────────────────────────────
@@ -349,15 +306,12 @@ class ColorPreviewDialog(QDialog):
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 전체 이미지
         full_path = temp_dir / f"{ts}_full.png"
         self._full_image.save(str(full_path))
 
-        # 크롭된 바 이미지
         bar_path = temp_dir / f"{ts}_bar.png"
         self._pil_image.save(str(bar_path))
 
-        # 정보 파일
         info_path = temp_dir / f"{ts}_info.txt"
         lines = [
             f"timestamp: {ts}",
@@ -376,7 +330,7 @@ class ColorPreviewDialog(QDialog):
     # ── 재분석 ───────────────────────────────────────────
 
     def _re_analyze(self) -> None:
-        """변경된 색상/방향으로 진행률을 재분석한다."""
+        """변경된 색상으로 진행률을 재분석한다."""
         result = self._analyzer.analyze(
             self._pil_image,
             self._fill_color,
@@ -407,8 +361,3 @@ class ColorPreviewDialog(QDialog):
     @property
     def empty_color(self) -> tuple[int, int, int]:
         return self._empty_color
-
-    @property
-    def direction(self) -> str:
-        """선택된 방향: "horizontal" 또는 "vertical"."""
-        return self._direction
