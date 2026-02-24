@@ -19,6 +19,7 @@ from core.freeze_detector import FreezeDetector
 from core.scheduler import CaptureScheduler
 from ui.area_selector import AreaSelector
 from ui.color_picker import BarPreviewDialog
+from ui.region_editor import RegionEditor
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
 from utils.logger import log
@@ -53,12 +54,15 @@ class ProgressEyeApp:
             on_quit=self._quit,
         )
         self._area_selector: AreaSelector | None = None
+        self._region_editor: RegionEditor | None = None
         self._task_counter = len(self._config.regions)
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
         self._main_window.toggle_monitoring_requested.connect(self._toggle_monitoring)
 
+        self._main_window.region_toggled.connect(self._on_region_toggled)
+        self._main_window.region_edit_requested.connect(self._start_region_edit)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -72,8 +76,9 @@ class ProgressEyeApp:
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
+            enabled = region.get("enabled", True)
             self._main_window.add_region_display(
-                region["id"], region.get("label", region["id"])
+                region["id"], region.get("label", region["id"]), enabled=enabled
             )
 
     def _start_area_selection(self) -> None:
@@ -180,6 +185,87 @@ class ProgressEyeApp:
             self._area_selector.deleteLater()
             self._area_selector = None
 
+
+    def _start_region_edit(self, region_id: str) -> None:
+        """영역 편집 오버레이를 시작한다.
+
+        pystray 스레드에서 호출될 수 있으므로 메인 스레드로 마셜링.
+        """
+        QTimer.singleShot(0, lambda: self._do_start_region_edit(region_id))
+
+    def _do_start_region_edit(self, region_id: str) -> None:
+        """실제 영역 편집 시작 (메인 스레드)."""
+        # config에서 영역 정보 조회
+        area = None
+        for r in self._config.regions:
+            if r["id"] == region_id:
+                area = r
+                break
+
+        if area is None:
+            log.warning("편집 대상 영역을 찾을 수 없음: %s", region_id)
+            return
+
+        log.info("영역 편집 시작: %s", region_id)
+
+        # 기존 에디터 정리
+        if self._region_editor is not None:
+            try:
+                self._region_editor.hide()
+            except RuntimeError:
+                pass
+            try:
+                self._region_editor.deleteLater()
+            except RuntimeError:
+                pass
+            self._region_editor = None
+
+        # 에디터 생성 + 표시
+        self._region_editor = RegionEditor(region_id, area)
+        self._region_editor.area_edited.connect(self._on_region_edited)
+        self._region_editor.cancelled.connect(self._on_region_edit_cancelled)
+        self._region_editor.show()
+
+    def _on_region_edited(self, region_id: str, new_area: dict) -> None:
+        """영역 편집 완료 — config 업데이트 + 스케줄러 갱신."""
+        self._config.update_region(region_id, new_area)
+
+        # 스케줄러가 실행 중이면 영역 갱신 (제거 → 재추가)
+        if self._scheduler.is_running:
+            self._scheduler.remove_region(region_id)
+            for r in self._config.regions:
+                if r["id"] == region_id and r.get("enabled", True):
+                    self._scheduler.add_region(r)
+                    break
+
+        log.info("영역 편집 완료: %s", region_id)
+
+        if self._region_editor is not None:
+            self._region_editor.deleteLater()
+            self._region_editor = None
+
+    def _on_region_edit_cancelled(self) -> None:
+        """영역 편집 취소."""
+        log.info("영역 편집 취소됨")
+        if self._region_editor is not None:
+            self._region_editor.deleteLater()
+            self._region_editor = None
+
+    def _on_region_toggled(self, region_id: str, enabled: bool) -> None:
+        """영역 체크박스 토글 시 호출."""
+        self._config.update_region(region_id, {"enabled": enabled})
+        if self._scheduler.is_running:
+            if enabled:
+                # 활성화 — 스케줄러에 영역 추가
+                for r in self._config.regions:
+                    if r["id"] == region_id:
+                        self._scheduler.add_region(r)
+                        break
+            else:
+                # 비활성화 — 스케줄러에서 영역 제거
+                self._scheduler.remove_region(region_id)
+        log.info("영역 토글: %s → %s", region_id, "활성" if enabled else "비활성")
+
     def _toggle_monitoring(self) -> None:
         """모니터링 시작/정지 토글.
 
@@ -196,9 +282,11 @@ class ProgressEyeApp:
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
         else:
-            regions = self._config.regions
+            regions = [
+                r for r in self._config.regions if r.get("enabled", True)
+            ]
             if not regions:
-                log.warning("등록된 영역 없음 — 영역 먼저 추가하세요")
+                log.warning("활성화된 영역 없음 — 영역을 추가하거나 체크하세요")
                 return
             interval = self._config.get("capture.interval_seconds", 30)
             self._scheduler.start(regions, interval)

@@ -103,7 +103,8 @@ class Config:
         return self.get("capture.regions", [])
 
     def add_region(self, region: dict[str, Any]) -> None:
-        """캡처 영역을 추가한다."""
+        """캡처 영역을 추가한다. enabled 기본값 True."""
+        region.setdefault("enabled", True)
         regions = self.regions
         regions.append(region)
         self.set("capture.regions", regions)

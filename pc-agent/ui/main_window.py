@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QScrollArea,
     QFrame,
+    QCheckBox,
 )
 
 from utils.logger import log
@@ -25,6 +26,9 @@ from utils.logger import log
 
 class RegionCard(QFrame):
     """모니터링 영역 카드 위젯."""
+
+    toggled = pyqtSignal(str, bool)
+    edit_requested = pyqtSignal(str)
 
     def __init__(
         self, region_id: str, label: str, parent: QWidget | None = None
@@ -40,10 +44,17 @@ class RegionCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
 
-        # 라벨
+        # 체크박스 + 라벨 (헤더 행)
+        header_row = QHBoxLayout()
+        self._checkbox = QCheckBox()
+        self._checkbox.setChecked(True)
+        self._checkbox.stateChanged.connect(self._on_check_changed)
+        header_row.addWidget(self._checkbox)
+
         self._label = QLabel(label)
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        layout.addWidget(self._label)
+        header_row.addWidget(self._label, stretch=1)
+        layout.addLayout(header_row)
 
         # 프로그레스바 + 퍼센트
         progress_row = QHBoxLayout()
@@ -66,7 +77,28 @@ class RegionCard(QFrame):
         # 마지막 업데이트 시간
         self._time_label = QLabel("대기 중")
         self._time_label.setStyleSheet("color: #888; font-size: 11px;")
-        layout.addWidget(self._time_label)
+        # 편집 버튼 (시간 라벨 옆)
+        bottom_row = QHBoxLayout()
+        bottom_row.addWidget(self._time_label)
+        bottom_row.addStretch()
+
+        self._btn_edit = QPushButton("✏️ 편집")
+        self._btn_edit.setFixedHeight(24)
+        self._btn_edit.setStyleSheet(
+            "QPushButton { background: #f0f0f0; border: 1px solid #ccc; "
+            "border-radius: 4px; padding: 0 10px; font-size: 11px; }"
+            "QPushButton:hover { background: #e0e0e0; }"
+        )
+        self._btn_edit.clicked.connect(
+            lambda: self.edit_requested.emit(self.region_id)
+        )
+        bottom_row.addWidget(self._btn_edit)
+        layout.addLayout(bottom_row)
+
+    def _on_check_changed(self, state: int) -> None:
+        """체크박스 상태 변경 시 시그널을 발생시킨다."""
+        enabled = state == Qt.CheckState.Checked.value
+        self.toggled.emit(self.region_id, enabled)
 
     def update_progress(self, progress: float) -> None:
         """진행률을 업데이트한다."""
@@ -78,6 +110,10 @@ class RegionCard(QFrame):
         """라벨을 변경한다."""
         self._label.setText(label)
 
+    def set_checked(self, checked: bool) -> None:
+        """체크박스 상태를 설정한다."""
+        self._checkbox.setChecked(checked)
+
 
 class MainWindow(QMainWindow):
     """ProgressEye 메인 윈도우.
@@ -88,6 +124,8 @@ class MainWindow(QMainWindow):
     select_area_requested = pyqtSignal()
     toggle_monitoring_requested = pyqtSignal()
     quit_requested = pyqtSignal()
+    region_toggled = pyqtSignal(str, bool)
+    region_edit_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -172,7 +210,9 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(btn_layout)
 
-    def add_region_display(self, region_id: str, label: str) -> None:
+    def add_region_display(
+        self, region_id: str, label: str, enabled: bool = True
+    ) -> None:
         """영역 카드를 추가한다."""
         if region_id in self._region_cards:
             return
@@ -181,6 +221,9 @@ class MainWindow(QMainWindow):
         self._empty_label.hide()
 
         card = RegionCard(region_id, label)
+        card.set_checked(enabled)
+        card.toggled.connect(self.region_toggled)
+        card.edit_requested.connect(self.region_edit_requested)
         self._region_cards[region_id] = card
         # addStretch 앞에 삽입
         self._region_layout.insertWidget(self._region_layout.count() - 1, card)
