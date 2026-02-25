@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from utils.logger import log
+from utils.i18n import t
 
 # ── Color Palette ──────────────────────────────────────────────
 APP_BG = "#0f0f1a"
@@ -69,6 +70,7 @@ class RegionCard(QFrame):
     ) -> None:
         super().__init__(parent)
         self.region_id = region_id
+        self._region_type = region_type
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setStyleSheet(
             f"RegionCard {{"
@@ -83,7 +85,7 @@ class RegionCard(QFrame):
         layout.setSpacing(8)
 
 
-        type_text = "진행률 숫자" if region_type == "ocr" else "진행률 바"
+        type_text = t("type_ocr") if region_type == "ocr" else t("type_bar")
         # ── Row 1: 작업 이름 라벨 (큰 글씨, 볼드) ──
         self._label = QLabel(label)
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
@@ -151,7 +153,7 @@ class RegionCard(QFrame):
         layout.addWidget(self._progress_bar)
 
         # ── Bottom row: timestamp ──
-        self._time_label = QLabel("대기 중")
+        self._time_label = QLabel(t("card_standby"))
         self._time_label.setStyleSheet(
             f"color: {UPDATE_TEXT}; font-size: 11px;"
             f"background: transparent; border: none;"
@@ -175,7 +177,7 @@ class RegionCard(QFrame):
             f"}}"
         )
 
-        self._btn_edit = QPushButton("✏ 작업 수정")
+        self._btn_edit = QPushButton(t("btn_edit"))
         self._btn_edit.setFixedHeight(24)
         self._btn_edit.setStyleSheet(btn_style)
         self._btn_edit.clicked.connect(
@@ -183,7 +185,7 @@ class RegionCard(QFrame):
         )
         btn_row.addWidget(self._btn_edit)
 
-        self._btn_view = QPushButton("👁 영역보기")
+        self._btn_view = QPushButton(t("btn_view"))
         self._btn_view.setFixedHeight(24)
         self._btn_view.setStyleSheet(btn_style)
         self._btn_view.clicked.connect(
@@ -191,7 +193,7 @@ class RegionCard(QFrame):
         )
         btn_row.addWidget(self._btn_view)
 
-        self._btn_delete = QPushButton("🗑 삭제")
+        self._btn_delete = QPushButton(t("btn_delete"))
         self._btn_delete.setFixedHeight(24)
         self._btn_delete.setStyleSheet(btn_style)
         self._btn_delete.clicked.connect(
@@ -213,7 +215,7 @@ class RegionCard(QFrame):
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
         self._progress_bar.setFormat(f"{progress:.1f}%")
-        self._time_label.setText(f"⏱ 업데이트: {datetime.now().strftime('%H:%M:%S')}")
+        self._time_label.setText(t("card_update").format(time=datetime.now().strftime('%H:%M:%S')))
 
     def set_label(self, label: str) -> None:
         """라벨을 변경한다."""
@@ -223,6 +225,12 @@ class RegionCard(QFrame):
         """체크박스 상태를 설정한다."""
         self._checkbox.setChecked(checked)
 
+    def refresh_texts(self) -> None:
+        """언어 변경 시 카드 텍스트를 갱신한다."""
+        self._btn_edit.setText(t("btn_edit"))
+        self._btn_view.setText(t("btn_view"))
+        self._btn_delete.setText(t("btn_delete"))
+        self._type_label.setText(t("type_ocr") if self._region_type == "ocr" else t("type_bar"))
 
 class MainWindow(QMainWindow):
     """ProgressEye 메인 윈도우.
@@ -237,6 +245,7 @@ class MainWindow(QMainWindow):
     region_delete_requested = pyqtSignal(str)
     region_view_requested = pyqtSignal(str)
     region_edit_requested = pyqtSignal(str)
+    settings_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -259,20 +268,46 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # ── Header ──
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
         title = QLabel("ProgressEye")
         title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent;")
-        layout.addWidget(title)
+        header_row.addWidget(title)
+        header_row.addStretch()
 
-        subtitle = QLabel("진행률 모니터링")
-        subtitle.setStyleSheet(
+        self._btn_settings = QPushButton("⚙")
+        self._btn_settings.setFixedSize(32, 32)
+        self._btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_settings.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent;"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 6px;"
+            f"  color: {SUBTITLE_TEXT};"
+            f"  font-size: 16px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: {CARD_BG};"
+            f"  color: {TITLE_TEXT};"
+            f"  border-color: {CHECKBOX_BLUE};"
+            f"}}"
+        )
+        self._btn_settings.clicked.connect(
+            lambda: self.settings_requested.emit()
+        )
+        header_row.addWidget(self._btn_settings)
+        layout.addLayout(header_row)
+
+        self._subtitle = QLabel(t("progress_monitoring"))
+        self._subtitle.setStyleSheet(
             f"color: {SUBTITLE_TEXT}; font-size: 13px;"
             f"margin-bottom: 4px; background: transparent;"
         )
-        layout.addWidget(subtitle)
+        layout.addWidget(self._subtitle)
 
         # ── Status indicator ──
-        self._status_label = QLabel("● 대기 중")
+        self._status_label = QLabel(t("status_standby"))
         self._status_label.setStyleSheet(
             f"color: {STATUS_GRAY}; font-size: 13px;"
             f"font-weight: bold; background: transparent;"
@@ -317,7 +352,7 @@ class MainWindow(QMainWindow):
 
         # ── Empty state label ──
         self._empty_label = QLabel(
-            "등록된 모니터링 영역이 없습니다.\n아래 버튼을 눌러 시작하세요."
+            t("empty_state")
         )
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet(
@@ -347,19 +382,19 @@ class MainWindow(QMainWindow):
             f"}}"
         )
 
-        self._btn_add_bar = QPushButton("진행률 바 추가")
+        self._btn_add_bar = QPushButton(t("btn_add_bar"))
         self._btn_add_bar.setFixedHeight(36)
         self._btn_add_bar.setStyleSheet(_btn_add_style)
         self._btn_add_bar.clicked.connect(self.select_area_requested.emit)
         btn_layout.addWidget(self._btn_add_bar)
 
-        self._btn_add_ocr = QPushButton("진행률 숫자 추가")
+        self._btn_add_ocr = QPushButton(t("btn_add_ocr"))
         self._btn_add_ocr.setFixedHeight(36)
         self._btn_add_ocr.setStyleSheet(_btn_add_style)
         self._btn_add_ocr.clicked.connect(self.select_ocr_area_requested.emit)
         btn_layout.addWidget(self._btn_add_ocr)
 
-        self._btn_toggle = QPushButton("모니터링 시작")
+        self._btn_toggle = QPushButton(t("btn_start"))
         self._btn_toggle.setFixedHeight(36)
         self._btn_toggle.setStyleSheet(
             f"QPushButton {{"
@@ -427,12 +462,12 @@ class MainWindow(QMainWindow):
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active
         if active:
-            self._status_label.setText("● 모니터링 중")
+            self._status_label.setText(t("status_monitoring"))
             self._status_label.setStyleSheet(
                 f"color: {STATUS_GREEN}; font-size: 13px;"
                 f"font-weight: bold; background: transparent;"
             )
-            self._btn_toggle.setText("● 모니터링 정지")
+            self._btn_toggle.setText(t("btn_stop"))
             self._btn_toggle.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: {BTN_STOP_BG};"
@@ -448,12 +483,12 @@ class MainWindow(QMainWindow):
                 f"}}"
             )
         else:
-            self._status_label.setText("● 대기 중")
+            self._status_label.setText(t("status_standby"))
             self._status_label.setStyleSheet(
                 f"color: {STATUS_GRAY}; font-size: 13px;"
                 f"font-weight: bold; background: transparent;"
             )
-            self._btn_toggle.setText("모니터링 시작")
+            self._btn_toggle.setText(t("btn_start"))
             self._btn_toggle.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: {BTN_START_BG};"
@@ -468,6 +503,21 @@ class MainWindow(QMainWindow):
                 f"  background-color: #2563eb;"
                 f"}}"
             )
+
+    def refresh_texts(self) -> None:
+        """언어 변경 시 UI 텍스트를 갱신한다."""
+        self._subtitle.setText(t("progress_monitoring"))
+        self._empty_label.setText(t("empty_state"))
+        self._btn_add_bar.setText(t("btn_add_bar"))
+        self._btn_add_ocr.setText(t("btn_add_ocr"))
+        if self._monitoring:
+            self._status_label.setText(t("status_monitoring"))
+            self._btn_toggle.setText(t("btn_stop"))
+        else:
+            self._status_label.setText(t("status_standby"))
+            self._btn_toggle.setText(t("btn_start"))
+        for card in self._region_cards.values():
+            card.refresh_texts()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""

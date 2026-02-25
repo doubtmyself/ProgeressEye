@@ -12,6 +12,7 @@ import pystray
 from pystray import MenuItem, Menu
 
 from utils.logger import log
+from utils.i18n import t
 
 
 class TrayIcon:
@@ -69,9 +70,9 @@ class TrayIcon:
         return Menu(
             MenuItem("ProgressEye", None, enabled=False),
             Menu.SEPARATOR,
-            MenuItem("메인 창 열기", self._on_show_window),
+            MenuItem(t("tray_open"), self._on_show_window),
             Menu.SEPARATOR,
-            MenuItem("종료", self._on_quit_clicked),
+            MenuItem(t("tray_quit"), self._on_quit_clicked),
         )
 
 
