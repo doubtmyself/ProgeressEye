@@ -64,6 +64,7 @@ class ProgressEyeApp:
         self._realtime_db: RealtimeDB | None = None
         self._device_manager: DeviceManager | None = None
         self._heartbeat_timer: QTimer | None = None
+        self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
 
         # UI
         self._main_window = MainWindow()
@@ -92,6 +93,7 @@ class ProgressEyeApp:
         self._main_window.region_toggled.connect(self._on_region_toggled)
         self._main_window.region_delete_requested.connect(self._on_region_deleted)
         self._main_window.region_view_requested.connect(self._show_region_view)
+        self._main_window.region_edit_requested.connect(self._on_edit_region)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -293,6 +295,14 @@ class ProgressEyeApp:
     def _on_area_selected(self, area: dict) -> None:
         """영역 선택 완료 — 모드에 따라 바/OCR 플로우 분기."""
         log.info("영역 선택됨 (mode=%s): %s", self._selection_mode, area)
+
+        # 작업 수정 중이면 기존 영역 업데이트
+        if self._editing_region_id is not None:
+            editing_id = self._editing_region_id
+            self._editing_region_id = None
+            self._update_region_area(editing_id, area)
+            return
+
         if self._selection_mode == "ocr":
             self._on_ocr_area_selected(area)
         else:
@@ -420,6 +430,27 @@ class ProgressEyeApp:
                 self._scheduler.remove_region(region_id)
         log.info("영역 토글: %s → %s", region_id, "활성" if enabled else "비활성")
 
+    def _update_region_area(self, region_id: str, area: dict) -> None:
+        """재선택된 영역으로 기존 작업의 좌표를 업데이트하고 프리뷰를 다시 열다."""
+        updates = {
+            "monitor": area.get("monitor", 0),
+            "x": area["x"],
+            "y": area["y"],
+            "width": area["width"],
+            "height": area["height"],
+        }
+        self._config.update_region(region_id, updates)
+        # 스케줄러 영역도 갱신
+        if self._scheduler.is_running:
+            self._scheduler.remove_region(region_id)
+            for r in self._config.regions:
+                if r["id"] == region_id:
+                    self._scheduler.add_region(r)
+                    break
+        log.info("영역 좌표 업데이트: %s", region_id)
+        # 업데이트된 영역으로 편집 다이얼로그 다시 열기
+        self._do_edit_region(region_id)
+
     def _on_region_deleted(self, region_id: str) -> None:
         """영역 삭제 요청 시 호출."""
         # 스케줄러에서 제거
@@ -430,6 +461,90 @@ class ProgressEyeApp:
         # UI에서 제거
         self._main_window.remove_region_display(region_id)
         log.info("영역 삭제: %s", region_id)
+
+    def _on_edit_region(self, region_id: str) -> None:
+        """작업 수정 요청 — 기존 영역 데이터로 프리뷰 다이얼로그를 연다."""
+        QTimer.singleShot(0, lambda: self._do_edit_region(region_id))
+
+    def _do_edit_region(self, region_id: str) -> None:
+        """실제 작업 수정 (메인 스레드)."""
+        # 1. config에서 영역 정보 조회
+        area = None
+        for r in self._config.regions:
+            if r["id"] == region_id:
+                area = r
+                break
+        if area is None:
+            return
+
+        # 2. 영역 캡처
+        try:
+            image = self._capturer.capture(area)
+        except Exception as e:
+            log.error("영역 캡처 실패: %s", e)
+            return
+
+        region_type = area.get("type", "bar")
+        current_label = area.get("label", "")
+
+        if region_type == "ocr":
+            # OCR 타입: OcrPreviewDialog
+            ocr_results = self._ocr_reader.find_percentages(image)
+            detected_progress = None
+            if ocr_results:
+                best = max(ocr_results, key=lambda r: r.confidence)
+                detected_progress = best.progress
+
+            qimage = self._pil_to_qimage(image)
+            dialog = OcrPreviewDialog(
+                image=qimage,
+                ocr_results=ocr_results,
+                detected_progress=detected_progress,
+            )
+            dialog._task_name_input.setText(current_label)
+
+            if dialog.exec():
+                new_label = dialog.task_name or current_label
+                self._config.update_region(region_id, {"label": new_label})
+                self._main_window.update_progress(
+                    region_id, dialog.progress, new_label
+                )
+                log.info("OCR 영역 수정: %s → %s", region_id, new_label)
+            else:
+                # 재선택 — 영역 선택 후 기존 작업 업데이트
+                self._editing_region_id = region_id
+                QTimer.singleShot(100, self._start_ocr_area_selection)
+        else:
+            # 바 타입: BarPreviewDialog
+            bar_region = self._bar_finder.find(image)
+            bar_image = image.crop(bar_region.bbox) if bar_region else image
+            direction = bar_region.direction if bar_region else "horizontal"
+            result = self._analyzer.analyze(bar_image, direction=direction)
+
+            qimage = self._pil_to_qimage(image)
+            dialog = BarPreviewDialog(
+                image=qimage,
+                full_image=image,
+                bar_image=bar_image,
+                detected_progress=result.progress,
+                bar_region=bar_region,
+            )
+            dialog._task_name_input.setText(current_label)
+
+            if dialog.exec():
+                new_label = dialog.task_name or current_label
+                updates: dict = {"label": new_label}
+                if dialog.bar_region:
+                    updates["direction"] = dialog.bar_region.direction
+                self._config.update_region(region_id, updates)
+                self._main_window.update_progress(
+                    region_id, dialog.progress, new_label
+                )
+                log.info("바 영역 수정: %s → %s", region_id, new_label)
+            else:
+                # 재선택 — 영역 선택 후 기존 작업 업데이트
+                self._editing_region_id = region_id
+                QTimer.singleShot(100, self._start_area_selection)
 
     def _show_region_view(self, region_id: str) -> None:
         """영역의 바 탐지 결과를 전체 화면에 표시한다."""
