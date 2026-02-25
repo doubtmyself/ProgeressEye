@@ -19,6 +19,7 @@ venv/
 Thumbs.db
 Desktop.ini
 .DS_Store
+nul
 
 # Claude config
 .claude/
@@ -30,8 +31,15 @@ pc-agent/tesseract/
 pc-agent/client_secret.json
 pc-agent/token.json
 
+# 런타임 생성 파일
+pc-agent/templates/
+pc-agent/temp/
+
+# 테스트 결과물 (생성 이미지)
+pc-agent/sampleBar/result/
+pc-agent/sampleBar/result1/
+pc-agent/samplePersent/result/
+
 # Stray files
 C
-nul
-
 GoogleCloud
