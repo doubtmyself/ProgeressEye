@@ -51,6 +51,7 @@ import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 
 // ── Local palette ──
 private val Slate400 = Color(0xFF94A3B8)
@@ -81,6 +82,11 @@ fun MainScreen(
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
+    // RTDB listener active only while app is in foreground (started/resumed)
+    LifecycleStartEffect(dashboardViewModel) {
+        dashboardViewModel.startListening()
+        onStopOrDispose { dashboardViewModel.stopListening() }
+    }
     Scaffold(
         topBar = {
             val currentNav = navItems[selectedTab]

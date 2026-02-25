@@ -31,13 +31,12 @@ class DashboardViewModel : ViewModel() {
     private var devicesRef: DatabaseReference? = null
     private var devicesListener: ValueEventListener? = null
 
-    init {
-        startListening()
-    }
+    // Lifecycle-driven: MainScreen calls startListening / stopListening
 
     // ── Listener setup ─────────────────────────────────────
 
-    private fun startListening() {
+    fun startListening() {
+        if (devicesListener != null) return  // already listening
         val uid = auth.currentUser?.uid
         if (uid == null) {
             _uiState.value = DashboardUiState(
@@ -135,13 +134,18 @@ class DashboardViewModel : ViewModel() {
         commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
     }
 
-    // ── Lifecycle cleanup ──────────────────────────────────
+    // ── Lifecycle: pause / cleanup ──────────────────────
 
-    override fun onCleared() {
-        super.onCleared()
+    fun stopListening() {
         devicesListener?.let { listener ->
             devicesRef?.removeEventListener(listener)
         }
+        devicesListener = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopListening()
     }
 
     companion object {
