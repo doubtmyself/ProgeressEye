@@ -13,11 +13,10 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.RemoveRedEye
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -84,16 +83,8 @@ fun MainScreen(
 
     Scaffold(
         topBar = {
-            when (selectedTab) {
-                0 -> DashboardTopBar(onSettingsClick = { selectedTab = 2 })
-                else -> TabTopBar(
-                    title = when (selectedTab) {
-                        1 -> "Alerts"
-                        2 -> "Settings"
-                        else -> ""
-                    },
-                )
-            }
+            val currentNav = navItems[selectedTab]
+            CommonTopBar(title = currentNav.label, icon = currentNav.selectedIcon)
         },
         bottomBar = {
             MainBottomBar(
@@ -117,12 +108,12 @@ fun MainScreen(
 }
 
 // ═════════════════════════════════════════════════════════
-// Dashboard Top Bar — logo + title + settings
+// Common Top Bar — icon + title, shared across all tabs
 // ═════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DashboardTopBar(onSettingsClick: () -> Unit) {
+private fun CommonTopBar(title: String, icon: ImageVector) {
     TopAppBar(
         title = {
             Row(
@@ -137,50 +128,19 @@ private fun DashboardTopBar(onSettingsClick: () -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.RemoveRedEye,
+                        imageVector = icon,
                         contentDescription = null,
                         tint = Primary,
                         modifier = Modifier.size(20.dp),
                     )
                 }
                 Text(
-                    text = "ProgressEye",
+                    text = title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     letterSpacing = (-0.3).sp,
                 )
             }
-        },
-        actions = {
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = "Settings",
-                    tint = Slate400,
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = BackgroundDark,
-            titleContentColor = OnSurfaceDark,
-        ),
-    )
-}
-
-// ═════════════════════════════════════════════════════════
-// Simple Top Bar — for Alerts / Settings tabs
-// ═════════════════════════════════════════════════════════
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TabTopBar(title: String) {
-    TopAppBar(
-        title = {
-            Text(
-                text = title,
-                fontWeight = FontWeight.Bold,
-                fontSize = 20.sp,
-            )
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = BackgroundDark,
