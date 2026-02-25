@@ -2,6 +2,8 @@
 
 PC 화면의 진행바를 캡처하여 **진행바 픽셀 분석(OpenCV)** 또는 **OCR 숫자 감지(pytesseract)** 두 가지 모드로 진행률(%)을 산출하는 Windows 데스크톱 에이전트.
 
+Firebase Realtime Database를 통해 모바일 앱과 실시간 동기화한다.
+
 ## 실행 방법
 
 ```bash
@@ -58,6 +60,7 @@ winget install UB-Mannheim.TesseractOCR
 - **이미지 변경 감지**: 최초 등록 시점의 템플릿 이미지와 비교 (64×64 grayscale + Pearson 상관계수), 화면이 크게 변경되면 자동 정지
 - **프리징 감지**: 설정 시간(1~60분) 동안 진행률 변화 없으면 멈춤으로 판정
 - **템플릿 이미지 영구 저장**: `templates/{region_id}.png`에 영역 등록 시점의 스크린샷을 저장, 작업 삭제 시에만 파일 삭제
+- **모니터 절전 방지**: 모니터링 중 `SetThreadExecutionState`로 모니터 절전을 자동 방지, 정지 시 복귀
 
 ### 완료 시나리오 (3가지)
 
@@ -135,9 +138,49 @@ OCR 모드에서는 두 가지 최적화를 적용한다:
 
 - **다크 테마**: 커스텀 색상 팔레트 (`#0f0f1a` ~ `#3b82f6`)
 - **설정 오버레이**: MainWindow 내부 모달 (모니터링 간격, 언어, 프리징 감지 시간, 계정 정보, 로그아웃)
-- **다국어**: 한국어 / 영어 (i18n 모듈)
+- **웰컴 가이드**: 최초 로그인 시 2단계 위저드 (언어 선택 → 절전 방지 안내 + 설정)
+- **버튼 Tooltip**: 모든 버튼에 기능 설명 Tooltip 표시
+- **다국어**: 한국어 / 영어 (i18n 모듈, 기본 언어: English)
 - **로그아웃**: 토큰 삭제 → 앱 종료
 - **시스템 트레이**: 최소화 시 트레이 상주, 완료 알림 표시
+
+## 프로젝트 구조
+
+```
+pc-agent/
+├── main.py                  # 앱 진입점, 모니터링 루프, Firebase 전송
+├── config.py                # 설정 관리 (JSON 파일 기반)
+├── auth/
+│   ├── google_oauth.py      # Google OAuth 2.0 로그인
+│   ├── firebase_auth.py     # Firebase REST API 인증
+│   └── token_manager.py     # keyring 토큰 저장/로드/갱신
+├── core/
+│   ├── capturer.py          # mss 화면 캡처 (멀티모니터)
+│   ├── bar_finder.py        # OpenCV 4전략 진행바 탐지
+│   ├── bar_analyzer.py      # 바 fill 비율 계산 (그라데이션 지원)
+│   ├── ocr_reader.py        # pytesseract OCR 숫자 감지
+│   ├── freeze_detector.py   # 프리징 감지
+│   └── scheduler.py         # 모니터링 스케줄러
+├── firebase/
+│   ├── realtime_db.py       # Firebase RTDB REST API 래퍼
+│   └── device_manager.py    # 기기 등록/충돌 관리
+├── ui/
+│   ├── main_window.py       # PyQt6 메인 윈도우
+│   ├── settings_dialog.py   # 설정 오버레이 (웰컴 위저드 포함)
+│   ├── area_selector.py     # 영역 선택 투명 오버레이
+│   ├── color_picker.py      # 바 색상 선택
+│   ├── ocr_preview.py       # OCR 미리보기 다이얼로그
+│   ├── region_viewer.py     # 선택 영역 하이라이트
+│   └── tray_icon.py         # 시스템 트레이 아이콘
+├── utils/
+│   ├── i18n.py              # 한/영 번역 모듈
+│   └── logger.py            # 로깅 설정
+├── templates/               # 영역 등록 시점 스크린샷 (런타임 생성)
+├── tesseract/               # Tesseract 바이너리 (setup_tesseract.py로 설치)
+├── client_secret.json       # Google OAuth 클라이언트 설정 (gitignore)
+├── setup_tesseract.py       # Tesseract 자동 설치 스크립트
+└── requirements.txt         # Python 의존성
+```
 
 ## Google OAuth 설정
 
