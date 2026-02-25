@@ -283,6 +283,15 @@ class RegionCard(QFrame):
         self._type_label.setText(t("monitoring_check"))
         self._threshold_label.setText(t("alert_threshold_label"))
 
+    def set_warning(self, message: str) -> None:
+        """카드에 경고 상태를 표시한다."""
+        self._time_label.setText(message)
+        self._time_label.setStyleSheet(
+            f"color: #ef4444; font-size: 11px;"
+            f"background: transparent; border: none; font-weight: bold;"
+        )
+        self._checkbox.setChecked(False)
+
 class MainWindow(QMainWindow):
     """ProgressEye 메인 윈도우.
 
@@ -523,6 +532,11 @@ class MainWindow(QMainWindow):
         if label:
             card.set_label(label)
 
+    def set_region_warning(self, region_id: str, message: str) -> None:
+        """영역 카드에 경고 상태를 표시한다."""
+        card = self._region_cards.get(region_id)
+        if card is not None:
+            card.set_warning(message)
     def set_monitoring_state(self, active: bool, interval: int = 0) -> None:
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active

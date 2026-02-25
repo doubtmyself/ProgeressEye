@@ -53,6 +53,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "device_conflict_cancel": "취소",
         "image_changed_completed": "📸 {label} 작업 화면이 변경되었습니다. 완료에 가까워 완료 처리합니다. ({progress:.1f}%)",
         "image_changed_warning": "⚠️ {label} 작업 화면이 크게 변경되었습니다. 모니터링을 중지합니다.",
+        "image_changed_stopped": "⚠️ 화면 변경으로 중지됨",
     },
     "en": {
         "progress_monitoring": "Progress Monitoring",
@@ -101,6 +102,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "device_conflict_cancel": "Cancel",
         "image_changed_completed": "📸 {label} screen changed. Completing task as progress was near threshold. ({progress:.1f}%)",
         "image_changed_warning": "⚠️ {label} screen changed significantly. Monitoring stopped.",
+        "image_changed_stopped": "⚠️ Stopped: screen changed",
     },
 }
 

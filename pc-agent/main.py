@@ -809,6 +809,14 @@ class ProgressEyeApp:
         """모니터링 시작/정지 토글."""
         QTimer.singleShot(0, self._do_toggle_monitoring)
 
+    def _auto_stop_monitoring(self) -> None:
+        """모든 영역이 제외되어 모니터링을 자동 정지한다 (메인 스레드)."""
+        if self._scheduler.is_running:
+            self._scheduler.stop()
+            self._main_window.set_monitoring_state(False)
+            self._tray.update_tooltip("ProgressEye - 대기 중")
+            log.info("모니터링 자동 정지 (활성 영역 없음)")
+
     def _do_toggle_monitoring(self) -> None:
         """실제 모니터링 토글 (메인 스레드)."""
         if self._scheduler.is_running:
@@ -898,12 +906,24 @@ class ProgressEyeApp:
                         label, similarity, last_progress,
                     )
                     warn_msg = t("image_changed_warning").format(label=label)
+                    stopped_msg = t("image_changed_stopped")
                     self._action_queue.put(
                         lambda _msg=warn_msg: self._tray.show_notification(
                             title="ProgressEye", message=_msg
                         )
                     )
+                    # UI에 경고 표시 + 체크 해제
+                    self._action_queue.put(
+                        lambda _id=region_id, _m=stopped_msg: (
+                            self._main_window.set_region_warning(_id, _m)
+                        )
+                    )
+                    self._config.update_region(region_id, {"enabled": False})
                     self._scheduler.remove_region(region_id)
+                    # 모든 영역이 제외되면 모니터링 자동 정지
+                    if self._scheduler.region_count == 0:
+                        log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
+                        self._action_queue.put(self._auto_stop_monitoring)
                 # 템플릿 정리
                 self._delete_template(region_id)
                 return
