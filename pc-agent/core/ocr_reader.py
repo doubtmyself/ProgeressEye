@@ -3,9 +3,14 @@
 pytesseract를 사용하여 이미지에서 숫자(%) 패턴을 탐지하고
 바운딩 박스와 함께 반환한다.
 
-숫자% (예: "45%") 뿐 아니라 단독 숫자 (예: "45")도 감지한다.
+숫자% (예: "45%") 뾿 아니라 단독 숫자 (예: "45")도 감지한다.
+
+성능 최적화:
+  - --oem 1 (LSTM only) — Legacy+LSTM 대비 가벼움
+  - 변화 감지: 이전 캐콉과 픽셀 차이가 없으면 OCR 스킵
 """
 
+import hashlib
 import os
 import re
 import shutil
@@ -13,6 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from PIL import Image as PILImage
 
 from utils.logger import log
@@ -79,11 +85,29 @@ class OcrReader:
 
     pytesseract를 사용하여 이미지에서 숫자(%) 패턴을 찾는다.
     "%" 기호가 없는 단독 숫자(0~100 범위)도 감지한다.
+
+    성능 최적화:
+      - Tesseract LSTM-only 모드 (프로세스 내 연산 감소)
+      - 변화 감지: 이전 캐콉과 픽셀 차이가 없으면 OCR 스킵
     """
 
     _PERCENT_RE = re.compile(r"(\d+\.?\d*)\s*%")
     _NUMBER_RE = re.compile(r"(\d+\.?\d*)")
 
+    # Tesseract 최적화 설정
+    # --oem 1: LSTM only (Legacy+LSTM 대비 빠르고 가벼움)
+    # --psm 6: 블록 모드 (다양한 레이아웃 호환성 유지)
+    # whitelist 미사용: regex로 숫자+% 필터링 (화면 캐콉에 비숫자 요소 포함 가능)
+    _TESSERACT_CONFIG = "--oem 1 --psm 6"
+
+    # 변화 감지 임계값 (0~255 픽셀 평균 차이)
+    _CHANGE_THRESHOLD = 2.0
+
+    def __init__(self) -> None:
+        # 변화 감지용 이전 캐콉 해시 (region_id → hash)
+        self._prev_hashes: dict[str, str] = {}
+        # 변화 감지용 이전 결과 캐시 (region_id → progress)
+        self._prev_results: dict[str, float | None] = {}
     def find_percentages(self, image: PILImage.Image) -> list[OcrResult]:
         """이미지에서 숫자(%) 패턴을 찾아 바운딩 박스와 함께 반환한다.
         앞뒤에 문자가 붙어있어도 숫자(%)를 추출한다.
@@ -104,7 +128,7 @@ class OcrReader:
             data = pytesseract.image_to_data(
                 gray,
                 output_type=pytesseract.Output.DICT,
-                config="--oem 3 --psm 6",
+                config=self._TESSERACT_CONFIG,
             )
         except Exception as e:
             log.error("OCR 실행 실패: %s", e)
@@ -208,24 +232,64 @@ class OcrReader:
         log.info("OCR 탐지 완료: %d개 숫자 발견", len(results))
         return results
 
-    def read_progress(self, image: PILImage.Image) -> float | None:
+    def read_progress(
+        self, image: PILImage.Image, region_id: str = "",
+    ) -> float | None:
         """이미지에서 가장 적합한 퍼센트 값을 반환한다.
 
-        우선순위: "%" 기호 포함 결과 > 단독 숫자.
-        같은 우선순위 내에서는 신뢰도가 가장 높은 결과를 선택한다.
+        변화 감지: region_id가 지정되면 이전 캐콉과 픽셀 비교 후
+        변화가 없으면 OCR을 스킵하고 캐시된 결과를 반환한다.
 
-        탐지 실패 시 None을 반환한다.
+        Args:
+            image: 캐콉된 PIL 이미지.
+            region_id: 영역 ID (변화 감지용, 비어있으면 항상 OCR 실행).
+
+        Returns:
+            퍼센트 값 (0.0~100.0) 또는 None.
         """
+        # 변화 감지 (성능 최적화)
+        if region_id:
+            img_hash = self._compute_hash(image)
+            prev_hash = self._prev_hashes.get(region_id)
+            if prev_hash == img_hash:
+                cached = self._prev_results.get(region_id)
+                log.debug("[%s] OCR 스킵 (변화 없음) → %.1f%%",
+                          region_id, cached if cached is not None else 0.0)
+                return cached
+            self._prev_hashes[region_id] = img_hash
+
         results = self.find_percentages(image)
         if not results:
+            if region_id:
+                self._prev_results[region_id] = None
             return None
 
         # "%" 포함 결과 우선
         with_pct = [r for r in results if r.has_percent_sign]
         if with_pct:
             best = max(with_pct, key=lambda r: r.confidence)
-            return best.progress
+            progress = best.progress
+        else:
+            # 단독 숫자 중 신뢰도 최고
+            best = max(results, key=lambda r: r.confidence)
+            progress = best.progress
 
-        # 단독 숫자 중 신뢰도 최고
-        best = max(results, key=lambda r: r.confidence)
-        return best.progress
+        if region_id:
+            self._prev_results[region_id] = progress
+        return progress
+
+    def reset_cache(self, region_id: str) -> None:
+        """특정 영역의 변화 감지 캐시를 초기화한다."""
+        self._prev_hashes.pop(region_id, None)
+        self._prev_results.pop(region_id, None)
+
+    @staticmethod
+    def _compute_hash(image: PILImage.Image) -> str:
+        """이미지의 픽셀 기반 해시를 계산한다.
+
+        성능을 위해 이미지를 소형(32x32)으로 축소한 후 해싱한다.
+        미세한 픽셀 노이즈는 무시하고 실제 내용 변화만 감지한다.
+        """
+        small = image.resize((32, 32), PILImage.Resampling.LANCZOS).convert("L")
+        pixels = np.array(small, dtype=np.uint8)
+        return hashlib.md5(pixels.tobytes()).hexdigest()
