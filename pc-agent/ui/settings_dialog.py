@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -36,7 +37,7 @@ LANGUAGES = [
 class SettingsOverlay(QWidget):
     """MainWindow 내부 오버레이 설정 패널."""
 
-    saved = pyqtSignal(int, str, int)  # (interval_seconds, language, freeze_minutes)
+    saved = pyqtSignal(int, str, int, str, str, str)  # (interval, language, freeze_min, tg_token, tg_chat_id, dc_webhook)
     logout_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
@@ -208,6 +209,132 @@ class SettingsOverlay(QWidget):
 
         layout.addSpacing(8)
 
+        # ── Telegram 알림 ──
+        tg_line = QFrame()
+        tg_line.setFrameShape(QFrame.Shape.HLine)
+        tg_line.setStyleSheet(f"color: {CARD_BORDER};")
+        layout.addWidget(tg_line)
+
+        tg_label = QLabel(t("settings_telegram"))
+        tg_label.setStyleSheet(label_style)
+        layout.addWidget(tg_label)
+
+        line_edit_style = (
+            f"QLineEdit {{"
+            f"  background: {CARD_BG};"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 6px;"
+            f"  padding: 6px 10px;"
+            f"  color: {TITLE_TEXT};"
+            f"  font-size: 13px;"
+            f"}}"
+            f"QLineEdit:focus {{"
+            f"  border-color: {CHECKBOX_BLUE};"
+            f"}}"
+        )
+
+        tg_token_label = QLabel(t("settings_telegram_token"))
+        tg_token_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        layout.addWidget(tg_token_label)
+
+        self._tg_token_edit = QLineEdit()
+        self._tg_token_edit.setPlaceholderText("123456:ABC-DEF...")
+        self._tg_token_edit.setStyleSheet(line_edit_style)
+        self._tg_token_edit.setFixedHeight(36)
+        layout.addWidget(self._tg_token_edit)
+
+        tg_chat_label = QLabel(t("settings_telegram_chat_id"))
+        tg_chat_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        layout.addWidget(tg_chat_label)
+
+        tg_chat_row = QHBoxLayout()
+        self._tg_chat_edit = QLineEdit()
+        self._tg_chat_edit.setPlaceholderText("123456789")
+        self._tg_chat_edit.setStyleSheet(line_edit_style)
+        self._tg_chat_edit.setFixedHeight(36)
+        tg_chat_row.addWidget(self._tg_chat_edit, stretch=1)
+
+        self._btn_tg_test = QPushButton(t("settings_telegram_test"))
+        self._btn_tg_test.setStyleSheet(btn_style_cancel if False else (
+            f"QPushButton {{"
+            f"  background: {CARD_BG};"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 6px;"
+            f"  padding: 6px 12px;"
+            f"  color: {SUBTITLE_TEXT};"
+            f"  font-size: 12px;"
+            f"}}"
+            f"QPushButton:hover {{ background: {CARD_BORDER}; }}"
+        ))
+        self._btn_tg_test.setFixedHeight(36)
+        self._btn_tg_test.clicked.connect(self._on_tg_test_clicked)
+        tg_chat_row.addWidget(self._btn_tg_test)
+        layout.addLayout(tg_chat_row)
+
+        tg_hint = QLabel(t("settings_telegram_hint"))
+        tg_hint.setStyleSheet(hint_style)
+        layout.addWidget(tg_hint)
+
+        self._tg_status_label = QLabel("")
+        self._tg_status_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        layout.addWidget(self._tg_status_label)
+
+        # ── Discord 알림 ──
+        dc_line = QFrame()
+        dc_line.setFrameShape(QFrame.Shape.HLine)
+        dc_line.setStyleSheet(f"color: {CARD_BORDER};")
+        layout.addWidget(dc_line)
+
+        dc_label = QLabel(t("settings_discord"))
+        dc_label.setStyleSheet(label_style)
+        layout.addWidget(dc_label)
+
+        dc_url_label = QLabel(t("settings_discord_webhook"))
+        dc_url_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        layout.addWidget(dc_url_label)
+
+        dc_url_row = QHBoxLayout()
+        self._dc_webhook_edit = QLineEdit()
+        self._dc_webhook_edit.setPlaceholderText("https://discord.com/api/webhooks/...")
+        self._dc_webhook_edit.setStyleSheet(line_edit_style)
+        self._dc_webhook_edit.setFixedHeight(36)
+        dc_url_row.addWidget(self._dc_webhook_edit, stretch=1)
+
+        self._btn_dc_test = QPushButton(t("settings_discord_test"))
+        self._btn_dc_test.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: {CARD_BG};"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 6px;"
+            f"  padding: 6px 12px;"
+            f"  color: {SUBTITLE_TEXT};"
+            f"  font-size: 12px;"
+            f"}}"
+            f"QPushButton:hover {{ background: {CARD_BORDER}; }}"
+        )
+        self._btn_dc_test.setFixedHeight(36)
+        self._btn_dc_test.clicked.connect(self._on_dc_test_clicked)
+        dc_url_row.addWidget(self._btn_dc_test)
+        layout.addLayout(dc_url_row)
+
+        dc_hint = QLabel(t("settings_discord_hint"))
+        dc_hint.setStyleSheet(hint_style)
+        layout.addWidget(dc_hint)
+
+        self._dc_status_label = QLabel("")
+        self._dc_status_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        layout.addWidget(self._dc_status_label)
+
         # ── 버튼 ──
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -261,12 +388,20 @@ class SettingsOverlay(QWidget):
         language: str,
         email: str,
         freeze_minutes: int = 5,
+        tg_token: str = "",
+        tg_chat_id: str = "",
+        dc_webhook: str = "",
         welcome_mode: bool = False,
     ) -> None:
         """설정값을 세팅하고 오버레이를 표시한다."""
         self._welcome_mode = welcome_mode
         self._interval_spin.setValue(interval)
         self._freeze_spin.setValue(freeze_minutes)
+        self._tg_token_edit.setText(tg_token)
+        self._tg_chat_edit.setText(tg_chat_id)
+        self._tg_status_label.setText("")
+        self._dc_webhook_edit.setText(dc_webhook)
+        self._dc_status_label.setText("")
         for i in range(self._lang_combo.count()):
             if self._lang_combo.itemData(i) == language:
                 self._lang_combo.setCurrentIndex(i)
@@ -294,10 +429,27 @@ class SettingsOverlay(QWidget):
         """설정된 프리징 감지 시간 (분)."""
         return self._freeze_spin.value()
 
+    @property
+    def telegram_token(self) -> str:
+        """설정된 Telegram Bot 토큰."""
+        return self._tg_token_edit.text().strip()
+
+    @property
+    def telegram_chat_id(self) -> str:
+        """설정된 Telegram Chat ID."""
+        return self._tg_chat_edit.text().strip()
+
+    @property
+    def discord_webhook(self) -> str:
+        """설정된 Discord Webhook URL."""
+        return self._dc_webhook_edit.text().strip()
     # ── 내부 핸들러 ──
 
     def _on_save_clicked(self) -> None:
-        self.saved.emit(self.interval_seconds, self.language, self.freeze_minutes)
+        self.saved.emit(
+            self.interval_seconds, self.language, self.freeze_minutes,
+            self.telegram_token, self.telegram_chat_id, self.discord_webhook,
+        )
         self.hide()
 
     def _on_cancel_clicked(self) -> None:
@@ -315,3 +467,44 @@ class SettingsOverlay(QWidget):
         if not self._card.geometry().contains(event.pos()):
             self.closed.emit()
             self.hide()
+
+    def _on_tg_test_clicked(self) -> None:
+        """테스트 메시지를 발송하여 Telegram 연결을 확인한다."""
+        import requests as _requests  # lazy import
+        token = self.telegram_token
+        chat_id = self.telegram_chat_id
+        if not token or not chat_id:
+            self._tg_status_label.setText(t("settings_telegram_test_fail"))
+            return
+        try:
+            resp = _requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": "✅ ProgressEye connected!"},
+                timeout=10,
+            )
+            if resp.ok:
+                self._tg_status_label.setText(t("settings_telegram_test_ok"))
+            else:
+                self._tg_status_label.setText(t("settings_telegram_test_fail"))
+        except Exception:
+            self._tg_status_label.setText(t("settings_telegram_test_fail"))
+
+    def _on_dc_test_clicked(self) -> None:
+        """테스트 메시지를 발송하여 Discord 연결을 확인한다."""
+        import requests as _requests  # lazy import
+        url = self.discord_webhook
+        if not url:
+            self._dc_status_label.setText(t("settings_discord_test_fail"))
+            return
+        try:
+            resp = _requests.post(
+                url,
+                json={"content": "✅ ProgressEye connected!"},
+                timeout=10,
+            )
+            if resp.ok:
+                self._dc_status_label.setText(t("settings_discord_test_ok"))
+            else:
+                self._dc_status_label.setText(t("settings_discord_test_fail"))
+        except Exception:
+            self._dc_status_label.setText(t("settings_discord_test_fail"))
