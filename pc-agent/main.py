@@ -530,6 +530,12 @@ class ProgressEyeApp:
                     self._scheduler.add_region(r)
                     break
         log.info("영역 좌표 업데이트: %s", region_id)
+        # 새 영역으로 템플릿 갱신
+        try:
+            new_image = self._capturer.capture(area)
+            self._save_template(region_id, new_image)
+        except Exception as exc:
+            log.warning("재선택 템플릿 갱신 실패: %s", exc)
         # 업데이트된 영역으로 편집 다이얼로그 다시 열기
         self._do_edit_region(region_id)
 
@@ -1126,6 +1132,8 @@ class ProgressEyeApp:
         try:
             img = PILImage.open(str(path))
             img.load()  # lazy loading 방지
+            if img.mode != "RGB":
+                img = img.convert("RGB")
             log.debug("템플릿 로드: %s", path)
             return img
         except Exception as exc:
