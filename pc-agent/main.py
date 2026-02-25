@@ -7,6 +7,8 @@ MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 # pyright: reportMissingImports=false, reportMissingModuleSource=false, reportMissingTypeArgument=false
 
 import queue
+import os
+import pathlib
 import sys
 import uuid
 from typing import Callable
@@ -74,7 +76,9 @@ class ProgressEyeApp:
         self._pending_firebase_batch: dict[str, dict] = {}  # 사이클별 Firebase 배치
         self._last_firebase_state: dict[str, dict] = {}  # region_id -> {p, s} 마지막 전송값
         self._completion_confirm: dict[str, int] = {}  # region_id -> 연속 threshold 도달 횟수
-        self._template_images: dict[str, PILImage.Image] = {}  # 이미지 변경 감지용 템플릿
+        self._template_images: dict[str, PILImage.Image] = {}  # 이미지 변경 감지용 메모리 캐시
+        self._template_dir = pathlib.Path(os.path.dirname(os.path.abspath(__file__))) / "templates"
+        self._template_dir.mkdir(exist_ok=True)
 
         # UI
         self._main_window = MainWindow()
@@ -320,7 +324,10 @@ class ProgressEyeApp:
                 enabled=enabled,
                 alert_threshold=region.get("alert_threshold", 100),
             )
-
+            # 로컬 템플릿 이미지 복원
+            tpl = self._load_template(region["id"])
+            if tpl is not None:
+                self._template_images[region["id"]] = tpl
     def _start_area_selection(self) -> None:
         """프로그래스바 영역 선택을 시작한다."""
         self._selection_mode = "bar"
@@ -414,6 +421,8 @@ class ProgressEyeApp:
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("바 영역 등록: %s (%.1f%%)", region_id, final_progress)
+            # 템플릿 이미지 저장 (이미지 변경 감지용)
+            self._save_template(region_id, image)
             # Firebase에 라벨 전송 (등록 시 1회)
             if self._device_manager:
                 try:
@@ -469,6 +478,8 @@ class ProgressEyeApp:
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("OCR 영역 등록: %s (%.1f%%)", region_id, final_progress)
+            # 템플릿 이미지 저장 (이미지 변경 감지용)
+            self._save_template(region_id, image)
             # Firebase에 라벨 전송 (등록 시 1회)
             if self._device_manager:
                 try:
@@ -542,7 +553,7 @@ class ProgressEyeApp:
         self._pending_firebase_batch.pop(region_id, None)
         self._last_firebase_state.pop(region_id, None)
         self._completion_confirm.pop(region_id, None)
-        self._template_images.pop(region_id, None)
+        self._delete_template(region_id)
         log.info("영역 삭제: %s", region_id)
 
     def _open_settings(self) -> None:
@@ -651,6 +662,8 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, {"label": new_label})
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("OCR 영역 수정: %s → %s", region_id, new_label)
+                # 템플릿 이미지 갱신 (수정 시 재캡처된 이미지로)
+                self._save_template(region_id, image)
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
@@ -683,6 +696,8 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, updates)
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
+                # 템플릿 이미지 갱신 (수정 시 재캡처된 이미지로)
+                self._save_template(region_id, image)
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
@@ -801,7 +816,7 @@ class ProgressEyeApp:
             self._main_window.set_monitoring_state(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
-            self._template_images.clear()  # 템플릿 이미지 초기화
+            # 모니터링 정지 시 템플릿 유지 (등록 시점 기준)
         else:
             regions = [r for r in self._config.regions if r.get("enabled", True)]
             if not regions:
@@ -812,6 +827,16 @@ class ProgressEyeApp:
             self._main_window.set_monitoring_state(True, interval)
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
+            # 템플릿 이미지가 없는 영역은 현재 화면으로 템플릿 생성 (앱 재시작 후 복원된 영역)
+            for r in regions:
+                rid = r["id"]
+                if rid not in self._template_images:
+                    try:
+                        tpl_image = self._capturer.capture(r)
+                        self._save_template(rid, tpl_image)
+                        log.debug("[모니터링 시작] %s 템플릿 이미지 생성", rid)
+                    except Exception as exc:
+                        log.debug("[모니터링 시작] %s 템플릿 생성 실패: %s", rid, exc)
 
     def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
         """캐처 콜백 — 분석 + UI 업데이트.
@@ -834,11 +859,19 @@ class ProgressEyeApp:
         # ── 이미지 변경 감지 ──
         IMAGE_CHANGE_THRESHOLD = 0.3
         if region_id not in self._template_images:
-            self._template_images[region_id] = image.copy()
-            log.debug("[%s] 템플릿 이미지 저장 (첫 캡처)", region_id)
+            # 템플릿 없음 (영역 등록 전 복원된 경우) — 유사도 검사 생략
+            log.debug("[%s] 템플릿 이미지 없음 — 유사도 검사 생략", region_id)
         else:
-            similarity = self._check_image_similarity(
-                self._template_images[region_id], image
+            try:
+                similarity = self._check_image_similarity(
+                    self._template_images[region_id], image
+                )
+            except Exception as exc:
+                log.warning("[%s] 이미지 유사도 계산 실패: %s", region_id, exc)
+                similarity = 1.0  # 실패 시 유사하다고 간주하고 모니터링 계속
+            log.info(
+                "[%s] 이미지 유사도: %.4f (threshold: %.1f)",
+                region_id, similarity, IMAGE_CHANGE_THRESHOLD,
             )
             if similarity < IMAGE_CHANGE_THRESHOLD:
                 last_progress = self._last_firebase_state.get(region_id, {}).get("p", 0)
@@ -872,7 +905,7 @@ class ProgressEyeApp:
                     )
                     self._scheduler.remove_region(region_id)
                 # 템플릿 정리
-                self._template_images.pop(region_id, None)
+                self._delete_template(region_id)
                 return
 
         if region_type == "ocr":
@@ -1052,6 +1085,41 @@ class ProgressEyeApp:
         self._main_window.close()
         self._app.quit()
 
+    def _save_template(self, region_id: str, image: PILImage.Image) -> None:
+        """템플릿 이미지를 메모리 캐시 + 로컬 파일에 저장한다."""
+        self._template_images[region_id] = image.copy()
+        try:
+            path = self._template_dir / f"{region_id}.png"
+            image.save(str(path), "PNG")
+            log.debug("템플릿 저장: %s", path)
+        except Exception as exc:
+            log.warning("템플릿 저장 실패 [%s]: %s", region_id, exc)
+
+    def _load_template(self, region_id: str) -> PILImage.Image | None:
+        """로컬 파일에서 템플릿 이미지를 로드한다."""
+        path = self._template_dir / f"{region_id}.png"
+        if not path.exists():
+            return None
+        try:
+            img = PILImage.open(str(path))
+            img.load()  # lazy loading 방지
+            log.debug("템플릿 로드: %s", path)
+            return img
+        except Exception as exc:
+            log.warning("템플릿 로드 실패 [%s]: %s", region_id, exc)
+            return None
+
+    def _delete_template(self, region_id: str) -> None:
+        """템플릿 이미지를 메모리 캐시 + 로컬 파일에서 삭제한다."""
+        self._template_images.pop(region_id, None)
+        path = self._template_dir / f"{region_id}.png"
+        try:
+            if path.exists():
+                path.unlink()
+                log.debug("템플릿 삭제: %s", path)
+        except Exception as exc:
+            log.warning("템플릿 삭제 실패 [%s]: %s", region_id, exc)
+
     def _check_image_similarity(
         self, img1: PILImage.Image, img2: PILImage.Image
     ) -> float:
@@ -1074,7 +1142,14 @@ class ProgressEyeApp:
         # 표준편차가 0이면 동일 이미지 (단색)
         if np.std(flat1) < 1e-6 and np.std(flat2) < 1e-6:
             return 1.0
+        # 한쪽만 표준편차 0이면 완전히 다른 이미지
+        if np.std(flat1) < 1e-6 or np.std(flat2) < 1e-6:
+            return 0.0
         corr = np.corrcoef(flat1, flat2)[0, 1]
+        # NaN 방어 (corrcoef가 NaN 반환 시 0.0 처리)
+        import math
+        if math.isnan(corr):
+            return 0.0
         return max(0.0, float(corr))
 
     def _smart_bar_analyze(
