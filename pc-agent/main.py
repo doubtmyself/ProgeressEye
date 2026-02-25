@@ -106,8 +106,11 @@ class ProgressEyeApp:
     def run(self) -> int:
         """애플리케이션을 실행한다."""
         log.info("ProgressEye 시작")
+        is_first = not self._config.get("auth.uid", "")
         if not self._try_auto_login():
             self._ensure_login()
+        if is_first and self._config.get("auth.uid", ""):
+            self._show_welcome()
         self._tray.start()
         self._main_window.show()
         return self._app.exec()
@@ -472,12 +475,18 @@ class ProgressEyeApp:
         """설정 다이얼로그를 열고 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
         current_lang = self._config.get("language", "ko")
+        email = self._config.get("auth.email", "")
         dialog = SettingsDialog(
             interval_seconds=current_interval,
             language=current_lang,
+            email=email,
             parent=self._main_window,
         )
-        if dialog.exec():
+        result = dialog.exec()
+        if dialog.is_logout_requested:
+            self._do_logout()
+            return
+        if result:
             new_interval = dialog.interval_seconds
             new_lang = dialog.language
             # 모니터링 간격 반영
@@ -491,6 +500,55 @@ class ProgressEyeApp:
                 set_language(new_lang)
                 self._main_window.refresh_texts()
                 log.info("언어 변경: %s", new_lang)
+
+    def _do_logout(self) -> None:
+        """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 재로그인."""
+        log.info("로그아웃 시작")
+        if self._scheduler.is_running:
+            self._scheduler.stop()
+            self._main_window.set_monitoring_state(False)
+        if self._heartbeat_timer is not None:
+            self._heartbeat_timer.stop()
+            self._heartbeat_timer = None
+        if self._device_manager is not None:
+            try:
+                unregister = getattr(self._device_manager, "unregister", None)
+                if callable(unregister):
+                    unregister()
+            except Exception:
+                pass
+            self._device_manager = None
+        self._realtime_db = None
+        self._firebase_id_token = None
+        try:
+            self._token_manager.clear()
+        except Exception as exc:
+            log.warning("토큰 삭제 실패: %s", exc)
+        self._config.set("auth.uid", "")
+        self._config.set("auth.email", "")
+        log.info("로그아웃 완료 — 재로그인 시도")
+        self._ensure_login()
+
+    def _show_welcome(self) -> None:
+        """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
+        email = self._config.get("auth.email", "")
+        dialog = SettingsDialog(
+            interval_seconds=self._config.get("capture.interval_seconds", 30),
+            language=self._config.get("language", "ko"),
+            email=email,
+            welcome_mode=True,
+            parent=self._main_window,
+        )
+        if dialog.exec():
+            new_interval = dialog.interval_seconds
+            new_lang = dialog.language
+            self._config.set("capture.interval_seconds", new_interval)
+            self._scheduler.update_interval(new_interval)
+            if new_lang != self._config.get("language", "ko"):
+                self._config.set("language", new_lang)
+                set_language(new_lang)
+                self._main_window.refresh_texts()
+            log.info("웰컴 설정 완료: interval=%d, lang=%s", new_interval, new_lang)
 
     def _on_edit_region(self, region_id: str) -> None:
         """작업 수정 요청 — 기존 영역 데이터로 프리뷰 다이얼로그를 연다."""
@@ -536,9 +594,7 @@ class ProgressEyeApp:
             if dialog.exec():
                 new_label = dialog.task_name or current_label
                 self._config.update_region(region_id, {"label": new_label})
-                self._main_window.update_progress(
-                    region_id, dialog.progress, new_label
-                )
+                self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("OCR 영역 수정: %s → %s", region_id, new_label)
             else:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
@@ -567,9 +623,7 @@ class ProgressEyeApp:
                 if dialog.bar_region:
                     updates["direction"] = dialog.bar_region.direction
                 self._config.update_region(region_id, updates)
-                self._main_window.update_progress(
-                    region_id, dialog.progress, new_label
-                )
+                self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
             else:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트

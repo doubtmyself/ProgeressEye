@@ -8,15 +8,17 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
-    QPushButton,
     QWidget,
 )
 
 from utils.i18n import t
+
 # ── Color Palette ──
 APP_BG = "#0f0f1a"
 CARD_BG = "#1c1c30"
@@ -42,11 +44,16 @@ class SettingsDialog(QDialog):
         self,
         interval_seconds: int = 30,
         language: str = "ko",
+        email: str = "",
+        welcome_mode: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._interval = interval_seconds
         self._language = language
+        self._email = email
+        self._welcome_mode = welcome_mode
+        self._logout_requested = False
 
         self.setWindowTitle(t("settings_window_title"))
         self.setFixedWidth(360)
@@ -62,10 +69,18 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
 
         # ── 타이틀 ──
-        title = QLabel(t("settings_title"))
+        title_text = t("welcome_title") if self._welcome_mode else t("settings_title")
+        title = QLabel(title_text)
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent;")
         layout.addWidget(title)
+
+        if self._welcome_mode:
+            subtitle = QLabel(t("welcome_subtitle"))
+            subtitle.setStyleSheet(
+                f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent;"
+            )
+            layout.addWidget(subtitle)
 
         # ── 공통 스타일 ──
         label_style = (
@@ -94,6 +109,46 @@ class SettingsDialog(QDialog):
             f"  selection-background-color: {CHECKBOX_BLUE};"
             f"}}"
         )
+
+        # ── 계정 ──
+        account_line = QFrame()
+        account_line.setFrameShape(QFrame.Shape.HLine)
+        account_line.setStyleSheet(f"color: {CARD_BORDER};")
+        layout.addWidget(account_line)
+
+        account_label = QLabel(t("settings_account"))
+        account_label.setStyleSheet(label_style)
+        layout.addWidget(account_label)
+
+        account_row = QHBoxLayout()
+        account_email = QLabel(t("settings_logged_in_as").format(email=self._email))
+        account_email.setStyleSheet(
+            f"color: {TITLE_TEXT}; font-size: 13px; background: transparent;"
+        )
+        account_row.addWidget(account_email)
+        account_row.addStretch()
+
+        btn_style_logout = (
+            "QPushButton {"
+            "  background: transparent;"
+            "  border: 1px solid #ef4444;"
+            "  color: #ef4444;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #ef4444;"
+            "  color: #ffffff;"
+            "}"
+        )
+        btn_logout = QPushButton(t("btn_logout"))
+        btn_logout.setStyleSheet(btn_style_logout)
+        btn_logout.setVisible(not self._welcome_mode)
+        btn_logout.clicked.connect(self._on_logout_clicked)
+        account_row.addWidget(btn_logout)
+
+        layout.addLayout(account_row)
 
         # ── 모니터링 간격 ──
         interval_label = QLabel(t("settings_interval"))
@@ -146,6 +201,7 @@ class SettingsDialog(QDialog):
         btn_cancel = QPushButton(t("btn_cancel"))
         btn_cancel.setStyleSheet(btn_style_cancel)
         btn_cancel.clicked.connect(self.reject)
+        btn_cancel.setVisible(not self._welcome_mode)
         btn_row.addWidget(btn_cancel)
 
         btn_style_save = (
@@ -160,7 +216,9 @@ class SettingsDialog(QDialog):
             f"}}"
             f"QPushButton:hover {{ background: #2563eb; }}"
         )
-        btn_save = QPushButton(t("btn_save"))
+        btn_save = QPushButton(
+            t("btn_start_app") if self._welcome_mode else t("btn_save")
+        )
         btn_save.setStyleSheet(btn_style_save)
         btn_save.setDefault(True)
         btn_save.clicked.connect(self.accept)
@@ -179,3 +237,12 @@ class SettingsDialog(QDialog):
     def language(self) -> str:
         """설정된 언어 코드 ('ko' 또는 'en')."""
         return self._lang_combo.currentData()
+
+    @property
+    def is_logout_requested(self) -> bool:
+        """로그아웃 버튼 클릭 여부."""
+        return self._logout_requested
+
+    def _on_logout_clicked(self) -> None:
+        self._logout_requested = True
+        self.done(2)
