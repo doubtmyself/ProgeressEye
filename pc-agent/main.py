@@ -924,9 +924,7 @@ class ProgressEyeApp:
                     if self._scheduler.region_count == 0:
                         log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
                         self._action_queue.put(self._auto_stop_monitoring)
-                # 완료 시에만 템플릿 삭제, 경고 중지 시에는 유지 (재활성화 대비)
-                if last_progress >= threshold - 10:
-                    self._delete_template(region_id)
+                # 템플릿은 작업 삭제 시에만 삭제 — 여기서는 유지
                 return
 
         if region_type == "ocr":
