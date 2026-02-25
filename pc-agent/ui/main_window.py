@@ -57,6 +57,7 @@ class RegionCard(QFrame):
 
     toggled = pyqtSignal(str, bool)
     delete_requested = pyqtSignal(str)
+    edit_requested = pyqtSignal(str)
     view_requested = pyqtSignal(str)
 
     def __init__(
@@ -149,19 +150,18 @@ class RegionCard(QFrame):
         )
         layout.addWidget(self._progress_bar)
 
-        # ── Bottom row: timestamp + delete button ──
+        # ── Bottom row: timestamp ──
         self._time_label = QLabel("대기 중")
         self._time_label.setStyleSheet(
             f"color: {UPDATE_TEXT}; font-size: 11px;"
             f"background: transparent; border: none;"
         )
-        bottom_row = QHBoxLayout()
-        bottom_row.addWidget(self._time_label)
-        bottom_row.addStretch()
+        layout.addWidget(self._time_label)
 
-        self._btn_delete = QPushButton("🗑 삭제")
-        self._btn_delete.setFixedHeight(24)
-        self._btn_delete.setStyleSheet(
+        # ── Button row: 작업 수정 + 영역보기 + 삭제 (왼쪽 정렬) ──
+        btn_row = QHBoxLayout()
+
+        btn_style = (
             f"QPushButton {{"
             f"  background: {DELETE_BG};"
             f"  border: 1px solid {DELETE_BORDER};"
@@ -174,17 +174,35 @@ class RegionCard(QFrame):
             f"  background: {CARD_BORDER};"
             f"}}"
         )
+
+        self._btn_edit = QPushButton("✏ 작업 수정")
+        self._btn_edit.setFixedHeight(24)
+        self._btn_edit.setStyleSheet(btn_style)
+        self._btn_edit.clicked.connect(
+            lambda: self.edit_requested.emit(self.region_id)
+        )
+        btn_row.addWidget(self._btn_edit)
+
+        self._btn_view = QPushButton("👁 영역보기")
+        self._btn_view.setFixedHeight(24)
+        self._btn_view.setStyleSheet(btn_style)
+        self._btn_view.clicked.connect(
+            lambda: self.view_requested.emit(self.region_id)
+        )
+        btn_row.addWidget(self._btn_view)
+
+        self._btn_delete = QPushButton("🗑 삭제")
+        self._btn_delete.setFixedHeight(24)
+        self._btn_delete.setStyleSheet(btn_style)
         self._btn_delete.clicked.connect(
             lambda: self.delete_requested.emit(self.region_id)
         )
-        bottom_row.addWidget(self._btn_delete)
-        layout.addLayout(bottom_row)
+        btn_row.addWidget(self._btn_delete)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        """카드 클릭 시 뷰어 표시 요청."""
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.view_requested.emit(self.region_id)
-        super().mousePressEvent(event)
+        btn_row.insertStretch(0)
+        layout.addLayout(btn_row)
+
+
 
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
@@ -218,6 +236,7 @@ class MainWindow(QMainWindow):
     region_toggled = pyqtSignal(str, bool)
     region_delete_requested = pyqtSignal(str)
     region_view_requested = pyqtSignal(str)
+    region_edit_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -377,6 +396,7 @@ class MainWindow(QMainWindow):
         card.toggled.connect(self.region_toggled)
         card.delete_requested.connect(self.region_delete_requested)
         card.view_requested.connect(self.region_view_requested)
+        card.edit_requested.connect(self.region_edit_requested)
         self._region_cards[region_id] = card
         # addStretch 앞에 삽입
         self._region_layout.insertWidget(self._region_layout.count() - 1, card)
