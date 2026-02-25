@@ -568,12 +568,14 @@ class ProgressEyeApp:
             interval=self._config.get("capture.interval_seconds", 30),
             language=self._config.get("language", "ko"),
             email=self._config.get("auth.email", ""),
+            freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
         )
 
-    def _on_settings_saved(self, new_interval: int, new_lang: str) -> None:
+    def _on_settings_saved(self, new_interval: int, new_lang: str, new_freeze: int) -> None:
         """설정 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
         current_lang = self._config.get("language", "ko")
+        current_freeze = self._config.get("freeze_detection.timeout_minutes", 5)
         if new_interval != current_interval:
             self._config.set("capture.interval_seconds", new_interval)
             self._scheduler.update_interval(new_interval)
@@ -583,6 +585,10 @@ class ProgressEyeApp:
             set_language(new_lang)
             self._main_window.refresh_texts()
             log.info("언어 변경: %s", new_lang)
+        if new_freeze != current_freeze:
+            self._config.set("freeze_detection.timeout_minutes", new_freeze)
+            self._freeze_detector._timeout_seconds = new_freeze * 60
+            log.info("프리징 감지 시간 변경: %d분", new_freeze)
 
     def _do_logout(self) -> None:
         """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 재로그인."""
@@ -619,6 +625,7 @@ class ProgressEyeApp:
             interval=self._config.get("capture.interval_seconds", 30),
             language=self._config.get("language", "ko"),
             email=self._config.get("auth.email", ""),
+            freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
             welcome_mode=True,
         )
 

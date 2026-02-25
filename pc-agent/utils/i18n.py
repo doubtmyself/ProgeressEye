@@ -54,6 +54,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "image_changed_completed": "📸 {label} 작업 화면이 변경되었습니다. 완료에 가까워 완료 처리합니다. ({progress:.1f}%)",
         "image_changed_warning": "⚠️ {label} 작업 화면이 크게 변경되었습니다. 모니터링을 중지합니다.",
         "image_changed_stopped": "⚠️ 화면 변경으로 중지됨",
+        "settings_freeze_timeout": "멈춤 감지 시간",
+        "settings_freeze_suffix": " 분",
+        "settings_freeze_hint": "진행률이 설정 시간 동안 변하지 않으면 멈춤으로 판정합니다.",
     },
     "en": {
         "progress_monitoring": "Progress Monitoring",
@@ -103,6 +106,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "image_changed_completed": "📸 {label} screen changed. Completing task as progress was near threshold. ({progress:.1f}%)",
         "image_changed_warning": "⚠️ {label} screen changed significantly. Monitoring stopped.",
         "image_changed_stopped": "⚠️ Stopped: screen changed",
+        "settings_freeze_timeout": "Freeze Detection",
+        "settings_freeze_suffix": " min",
+        "settings_freeze_hint": "If progress doesn't change within this time, it's marked as frozen.",
     },
 }
 

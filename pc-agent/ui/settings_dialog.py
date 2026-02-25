@@ -36,7 +36,7 @@ LANGUAGES = [
 class SettingsOverlay(QWidget):
     """MainWindow 내부 오버레이 설정 패널."""
 
-    saved = pyqtSignal(int, str)  # (interval_seconds, language)
+    saved = pyqtSignal(int, str, int)  # (interval_seconds, language, freeze_minutes)
     logout_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
@@ -175,6 +175,25 @@ class SettingsOverlay(QWidget):
         interval_hint.setStyleSheet(hint_style)
         layout.addWidget(interval_hint)
 
+        # ── 프리징 감지 시간 ──
+        freeze_label = QLabel(t("settings_freeze_timeout"))
+        freeze_label.setStyleSheet(label_style)
+        layout.addWidget(freeze_label)
+
+        freeze_row = QHBoxLayout()
+        self._freeze_spin = QSpinBox()
+        self._freeze_spin.setRange(1, 60)
+        self._freeze_spin.setValue(5)
+        self._freeze_spin.setSuffix(t("settings_freeze_suffix"))
+        self._freeze_spin.setStyleSheet(input_style)
+        self._freeze_spin.setFixedHeight(36)
+        freeze_row.addWidget(self._freeze_spin, stretch=1)
+        layout.addLayout(freeze_row)
+
+        freeze_hint = QLabel(t("settings_freeze_hint"))
+        freeze_hint.setStyleSheet(hint_style)
+        layout.addWidget(freeze_hint)
+
         # ── 언어 ──
         lang_label = QLabel(t("settings_language"))
         lang_label.setStyleSheet(label_style)
@@ -241,11 +260,13 @@ class SettingsOverlay(QWidget):
         interval: int,
         language: str,
         email: str,
+        freeze_minutes: int = 5,
         welcome_mode: bool = False,
     ) -> None:
         """설정값을 세팅하고 오버레이를 표시한다."""
         self._welcome_mode = welcome_mode
         self._interval_spin.setValue(interval)
+        self._freeze_spin.setValue(freeze_minutes)
         for i in range(self._lang_combo.count()):
             if self._lang_combo.itemData(i) == language:
                 self._lang_combo.setCurrentIndex(i)
@@ -268,10 +289,15 @@ class SettingsOverlay(QWidget):
         """설정된 언어 코드 ('ko' 또는 'en')."""
         return self._lang_combo.currentData()
 
+    @property
+    def freeze_minutes(self) -> int:
+        """설정된 프리징 감지 시간 (분)."""
+        return self._freeze_spin.value()
+
     # ── 내부 핸들러 ──
 
     def _on_save_clicked(self) -> None:
-        self.saved.emit(self.interval_seconds, self.language)
+        self.saved.emit(self.interval_seconds, self.language, self.freeze_minutes)
         self.hide()
 
     def _on_cancel_clicked(self) -> None:

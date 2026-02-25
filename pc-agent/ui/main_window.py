@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
     region_view_requested = pyqtSignal(str)
     region_edit_requested = pyqtSignal(str)
     settings_requested = pyqtSignal()
-    settings_saved = pyqtSignal(int, str)
+    settings_saved = pyqtSignal(int, str, int)  # (interval, language, freeze_minutes)
     settings_logout_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
 
@@ -617,11 +617,12 @@ class MainWindow(QMainWindow):
             card.refresh_texts()
 
     def show_settings(
-        self, interval: int, language: str, email: str, welcome_mode: bool = False
+        self, interval: int, language: str, email: str,
+        freeze_minutes: int = 5, welcome_mode: bool = False,
     ) -> None:
         """설정 오버레이를 표시한다."""
         self._settings_overlay.setGeometry(self.centralWidget().geometry())
-        self._settings_overlay.show_settings(interval, language, email, welcome_mode)
+        self._settings_overlay.show_settings(interval, language, email, freeze_minutes, welcome_mode)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         """오버레이가 창 크기에 맞게 조정된다."""
