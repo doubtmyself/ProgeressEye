@@ -841,6 +841,12 @@ class ProgressEyeApp:
                 log.warning("활성화된 영역 없음 — 영역을 추가하거나 체크하세요")
                 return
             interval = self._config.get("capture.interval_seconds", 30)
+            self._freeze_detector.reset_all()
+            self._alerted_regions.clear()
+            self._post_completion_fails.clear()
+            self._completion_confirm.clear()
+            self._last_firebase_state.clear()
+            self._pending_firebase_batch.clear()
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True, interval)
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
