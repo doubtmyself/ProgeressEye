@@ -23,6 +23,10 @@ data class DeviceData(
     val isOnline: Boolean,
     val lastSeen: Long,
     val tasks: List<TaskData>,
+    /** Latest screenshot download URL from Firebase Storage. */
+    val screenshotUrl: String? = null,
+    /** Latest screenshot epoch seconds. */
+    val screenshotTs: Long = 0L,
 )
 
 /** Dashboard screen UI state. */
@@ -30,6 +34,8 @@ data class DashboardUiState(
     val isLoading: Boolean = true,
     val devices: List<DeviceData> = emptyList(),
     val error: String? = null,
+    /** Device ID currently waiting for screenshot response. */
+    val screenshotLoadingDeviceId: String? = null,
 )
 
 // ── Status constants (match PC Agent codes) ──

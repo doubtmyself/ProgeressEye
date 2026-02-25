@@ -52,9 +52,17 @@ class DashboardViewModel : ViewModel() {
         devicesListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val devices = snapshot.children.mapNotNull { parseDevice(it) }
+                val currentLoading = _uiState.value.screenshotLoadingDeviceId
+                // Clear loading indicator if screenshot URL changed for that device
+                val stillLoading = if (currentLoading != null) {
+                    val dev = devices.find { it.id == currentLoading }
+                    val prevDev = _uiState.value.devices.find { it.id == currentLoading }
+                    dev != null && dev.screenshotUrl == prevDev?.screenshotUrl
+                } else false
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     devices = devices,
+                    screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
                 )
             }
 
@@ -85,6 +93,11 @@ class DashboardViewModel : ViewModel() {
             parseTask(taskSnap)
         }
 
+        // Screenshot latest
+        val screenshotLatest = snapshot.child("screenshots").child("latest")
+        val screenshotUrl = screenshotLatest.child("url").getValue(String::class.java)
+        val screenshotTs = screenshotLatest.child("ts").getValue(Long::class.java) ?: 0L
+
         return DeviceData(
             id = id,
             name = name,
@@ -92,6 +105,8 @@ class DashboardViewModel : ViewModel() {
             isOnline = isOnline,
             lastSeen = lastSeen,
             tasks = tasks,
+            screenshotUrl = screenshotUrl,
+            screenshotTs = screenshotTs,
         )
     }
 
@@ -107,6 +122,17 @@ class DashboardViewModel : ViewModel() {
             progress = progressRaw / 100f, // RTDB 0-100 → UI 0f..1f
             status = status,
         )
+    }
+
+    // ── Screenshot command ─────────────────────────────────
+
+    fun requestScreenshot(deviceId: String) {
+        val uid = auth.currentUser?.uid ?: return
+        _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
+        val commandRef = db.reference
+            .child("users").child(uid)
+            .child("commands").child("screenshot")
+        commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
     }
 
     // ── Lifecycle cleanup ──────────────────────────────────

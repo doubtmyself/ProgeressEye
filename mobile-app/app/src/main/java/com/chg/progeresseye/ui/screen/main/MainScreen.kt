@@ -105,7 +105,11 @@ fun MainScreen(
         modifier = modifier,
     ) { padding ->
         when (selectedTab) {
-            0 -> DashboardContent(uiState = dashboardState, modifier = Modifier.padding(padding))
+            0 -> DashboardContent(
+                uiState = dashboardState,
+                onRequestScreenshot = { deviceId -> dashboardViewModel.requestScreenshot(deviceId) },
+                modifier = Modifier.padding(padding),
+            )
             1 -> AlertsContent(modifier = Modifier.padding(padding))
             2 -> SettingsContent(modifier = Modifier.padding(padding))
         }
