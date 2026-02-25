@@ -631,12 +631,16 @@ class ProgressEyeApp:
         if area is None:
             return
 
-        # 2. 영역 캡처
-        try:
-            image = self._capturer.capture(area)
-        except Exception as e:
-            log.error("영역 캡처 실패: %s", e)
-            return
+        # 2. 템플릿 이미지 사용 (없으면 현재 화면 캡처 fallback)
+        image = self._template_images.get(region_id) or self._load_template(region_id)
+        if image is None:
+            try:
+                image = self._capturer.capture(area)
+            except Exception as e:
+                log.error("영역 캡처 실패: %s", e)
+                return
+        else:
+            image = image.copy()  # 원본 템플릿 보호
 
         region_type = area.get("type", "bar")
         current_label = area.get("label", "")

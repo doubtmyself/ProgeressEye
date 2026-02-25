@@ -243,9 +243,9 @@ class RegionCard(QFrame):
         layout.addLayout(btn_row)
 
     def set_buttons_visible(self, visible: bool) -> None:
-        """카드 버튼(작업 수정/삭제)의 표시 여부를 설정한다. 영역보기는 항상 표시."""
+        """카드 버튼(작업 수정/영역보기/삭제)의 표시 여부를 설정한다."""
         self._btn_edit.setVisible(visible)
-        self._btn_view.setVisible(True)  # 영역보기는 모니터링 중에도 항상 표시
+        self._btn_view.setVisible(visible)
         self._btn_delete.setVisible(visible)
 
 
