@@ -76,6 +76,7 @@ private val navItems = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    onSignOut: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val dashboardViewModel: DashboardViewModel = viewModel()
@@ -105,10 +106,11 @@ fun MainScreen(
             0 -> DashboardContent(
                 uiState = dashboardState,
                 onRequestScreenshot = { deviceId -> dashboardViewModel.requestScreenshot(deviceId) },
+                onRefresh = { dashboardViewModel.refresh() },
                 modifier = Modifier.padding(padding),
             )
             1 -> AlertsContent(modifier = Modifier.padding(padding))
-            2 -> SettingsContent(modifier = Modifier.padding(padding))
+            2 -> SettingsContent(onSignOut = onSignOut, modifier = Modifier.padding(padding))
         }
     }
 }
