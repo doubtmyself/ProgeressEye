@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -431,6 +432,22 @@ class BarPreviewDialog(QDialog):
 
         layout.addLayout(tools_row)
 
+
+        # 작업 이름 입력
+        name_layout = QHBoxLayout()
+        name_label = QLabel("작업 이름:")
+        name_label.setStyleSheet("color: #888; font-size: 12px;")
+        name_layout.addWidget(name_label)
+        self._task_name_input = QLineEdit()
+        self._task_name_input.setPlaceholderText("비워두면 자동 지정")
+        self._task_name_input.setStyleSheet(
+            "QLineEdit { background: #1c1c30; border: 1px solid #2a2a45;"
+            "border-radius: 4px; padding: 4px 8px; color: #ffffff; font-size: 12px; }"
+            "QLineEdit:focus { border-color: #3b82f6; }"
+        )
+        name_layout.addWidget(self._task_name_input)
+        layout.addLayout(name_layout)
+
         # 버튼 영역
         btn_layout = QHBoxLayout()
 
@@ -524,3 +541,10 @@ class BarPreviewDialog(QDialog):
     def bar_region(self) -> BarRegion | None:
         """편집된 바 영역."""
         return self._bar_region
+
+
+    @property
+    def task_name(self) -> str | None:
+        """입력된 작업 이름. 비어있으면 None."""
+        text = self._task_name_input.text().strip()
+        return text if text else None
