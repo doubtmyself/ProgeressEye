@@ -165,6 +165,14 @@ class SettingsOverlay(QWidget):
         interval_row.addWidget(self._interval_spin, stretch=1)
         layout.addLayout(interval_row)
 
+        hint_style = (
+            f"color: {SUBTITLE_TEXT}; font-size: 11px;"
+            f" background: transparent; border: none;"
+        )
+        interval_hint = QLabel(t("settings_interval_hint"))
+        interval_hint.setStyleSheet(hint_style)
+        layout.addWidget(interval_hint)
+
         # ── 언어 ──
         lang_label = QLabel(t("settings_language"))
         lang_label.setStyleSheet(label_style)
