@@ -36,6 +36,8 @@ data class DashboardUiState(
     val error: String? = null,
     /** Device ID currently waiting for screenshot response. */
     val screenshotLoadingDeviceId: String? = null,
+    /** True during pull-to-refresh. */
+    val isRefreshing: Boolean = false,
 )
 
 // ── Status constants (match PC Agent codes) ──

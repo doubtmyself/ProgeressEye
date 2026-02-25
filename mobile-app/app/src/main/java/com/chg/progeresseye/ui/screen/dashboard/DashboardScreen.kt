@@ -35,6 +35,8 @@ import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,10 +99,12 @@ private val Amber600 = Color(0xFFD97706)
 // DashboardContent — content only, used by MainScreen
 // ═════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardContent(
     uiState: DashboardUiState,
     onRequestScreenshot: (deviceId: String) -> Unit = {},
+    onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when {
@@ -149,21 +153,27 @@ fun DashboardContent(
         }
 
         else -> {
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = onRefresh,
                 modifier = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                items(uiState.devices, key = { it.id }) { device ->
-                    DeviceCard(
-                        device = device,
-                        isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
-                        onRequestScreenshot = { onRequestScreenshot(device.id) },
-                    )
-                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    items(uiState.devices, key = { it.id }) { device ->
+                        DeviceCard(
+                            device = device,
+                            isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                            onRequestScreenshot = { onRequestScreenshot(device.id) },
+                        )
+                    }
             }
         }
     }
+}
 }
 
 // ═════════════════════════════════════════════════════════

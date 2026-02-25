@@ -62,6 +62,7 @@ class DashboardViewModel : ViewModel() {
                     isLoading = false,
                     devices = devices,
                     screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
+                    isRefreshing = false,
                 )
             }
 
@@ -132,6 +133,15 @@ class DashboardViewModel : ViewModel() {
             .child("users").child(uid)
             .child("commands").child("screenshot")
         commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
+    }
+
+    // ── Pull-to-Refresh ────────────────────────────────
+
+    fun refresh() {
+        _uiState.value = _uiState.value.copy(isRefreshing = true)
+        stopListening()
+        startListening()
+        // isRefreshing is cleared when onDataChange fires
     }
 
     // ── Lifecycle: pause / cleanup ──────────────────────
