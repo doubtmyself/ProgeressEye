@@ -148,38 +148,47 @@ class AuthRepository @Inject constructor(
 }
 ```
 
-### 3.2 실시간 진행률 수신
+### 3.2 실시간 진행률 수신 (현재 구현)
 
 ```kotlin
-// 의사코드
-class TaskRepository @Inject constructor(
-    private val firebaseDataSource: FirebaseDataSource,
-    private val firebaseAuth: FirebaseAuth
-) {
-    fun observeAllTasks(): Flow<Map<String, List<Task>>> {
-        val uid = firebaseAuth.currentUser!!.uid
-        return firebaseDataSource
-            .observeRealtimeDB("users/$uid/devices")
-            .map { snapshot -> snapshot.toTaskMap() }
-            .distinctUntilChanged()
+// DashboardViewModel.kt — RTDB 리스너 기반
+class DashboardViewModel : ViewModel() {
+    private val auth = FirebaseAuth.getInstance()
+    private val db = FirebaseDatabase.getInstance()
+    private val _uiState = MutableStateFlow(DashboardUiState())
+    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    private var devicesRef: DatabaseReference? = null
+    private var devicesListener: ValueEventListener? = null
+
+    init { startListening() }
+
+    private fun startListening() {
+        val uid = auth.currentUser?.uid ?: return
+        devicesRef = db.reference.child("users").child(uid).child("devices")
+        devicesListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val devices = snapshot.children.mapNotNull { parseDevice(it) }
+                _uiState.value = DashboardUiState(isLoading = false, devices = devices)
+            }
+            override fun onCancelled(error: DatabaseError) { /* 에러 처리 */ }
+        }
+        devicesRef?.addValueEventListener(devicesListener!!)
+    }
+
+    // RTDB 데이터 파싱: tasks/{region_id}/{p, s, l}
+    // p = progress (0-100, UI에서 0f..1f로 변환)
+    // s = status ("r"=running, "f"=frozen, "c"=completed)
+    // l = label (작업 이름)
+
+    override fun onCleared() {
+        devicesListener?.let { devicesRef?.removeEventListener(it) }
     }
 }
-
-class DashboardViewModel @Inject constructor(
-    private val observeDevicesUseCase: ObserveDevicesUseCase,
-    private val observeTasksUseCase: ObserveTasksUseCase
-) : ViewModel() {
-    val uiState: StateFlow<DashboardUiState> =
-        combine(
-            observeDevicesUseCase(),
-            observeTasksUseCase()
-        ) { devices, tasks ->
-            if (devices.isEmpty()) DashboardUiState.Empty
-            else DashboardUiState.Success(devices, tasks)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Loading)
-}
 ```
+
+> **TODO**: Hilt DI 도입 시 Repository 계층 분리 예정
+> **TODO**: CPU 사용량, 온도 메트릭 추가 예정
 
 ### 3.3 FCM 푸시 알림 처리
 
@@ -356,35 +365,32 @@ https://firebasestorage.googleapis.com/v0/b/{bucket}/o/screenshots%2F{uid}%2F{ts
 ### 빌드 설정
 
 ```kotlin
-// build.gradle.kts (app)
+// build.gradle.kts (app) — 현재 설정
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
+}
+
 android {
-    compileSdk = 35
+    compileSdk { version = release(36) { minorApiLevel = 1 } }
     defaultConfig {
-        applicationId = "com.progresseye"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
-    }
-    buildFeatures {
-        compose = true
+        applicationId = "com.chg.progeresseye"
+        minSdk = 24
+        targetSdk = 36
     }
 }
 
 dependencies {
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:33.x.x"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-database-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    
-    // Google Sign-In
-    implementation("com.google.android.gms:play-services-auth:21.x.x")
+    // Firebase (BOM 34.9.0)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.database)
+    // Credential Manager (Google Sign-In)
+    implementation(libs.androidx.credentials)              // 1.5.0
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)                          // 1.1.1
 }
-    
-    // Image Loading (스크린샷 표시)
-    implementation("io.coil-kt:coil-compose:2.x.x")
 ```
 
 ### CI/CD

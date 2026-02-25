@@ -456,19 +456,29 @@ data class Screenshot(
 )
 ```
 
-### 4.2 데이터 흐름
+### 4.2 데이터 흐름 (현재 구현)
 
 ```
 Firebase RTDB
-    ↓ (ValueEventListener / addChildEventListener)
-FirebaseDataSource (Flow<DataSnapshot>)
-    ↓ (.map { snapshot.toModel() })
-Repository (Flow<List<DeviceWithTasks>>)
-    ↓ (.stateIn(viewModelScope))
-ViewModel (StateFlow<DashboardUiState>)
+    ↓ (ValueEventListener)
+DashboardViewModel (MutableStateFlow<DashboardUiState>)
     ↓ (.collectAsStateWithLifecycle())
 Compose UI (자동 recomposition)
 ```
+
+> **Note**: Hilt DI 미적용 상태. ViewModel이 직접 FirebaseDatabase 인스턴스를 생성하여 리스너 관리.
+> 추후 Hilt 도입 시 Repository 계층 분리 예정.
+
+**구현된 상태:**
+- DashboardViewModel: `users/{uid}/devices` 경로에 ValueEventListener 등록
+- 디바이스 + 작업 데이터 실시간 수신 → DashboardUiState로 변환
+- 로딩/에러/빈 상태/데이터 표시 4가지 UI 상태 처리
+- 온라인 판단: lastSeen이 2분 이내이면 Online
+
+**TODO:**
+- CPU 사용량, 온도 메트릭 표시 (MetricChip) — 추후 구현
+- Pull-to-Refresh 지원
+- 스크린샷 요청/표시 기능
 
 ### 4.3 리스너 경로
 
