@@ -48,6 +48,10 @@ import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.SurfaceDark
+import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 // ── Local palette ──
 private val Slate400 = Color(0xFF94A3B8)
@@ -74,6 +78,8 @@ private val navItems = listOf(
 fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
+    val dashboardViewModel: DashboardViewModel = viewModel()
+    val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
@@ -99,7 +105,7 @@ fun MainScreen(
         modifier = modifier,
     ) { padding ->
         when (selectedTab) {
-            0 -> DashboardContent(modifier = Modifier.padding(padding))
+            0 -> DashboardContent(uiState = dashboardState, modifier = Modifier.padding(padding))
             1 -> AlertsContent(modifier = Modifier.padding(padding))
             2 -> SettingsContent(modifier = Modifier.padding(padding))
         }

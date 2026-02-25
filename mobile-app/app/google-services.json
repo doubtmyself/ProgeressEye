@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "989425742328-0ef4b6l4slbbvq88l7f0ashrr4si2t86.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chg.progeresseye",
+            "certificate_hash": "7e5f5b8a280dbfa813208b34c8cea5e8848d160c"
+          }
+        },
+        {
           "client_id": "989425742328-38hun2d4obo8i86h2itd1emuo9ge95nq.apps.googleusercontent.com",
           "client_type": 3
         }

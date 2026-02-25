@@ -1,0 +1,126 @@
+package com.chg.progeresseye.ui.screen.dashboard
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import com.chg.progeresseye.data.model.DashboardUiState
+import com.chg.progeresseye.data.model.DeviceData
+import com.chg.progeresseye.data.model.TaskData
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+// ═════════════════════════════════════════════════════════
+// DashboardViewModel — RTDB listener for devices + tasks
+// ═════════════════════════════════════════════════════════
+
+class DashboardViewModel : ViewModel() {
+
+    private val auth = FirebaseAuth.getInstance()
+    private val db = FirebaseDatabase.getInstance()
+
+    private val _uiState = MutableStateFlow(DashboardUiState())
+    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    // Listener + ref stored for cleanup
+    private var devicesRef: DatabaseReference? = null
+    private var devicesListener: ValueEventListener? = null
+
+    init {
+        startListening()
+    }
+
+    // ── Listener setup ─────────────────────────────────────
+
+    private fun startListening() {
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            _uiState.value = DashboardUiState(
+                isLoading = false,
+                error = "Not signed in",
+            )
+            return
+        }
+
+        devicesRef = db.reference.child("users").child(uid).child("devices")
+
+        devicesListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val devices = snapshot.children.mapNotNull { parseDevice(it) }
+                _uiState.value = DashboardUiState(
+                    isLoading = false,
+                    devices = devices,
+                )
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "devices:onCancelled", error.toException())
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = error.message,
+                )
+            }
+        }
+
+        devicesRef?.addValueEventListener(devicesListener!!)
+    }
+
+    // ── Snapshot parsing ───────────────────────────────────
+
+    private fun parseDevice(snapshot: DataSnapshot): DeviceData? {
+        val id = snapshot.key ?: return null
+        val name = snapshot.child("name").getValue(String::class.java) ?: id
+        val platform = snapshot.child("platform").getValue(String::class.java) ?: ""
+        val lastSeen = snapshot.child("lastSeen").getValue(Long::class.java) ?: 0L
+
+        // Determine online: lastSeen within ONLINE_THRESHOLD_MS
+        val isOnline = (System.currentTimeMillis() - lastSeen) < ONLINE_THRESHOLD_MS
+
+        val tasks = snapshot.child("tasks").children.mapNotNull { taskSnap ->
+            parseTask(taskSnap)
+        }
+
+        return DeviceData(
+            id = id,
+            name = name,
+            platform = platform,
+            isOnline = isOnline,
+            lastSeen = lastSeen,
+            tasks = tasks,
+        )
+    }
+
+    private fun parseTask(snapshot: DataSnapshot): TaskData? {
+        val id = snapshot.key ?: return null
+        val progressRaw = snapshot.child("p").getValue(Double::class.java)?.toFloat() ?: 0f
+        val status = snapshot.child("s").getValue(String::class.java) ?: "r"
+        val label = snapshot.child("l").getValue(String::class.java) ?: id
+
+        return TaskData(
+            id = id,
+            label = label,
+            progress = progressRaw / 100f, // RTDB 0-100 → UI 0f..1f
+            status = status,
+        )
+    }
+
+    // ── Lifecycle cleanup ──────────────────────────────────
+
+    override fun onCleared() {
+        super.onCleared()
+        devicesListener?.let { listener ->
+            devicesRef?.removeEventListener(listener)
+        }
+    }
+
+    companion object {
+        private const val TAG = "DashboardViewModel"
+        /** Consider device offline if lastSeen > 2 minutes ago. */
+        private const val ONLINE_THRESHOLD_MS = 2 * 60 * 1000L
+    }
+}

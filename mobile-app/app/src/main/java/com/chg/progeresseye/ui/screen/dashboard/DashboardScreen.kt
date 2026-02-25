@@ -19,16 +19,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DesktopWindows
-import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Thermostat
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,11 +44,16 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chg.progeresseye.data.model.DashboardUiState
+import com.chg.progeresseye.data.model.DeviceData
+import com.chg.progeresseye.data.model.TaskData
+import com.chg.progeresseye.data.model.TaskStatus
+import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressGradientEnd
@@ -65,47 +70,74 @@ private val Slate400 = Color(0xFF94A3B8)
 private val Slate800 = Color(0xFF1E293B)
 private val Blue300 = Color(0xFF93C5FD)
 private val Emerald300 = Color(0xFF6EE7B7)
-private val Emerald500 = Color(0xFF10B981)
 private val Amber300 = Color(0xFFFCD34D)
 private val Amber500 = Color(0xFFF59E0B)
 private val Amber600 = Color(0xFFD97706)
-
-// ── Status constants ──
-private const val STATUS_RUNNING = "r"
-private const val STATUS_COMPLETE = "c"
-private const val STATUS_STALLED = "f"
-
-// ── Preview model ──
-private data class PreviewTask(
-    val label: String,
-    val progress: Float,
-    val status: String,
-    val subtitle: String,
-)
-
-private val previewTasks = listOf(
-    PreviewTask("Premiere Rendering", 0.732f, STATUS_RUNNING, "Est. remaining time: 14 mins"),
-    PreviewTask("File Download", 1.0f, STATUS_COMPLETE, "Completed at 10:42 AM"),
-    PreviewTask("Installation", 0.345f, STATUS_STALLED, "No change detected for 5m"),
-)
 
 // ═════════════════════════════════════════════════════════
 // DashboardContent — content only, used by MainScreen
 // ═════════════════════════════════════════════════════════
 
 @Composable
-fun DashboardContent(modifier: Modifier = Modifier) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            DeviceCard(
-                deviceName = "DESKTOP-ABC",
-                isOnline = true,
-                tasks = previewTasks,
-            )
+fun DashboardContent(
+    uiState: DashboardUiState,
+    modifier: Modifier = Modifier,
+) {
+    when {
+        uiState.isLoading -> {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Primary)
+            }
+        }
+
+        uiState.error != null -> {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = uiState.error,
+                    color = Color(0xFFEF4444),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(32.dp),
+                )
+            }
+        }
+
+        uiState.devices.isEmpty() -> {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Outlined.DesktopWindows,
+                        contentDescription = null,
+                        tint = Slate400,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No devices registered",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OnSurfaceDark,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Connect a PC with ProgressEye agent\nto start monitoring.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Slate400,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+
+        else -> {
+            LazyColumn(
+                modifier = modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                items(uiState.devices, key = { it.id }) { device ->
+                    DeviceCard(device = device)
+                }
+            }
         }
     }
 }
@@ -115,25 +147,38 @@ fun DashboardContent(modifier: Modifier = Modifier) {
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun DeviceCard(
-    deviceName: String,
-    isOnline: Boolean,
-    tasks: List<PreviewTask>,
-) {
+private fun DeviceCard(device: DeviceData) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = SurfaceDark,
         border = BorderStroke(1.dp, SurfaceContainerHighDark),
     ) {
         Column {
-            DeviceHeader(name = deviceName, isOnline = isOnline)
+            DeviceHeader(name = device.name, isOnline = device.isOnline)
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                tasks.forEach { task -> TaskItem(task = task) }
+
+            if (device.tasks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "No active tasks",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Slate400,
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    device.tasks.forEach { task -> TaskItem(task = task) }
+                }
             }
+
             ScreenshotButton()
         }
     }
@@ -194,40 +239,11 @@ private fun DeviceHeader(name: String, isOnline: Boolean) {
                     color = if (isOnline) StatusComplete else StatusOffline,
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 4.dp),
-            ) {
-                MetricChip(Icons.Outlined.Memory, "42%", "▼ 2%", Emerald500)
-                MetricChip(Icons.Outlined.Thermostat, "65°C", "▲ 1°", Amber500)
-            }
+            // TODO: CPU usage, temperature metrics (MetricChip) — 추후 구현
         }
 
-        IconButton(onClick = { /* TODO */ }) {
+        IconButton(onClick = { /* TODO: device options menu */ }) {
             Icon(Icons.Outlined.MoreVert, "More options", tint = Slate400)
-        }
-    }
-}
-
-// ═════════════════════════════════════════════════════════
-// Metric Chip
-// ═════════════════════════════════════════════════════════
-
-@Composable
-private fun MetricChip(icon: ImageVector, value: String, delta: String, deltaColor: Color) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Slate800.copy(alpha = 0.60f),
-        border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.50f)),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(icon, null, tint = Slate400, modifier = Modifier.size(16.dp))
-            Text(value, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = OnSurfaceDark)
-            Text(delta, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = deltaColor)
         }
     }
 }
@@ -237,7 +253,7 @@ private fun MetricChip(icon: ImageVector, value: String, delta: String, deltaCol
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun TaskItem(task: PreviewTask) {
+private fun TaskItem(task: TaskData) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -248,22 +264,32 @@ private fun TaskItem(task: PreviewTask) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(task.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = task.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 StatusBadge(status = task.status)
             }
 
             when (task.status) {
-                STATUS_COMPLETE -> Icon(
+                TaskStatus.COMPLETED -> Icon(
                     Icons.Outlined.CheckCircle, "Complete",
                     tint = StatusComplete, modifier = Modifier.size(20.dp),
                 )
+
                 else -> {
                     val color = when (task.status) {
-                        STATUS_RUNNING -> Primary
-                        STATUS_STALLED -> Amber500
+                        TaskStatus.RUNNING -> Primary
+                        TaskStatus.FROZEN -> Amber500
                         else -> Slate400
                     }
-                    Text("%.1f%%".format(task.progress * 100), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, color = color)
+                    Text(
+                        text = "%.1f%%".format(task.progress * 100),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = color,
+                    )
                 }
             }
         }
@@ -276,16 +302,26 @@ private fun TaskItem(task: PreviewTask) {
         GradientProgressBar(animatedProgress, task.status, Modifier.fillMaxWidth().height(8.dp))
 
         when (task.status) {
-            STATUS_STALLED -> {
+            TaskStatus.FROZEN -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(Icons.Outlined.Warning, null, tint = Amber600, modifier = Modifier.size(14.dp))
-                    Text(task.subtitle, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = Amber600)
+                    Text(
+                        text = "No change detected",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = Amber600,
+                    )
                 }
             }
-            else -> Text(task.subtitle, style = MaterialTheme.typography.bodySmall, color = Slate400)
+
+            TaskStatus.COMPLETED -> {
+                Text("Completed", style = MaterialTheme.typography.bodySmall, color = StatusComplete)
+            }
+
+            else -> {} // Running — no extra subtitle needed
         }
     }
 }
@@ -297,16 +333,20 @@ private fun TaskItem(task: PreviewTask) {
 @Composable
 private fun StatusBadge(status: String) {
     val (bgColor, textColor, label) = when (status) {
-        STATUS_RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, "Running")
-        STATUS_COMPLETE -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, "Done")
-        STATUS_STALLED -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, "Stalled")
+        TaskStatus.RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, "Running")
+        TaskStatus.COMPLETED -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, "Done")
+        TaskStatus.FROZEN -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, "Stalled")
         else -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, "Unknown")
     }
     Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp,
+            ),
             color = textColor,
         )
     }
@@ -323,12 +363,16 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
         drawRoundRect(color = Slate800, cornerRadius = cr)
         if (progress > 0f) {
             val brush = when (status) {
-                STATUS_RUNNING -> Brush.horizontalGradient(listOf(Primary, ProgressGradientEnd))
-                STATUS_COMPLETE -> Brush.horizontalGradient(listOf(StatusComplete, StatusComplete))
-                STATUS_STALLED -> Brush.horizontalGradient(listOf(Amber500, Amber500))
+                TaskStatus.RUNNING -> Brush.horizontalGradient(listOf(Primary, ProgressGradientEnd))
+                TaskStatus.COMPLETED -> Brush.horizontalGradient(listOf(StatusComplete, StatusComplete))
+                TaskStatus.FROZEN -> Brush.horizontalGradient(listOf(Amber500, Amber500))
                 else -> Brush.horizontalGradient(listOf(Slate400, Slate400))
             }
-            drawRoundRect(brush = brush, size = Size(size.width * progress.coerceIn(0f, 1f), size.height), cornerRadius = cr)
+            drawRoundRect(
+                brush = brush,
+                size = Size(size.width * progress.coerceIn(0f, 1f), size.height),
+                cornerRadius = cr,
+            )
         }
     }
 }
@@ -355,7 +399,12 @@ private fun ScreenshotButton() {
                 ) {
                     Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Screenshot", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    Text(
+                        text = "Screenshot",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = OnSurfaceDark,
+                    )
                 }
             }
         }
@@ -366,10 +415,28 @@ private fun ScreenshotButton() {
 // Preview
 // ═════════════════════════════════════════════════════════
 
+private val previewDevices = listOf(
+    DeviceData(
+        id = "pc_preview",
+        name = "DESKTOP-ABC",
+        platform = "Windows-10",
+        isOnline = true,
+        lastSeen = System.currentTimeMillis(),
+        tasks = listOf(
+            TaskData("r1", "Premiere Rendering", 0.732f, TaskStatus.RUNNING),
+            TaskData("r2", "File Download", 1.0f, TaskStatus.COMPLETED),
+            TaskData("r3", "Installation", 0.345f, TaskStatus.FROZEN),
+        ),
+    ),
+)
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun DashboardContentPreview() {
     ProgressEyeTheme {
-        DashboardContent()
+        DashboardContent(
+            uiState = DashboardUiState(isLoading = false, devices = previewDevices),
+            modifier = Modifier.background(BackgroundDark),
+        )
     }
 }
