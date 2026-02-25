@@ -81,7 +81,17 @@ class RegionCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-        # ── Header row: checkbox + type label + region label ──
+
+        type_text = "진행률 숫자" if region_type == "ocr" else "진행률 바"
+        # ── Row 1: 작업 이름 라벨 (큰 글씨, 볼드) ──
+        self._label = QLabel(label)
+        self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self._label.setStyleSheet(
+            f"color: {CARD_LABEL}; background: transparent; border: none;"
+        )
+        layout.addWidget(self._label)
+
+        # ── Row 2: 체크박스 + 타입 라벨 (작은 글씨) ──
         header_row = QHBoxLayout()
         self._checkbox = QCheckBox()
         self._checkbox.setChecked(True)
@@ -100,25 +110,16 @@ class RegionCard(QFrame):
         )
         self._checkbox.stateChanged.connect(self._on_check_changed)
         header_row.addWidget(self._checkbox)
-
-        type_text = "진행률 숫자" if region_type == "ocr" else "진행률 바"
         self._type_label = QLabel(type_text)
         self._type_label.setStyleSheet(
-            f"color: {CARD_LABEL};"
+            f"color: {SUBTITLE_TEXT};"
             f"background: transparent;"
-            f"font-size: 12px;"
-            f"font-weight: bold;"
+            f"font-size: 11px;"
             f"border: none;"
             f"padding: 0px;"
         )
         header_row.addWidget(self._type_label)
-
-        self._label = QLabel(label)
-        self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        self._label.setStyleSheet(
-            f"color: {CARD_LABEL}; background: transparent; border: none;"
-        )
-        header_row.addWidget(self._label, stretch=1)
+        header_row.addStretch()
         layout.addLayout(header_row)
 
         # ── Progress bar (percentage shown ON bar, no separate label) ──
