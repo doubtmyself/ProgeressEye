@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import webbrowser
 import os
 import sys
 from pathlib import Path
@@ -47,6 +48,11 @@ class GoogleOAuth:
         """
         try:
             os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+            # Windows: webbrowser 모듈이 Edge를 열 수 있으므로
+            # os.startfile()로 OS 기본 브라우저를 강제 사용한다.
+            if sys.platform == "win32":
+                webbrowser.open = lambda url, new=0, autoraise=True: not os.startfile(url)  # type: ignore[func-returns-value]
+
             flow = InstalledAppFlow.from_client_secrets_file(
                 self._client_secret_path,
                 SCOPES,
