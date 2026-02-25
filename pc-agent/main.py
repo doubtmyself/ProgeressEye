@@ -7,6 +7,7 @@ MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 # pyright: reportMissingImports=false, reportMissingModuleSource=false, reportMissingTypeArgument=false
 
 import queue
+import time
 import os
 import pathlib
 import sys
@@ -66,6 +67,7 @@ class ProgressEyeApp:
         self._firebase_auth = FirebaseAuth()
         self._token_manager = TokenManager()
         self._firebase_id_token: str | None = None
+        self._token_expires_at: float = 0.0  # epoch seconds
         self._realtime_db: RealtimeDB | None = None
         self._device_manager: DeviceManager | None = None
         self._heartbeat_timer: QTimer | None = None
@@ -145,6 +147,7 @@ class ProgressEyeApp:
             return False
 
         self._firebase_id_token = result["id_token"]
+        self._token_expires_at = time.time() + 3600
         uid = result.get("uid", "")
         email = result.get("email", "")
         if uid:
@@ -215,6 +218,7 @@ class ProgressEyeApp:
             google_result["id_token"]
         )
         self._firebase_id_token = firebase_result["id_token"]
+        self._token_expires_at = time.time() + 3600
 
         uid = firebase_result["uid"]
         email = firebase_result["email"]
@@ -240,6 +244,27 @@ class ProgressEyeApp:
         """Firebase 서비스를 초기화하고 기기를 등록한다."""
 
         def get_token() -> str:
+            """만료 임박 시 자동 갱신하여 유효한 토큰을 반환한다."""
+            if self._firebase_id_token and time.time() < self._token_expires_at - 300:
+                return self._firebase_id_token
+            # 만료 5분 전 또는 이미 만료 → refresh
+            try:
+                refresh = self._token_manager.load_refresh_token()
+                if refresh:
+                    result = self._firebase_auth.refresh_token(refresh)
+                    self._firebase_id_token = result["id_token"]
+                    self._token_expires_at = time.time() + 3600
+                    self._token_manager.save_tokens(
+                        uid=self._config.get("auth.uid", ""),
+                        email=self._config.get("auth.email", ""),
+                        display_name=self._token_manager.load_display_name() or "",
+                        refresh_token=result["refresh_token"],
+                        id_token=result["id_token"],
+                    )
+                    log.info("Firebase 토큰 자동 갱신 완료")
+                    return self._firebase_id_token
+            except Exception as exc:
+                log.warning("Firebase 토큰 자동 갱신 실패: %s", exc)
             return self._firebase_id_token or id_token
 
         self._realtime_db = RealtimeDB(
