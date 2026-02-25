@@ -1,6 +1,6 @@
 # ProgressEye PC Agent
 
-PC 화면의 진행바를 캐콉하여 **진행바 픽셀 분석(OpenCV)** 또는 **OCR 숫자 감지(pytesseract)** 두 가지 모드로 진행률(%)을 산출하는 Windows 데스크톱 에이전트.
+PC 화면의 진행바를 캡처하여 **진행바 픽셀 분석(OpenCV)** 또는 **OCR 숫자 감지(pytesseract)** 두 가지 모드로 진행률(%)을 산출하는 Windows 데스크톱 에이전트.
 
 ## 실행 방법
 
@@ -38,7 +38,7 @@ winget install UB-Mannheim.TesseractOCR
 
 ## 주요 의존성
 
-- `mss` — 화면 캐콉
+- `mss` — 화면 캡처
 - `opencv-python-headless` — 진행바 탐지 (OpenCV 4전략)
 - `pytesseract` — OCR 숫자 감지
 - `pystray` — 시스템 트레이
@@ -47,12 +47,57 @@ winget install UB-Mannheim.TesseractOCR
 - `keyring` — Windows 자격증명 관리자에 토큰 안전 저장
 - `PyQt6` — UI 프레임워크 (다크 테마)
 
+## 주요 기능
+
+### 모니터링
+
+- **진행바 모드**: OpenCV 4전략(Canny+Otsu, 적응형이진화, HSV채도분할, 배경제거) + Sobel 트랙 확장
+- **OCR 모드**: pytesseract LSTM 숫자 감지, 변화 감지로 불필요한 OCR 스킵
+- **멀티모니터 지원**: Qt screen index + mss monitor index + scale factor 자동 계산
+- **작업별 완료 알람**: 80~100% 범위에서 threshold 설정, 연속 2회 도달 시 트레이 알림
+- **이미지 변경 감지**: 최초 등록 시점의 템플릿 이미지와 비교 (64×64 grayscale + Pearson 상관계수), 화면이 크게 변경되면 자동 정지
+- **프리징 감지**: 설정 시간(1~60분) 동안 진행률 변화 없으면 멈춤으로 판정
+- **템플릿 이미지 영구 저장**: `templates/{region_id}.png`에 영역 등록 시점의 스크린샷을 저장, 작업 삭제 시에만 파일 삭제
+
+### 완료 시나리오 (3가지)
+
+| 시나리오 | 조건 | 처리 |
+|---|---|---|
+| 게이지 초기화 | 진행률이 threshold 근처에서 급락 (≥20% 하락) | 완료 알람 + 추적 초기화 |
+| 창 닫힘/화면 변경 | 이미지 변경 감지 + 진행률 ≥ (threshold - 10%) | 완료 알람 |
+| 게이지 유지 | 연속 2회 threshold 도달 | 완료 알람 (스파이크 방지) |
+
+### Firebase 연동
+
+- **인증**: Google OAuth → Firebase REST API (`signInWithIdp`)로 토큰 교환
+- **토큰 자동 갱신**: 만료 5분 전 자동 refresh (1시간 유효)
+- **배치 전송**: 모니터링 사이클 단위로 변경된 작업만 전송 (동일 데이터 스킵)
+- **SSL 재시도**: `requests.Session` + `Retry(total=3, backoff_factor=1)`
+- **Free/Pro 플랜**: Free = 동시 1대, Pro = 무제한 기기
+
+### Firebase 데이터 구조
+
+```
+users/{uid}/
+  plan: "free" | "pro"
+  activeDevice: "pc_xxxx"
+  profile: {email, displayName, lastLoginAt}
+  devices/
+    pc_xxxx/
+      name, platform, status, lastSeen, appVersion, createdAt
+      tasks/
+        region_1/
+          p: 45.2      ← progress
+          s: "r"        ← status (r=running, f=freeze, c=completed)
+          l: "작업이름"  ← label
+```
+
 ## 성능 최적화
 
 ### 바 모드 — Smart 다운스케일
 
 진행바 픽셀 분석 시 50% 다운스케일을 적용하여 OpenCV 연산량을 ~75% 감소시킨다.
-신뢰도가 낮을 때(얀은 바, 복잡한 오버레이) 원본 해상도로 자동 fallback한다.
+신뢰도가 낮을 때(얇은 바, 복잡한 오버레이) 원본 해상도로 자동 fallback한다.
 
 | 단계 | 설명 |
 |---|---|
@@ -68,14 +113,14 @@ winget install UB-Mannheim.TesseractOCR
 OCR 모드에서는 두 가지 최적화를 적용한다:
 
 **1. 변화 감지 (Change Detection)**
-- 이전 캐콉과 픽셀을 비교하여 변화가 없으면 OCR을 스킵하고 캐시된 결과를 반환
-- 이미지를 32x32로 축소 후 MD5 해싱으로 빠른 비교
+- 이전 캡처와 픽셀을 비교하여 변화가 없으면 OCR을 스킵하고 캐시된 결과를 반환
+- 이미지를 32×32로 축소 후 MD5 해싱으로 빠른 비교
 - 효과: OCR 실행 72~107ms → skip 시 0.1~2ms (**50~500배 절약**)
 
 **2. Tesseract 설정 최적화**
 - `--oem 1` (LSTM only): Legacy+LSTM 대비 가벼움
 - `--psm 6` (블록 모드): 다양한 레이아웃 호환성 유지
-- 숫자+% 필터링은 regex로 처리 (화면 캐콉에 비숫자 요소 포함 가능)
+- 숫자+% 필터링은 regex로 처리 (화면 캡처에 비숫자 요소 포함 가능)
 
 ### 저사양 PC 예상 점유율 (2코어 Celeron, 4GB RAM)
 
@@ -89,10 +134,10 @@ OCR 모드에서는 두 가지 최적화를 적용한다:
 ## UI/설정
 
 - **다크 테마**: 커스텀 색상 팔레트 (`#0f0f1a` ~ `#3b82f6`)
-- **설정 오버레이**: MainWindow 내부 모달 (모니터링 간격, 언어, 계정 정보, 로그아웃)
+- **설정 오버레이**: MainWindow 내부 모달 (모니터링 간격, 언어, 프리징 감지 시간, 계정 정보, 로그아웃)
 - **다국어**: 한국어 / 영어 (i18n 모듈)
 - **로그아웃**: 토큰 삭제 → 앱 종료
-- **시스템 트레이**: 최소화 시 트레이 상주
+- **시스템 트레이**: 최소화 시 트레이 상주, 완료 알림 표시
 
 ## Google OAuth 설정
 
@@ -102,13 +147,3 @@ OCR 모드에서는 두 가지 최적화를 적용한다:
 2. 다운로드한 JSON 파일을 `pc-agent/client_secret.json`으로 저장
 3. 앱 실행 시 OS 기본 브라우저가 열리며 Google 로그인 진행 → `localhost:8080`으로 리다이렉트되어 토큰 수신
 4. 이후 실행부터는 keyring에 저장된 토큰으로 자동 로그인
-
-## Firebase 연동
-
-- 인증: Google OAuth `id_token`을 Firebase REST API (`signInWithIdp`)로 교환하여 Firebase uid 획득
-- 데이터 전송: `requests` 라이브러리로 Firebase Realtime DB REST API 직접 호출
-  - 경로: `{DB_URL}/{path}.json?auth={idToken}`
-- 토큰 갱신: `refresh_token`으로 자동 갱신 (만료 1시간)
-- 기기 등록: 로그인 성공 시 `users/{uid}/devices/{pcId}` 자동 등록
-- 하트비트: 30초마다 `lastSeen` 갱신
-- 종료 시: `status: offline` 기록
