@@ -22,8 +22,8 @@ from auth.google_oauth import GoogleOAuth  # pyright: ignore[reportImplicitRelat
 from auth.token_manager import TokenManager  # pyright: ignore[reportImplicitRelativeImport]
 from config import Config  # pyright: ignore[reportImplicitRelativeImport]
 from firebase import RealtimeDB, DeviceManager  # pyright: ignore[reportImplicitRelativeImport]
-from core.bar_analyzer import BarAnalyzer  # pyright: ignore[reportImplicitRelativeImport]
-from core.bar_finder import BarFinder  # pyright: ignore[reportImplicitRelativeImport]
+from core.bar_analyzer import AnalysisResult, BarAnalyzer  # pyright: ignore[reportImplicitRelativeImport]
+from core.bar_finder import BarFinder, BarRegion  # pyright: ignore[reportImplicitRelativeImport]
 from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
 from core.freeze_detector import FreezeDetector  # pyright: ignore[reportImplicitRelativeImport]
 from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRelativeImport]
@@ -67,6 +67,7 @@ class ProgressEyeApp:
         self._device_manager: DeviceManager | None = None
         self._heartbeat_timer: QTimer | None = None
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
+        self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
 
         # UI
         self._main_window = MainWindow()
@@ -326,10 +327,8 @@ class ProgressEyeApp:
         except Exception as e:
             log.error("영역 캐처 실패: %s", e)
             return
-        bar_region = self._bar_finder.find(image)
+        bar_region, result = self._smart_bar_analyze(image)
         bar_image = image.crop(bar_region.bbox) if bar_region else image
-        direction = bar_region.direction if bar_region else "horizontal"
-        result = self._analyzer.analyze(bar_image, direction=direction)
         qimage = self._pil_to_qimage(image)
         dialog = BarPreviewDialog(
             image=qimage,
@@ -353,7 +352,7 @@ class ProgressEyeApp:
                 "height": area["height"],
                 "direction": dialog.bar_region.direction
                 if dialog.bar_region
-                else direction,
+                else "horizontal",
             }
             self._config.add_region(region)
             self._main_window.add_region_display(
@@ -585,10 +584,8 @@ class ProgressEyeApp:
                 QTimer.singleShot(100, self._start_ocr_area_selection)
         else:
             # 바 타입: BarPreviewDialog
-            bar_region = self._bar_finder.find(image)
+            bar_region, result = self._smart_bar_analyze(image)
             bar_image = image.crop(bar_region.bbox) if bar_region else image
-            direction = bar_region.direction if bar_region else "horizontal"
-            result = self._analyzer.analyze(bar_image, direction=direction)
 
             qimage = self._pil_to_qimage(image)
             dialog = BarPreviewDialog(
@@ -646,10 +643,8 @@ class ProgressEyeApp:
                 progress_val = 0.0
         else:
             # 바: 기존 로직 유지
-            bar_region = self._bar_finder.find(image)
+            bar_region, result = self._smart_bar_analyze(image)
             bar_image = image.crop(bar_region.bbox) if bar_region else image
-            direction = bar_region.direction if bar_region else "horizontal"
-            result = self._analyzer.analyze(bar_image, direction=direction)
             progress_val = result.progress
             if bar_region is not None:
                 bar_area = {
@@ -754,16 +749,13 @@ class ProgressEyeApp:
 
         if region_type == "ocr":
             # OCR로 숫자% 읽기
-            progress = self._ocr_reader.read_progress(image)
+            progress = self._ocr_reader.read_progress(image, region_id=region_id)
             if progress is None:
                 log.warning("[%s] OCR 숫자 인식 실패", region_id)
                 return
         else:
             # 바 영역 탐지 + 전환점 분석
-            bar_region = self._bar_finder.find(image)
-            direction = bar_region.direction if bar_region else "horizontal"
-            bar_image = image.crop(bar_region.bbox) if bar_region else image
-            result = self._analyzer.analyze(bar_image, direction=direction)
+            bar_region, result = self._smart_bar_analyze(image)
             progress = result.progress
 
         log.info("[%s] 진행률: %.1f%% (%s)", region_id, progress, region_type)
@@ -836,6 +828,38 @@ class ProgressEyeApp:
         setattr(self._main_window, "_really_quit", True)
         self._main_window.close()
         self._app.quit()
+
+    def _smart_bar_analyze(
+        self, image: PILImage.Image,
+    ) -> tuple[BarRegion | None, AnalysisResult]:
+        """Smart 바 분석: 다운스케일 시도 → 신뢰도 낮으면 원본 fallback.
+
+        Returns:
+            (bar_region, analysis_result) 튜플.
+        """
+        ds = self._bar_downscale
+        bar_region = self._bar_finder.find(image, downscale=ds)
+        bar_image = image.crop(bar_region.bbox) if bar_region else image
+        direction = bar_region.direction if bar_region else "horizontal"
+        result = self._analyzer.analyze(bar_image, direction=direction, downscale=ds)
+
+        # Fallback 조건: 신뢰도 부족 또는 uniform bar 의심 (0%/100% + 낮은 신뢰도)
+        needs_fallback = (
+            ds < 1.0
+            and (
+                result.confidence < 0.5
+                or (result.confidence <= 0.7 and result.progress in (0.0, 100.0))
+            )
+        )
+        if needs_fallback:
+            log.debug("다운스케일 신뢰도 부족 (%.2f, %.1f%%) → 원본 재분석",
+                      result.confidence, result.progress)
+            bar_region = self._bar_finder.find(image, downscale=1.0)
+            bar_image = image.crop(bar_region.bbox) if bar_region else image
+            direction = bar_region.direction if bar_region else "horizontal"
+            result = self._analyzer.analyze(bar_image, direction=direction, downscale=1.0)
+
+        return bar_region, result
 
     @staticmethod
     def _pil_to_qimage(pil_image: PILImage.Image) -> QImage:
