@@ -148,26 +148,11 @@ class RegionViewer(QWidget):
             painter.setPen(pen_cyan)
             painter.drawRect(inner)
 
-            # 진행률 라벨: 바 영역 아래
-            label_text = f"진행률: {self._progress:.1f}%"
-            font = QFont("Segoe UI", 12, QFont.Weight.Bold)
-            painter.setFont(font)
-
-            label_x = self._bar_rect.left()
-            label_y = self._bar_rect.bottom() + 8
-            # 화면 밖 방지
-            if label_y + 28 > self.height():
-                label_y = self._bar_rect.top() - 28
-
-            bg_rect = QRect(label_x - 4, label_y, 160, 26)
-            painter.fillRect(bg_rect, QColor(0, 0, 0, 200))
-            painter.setPen(QColor(0, 255, 255))
-            painter.drawText(label_x, label_y + 19, label_text)
-        else:
-            # 바 미탐지 — 영역 중앙에 안내
+        elif self._region_type != "ocr":
+            # 바 미탐지 — 영역 중앙에 안내 (OCR은 표시 안 함)
             painter.setFont(QFont("Segoe UI", 12))
             painter.setPen(QColor(255, 100, 100))
-            no_bar_text = f"OCR 감지  |  진행률: {self._progress:.1f}%" if self._region_type == "ocr" else f"바 미탐지  |  진행률: {self._progress:.1f}%"
+            no_bar_text = "바 미탐지"
             no_bar_rect = QRect(r.left(), r.bottom() + 8, 280, 26)
             if no_bar_rect.bottom() > self.height():
                 no_bar_rect = QRect(r.left(), r.top() - 28, 280, 26)
