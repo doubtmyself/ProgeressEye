@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ class GoogleOAuth:
             AuthError: 로그인 실패 시.
         """
         try:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
             flow = InstalledAppFlow.from_client_secrets_file(
                 self._client_secret_path,
                 SCOPES,
