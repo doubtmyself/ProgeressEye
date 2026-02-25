@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import platform
 import time
+from typing import Any
 
 from .realtime_db import RealtimeDB
 
@@ -47,6 +48,56 @@ class DeviceManager:
         """마지막 접속 시각만 갱신한다."""
         self._db.patch(self._path, {"lastSeen": int(time.time() * 1000)})
 
+    def sync_tasks(self, task_updates: dict[str, dict[str, Any]]) -> None:
+        """Multi-path update로 작업 데이터 + 하트비트를 한 번에 전송한다.
+
+        Args:
+            task_updates: {region_id: {"p": progress, "s": status_code}} 형식.
+        """
+        payload: dict[str, Any] = {"lastSeen": int(time.time() * 1000)}
+        for region_id, data in task_updates.items():
+            for key, value in data.items():
+                payload[f"tasks/{region_id}/{key}"] = value
+        self._db.patch(self._path, payload)
+
+    def delete_task(self, region_id: str) -> None:
+        """특정 작업 데이터를 삭제한다."""
+        self._db.delete(f"{self._path}/tasks/{region_id}")
+
+    def set_task_label(self, region_id: str, label: str) -> None:
+        """작업 라벨을 설정한다 (등록/수정 시에만 호출)."""
+        self._db.patch(f"{self._path}/tasks/{region_id}", {"l": label})
+
     @property
     def _path(self) -> str:
         return f"users/{self._uid}/devices/{self._device_id}"
+
+    @property
+    def _user_path(self) -> str:
+        return f"users/{self._uid}"
+
+    def get_user_plan(self) -> str:
+        """유저 플랜을 조회한다. (기본값: free)"""
+        data = self._db.get(f"{self._user_path}/plan")
+        return data if isinstance(data, str) else "free"
+
+    def get_active_device(self) -> str | None:
+        """현재 활성 디바이스 ID를 조회한다."""
+        data = self._db.get(f"{self._user_path}/activeDevice")
+        return data if isinstance(data, str) else None
+
+    def set_active_device(self) -> None:
+        """이 디바이스를 활성 디바이스로 설정한다."""
+        self._db.patch(self._user_path, {"activeDevice": self._device_id})
+
+    def clear_active_device(self) -> None:
+        """활성 디바이스를 해제한다 (로그아웃 시)."""
+        self._db.patch(self._user_path, {"activeDevice": None})
+
+    def is_other_device_online(self, other_device_id: str) -> bool:
+        """다른 디바이스가 온라인인지 확인한다 (5분 이내 lastSeen)."""
+        data = self._db.get(f"users/{self._uid}/devices/{other_device_id}/lastSeen")
+        if not isinstance(data, (int, float)):
+            return False
+        elapsed = time.time() * 1000 - data
+        return elapsed < 5 * 60 * 1000  # 5분

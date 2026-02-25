@@ -14,6 +14,7 @@ from utils.logger import log
 
 # 콜백 타입: (region_id, captured_image) → None
 CaptureCallback = Callable[[str, Image.Image], None]
+CycleCompleteCallback = Callable[[], None]
 
 
 class CaptureScheduler:
@@ -27,13 +28,16 @@ class CaptureScheduler:
         self,
         on_capture: CaptureCallback,
         capturer: ScreenCapturer | None = None,
+        on_cycle_complete: CycleCompleteCallback | None = None,
     ) -> None:
         """
         Args:
-            on_capture: 캡처 완료 시 호출되는 콜백 (region_id, image).
-            capturer: 화면 캡처 엔진 (None이면 새로 생성).
+            on_capture: 캡쳐 완료 시 호출되는 콜백 (region_id, image).
+            capturer: 화면 캡쳐 엔진 (None이면 새로 생성).
+            on_cycle_complete: 한 사이클 완료 후 호출되는 콜백.
         """
         self._on_capture = on_capture
+        self._on_cycle_complete = on_cycle_complete
         self._capturer = capturer or ScreenCapturer()
         self._regions: dict[str, dict[str, Any]] = {}
         self._interval: int = 30
@@ -144,6 +148,13 @@ class CaptureScheduler:
                 log.error("캡처 실패 [%s]: %s", region_id, e)
             except Exception as e:
                 log.error("캡처 콜백 오류 [%s]: %s", region_id, e)
+
+        # 사이클 완료 콜백
+        if self._on_cycle_complete is not None:
+            try:
+                self._on_cycle_complete()
+            except Exception as e:
+                log.error("사이클 콜백 오류: %s", e)
 
         # 다음 사이클 예약
         self._schedule_next()

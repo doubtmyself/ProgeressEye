@@ -36,7 +36,7 @@ from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeI
 from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
-from utils.i18n import set_language  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
 
 
 class ProgressEyeApp:
@@ -58,6 +58,7 @@ class ProgressEyeApp:
         self._scheduler = CaptureScheduler(
             on_capture=self._on_capture,
             capturer=self._capturer,
+            on_cycle_complete=self._on_cycle_complete,
         )
         self._google_oauth = GoogleOAuth()
         self._firebase_auth = FirebaseAuth()
@@ -68,6 +69,12 @@ class ProgressEyeApp:
         self._heartbeat_timer: QTimer | None = None
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
         self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
+        self._alerted_regions: dict[str, float] = {}  # region_id -> alert progress
+        self._post_completion_fails: dict[str, int] = {}  # 완료 후 연속 캡쳐 실패 횟수
+        self._pending_firebase_batch: dict[str, dict] = {}  # 사이클별 Firebase 배치
+        self._last_firebase_state: dict[str, dict] = {}  # region_id -> {p, s} 마지막 전송값
+        self._completion_confirm: dict[str, int] = {}  # region_id -> 연속 threshold 도달 횟수
+        self._template_images: dict[str, PILImage.Image] = {}  # 이미지 변경 감지용 템플릿
 
         # UI
         self._main_window = MainWindow()
@@ -103,6 +110,7 @@ class ProgressEyeApp:
         self._main_window.settings_requested.connect(self._open_settings)
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
+        self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -175,6 +183,27 @@ class ProgressEyeApp:
         dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
         return dialog.exec() == QMessageBox.StandardButton.Retry
 
+    def _show_device_conflict(self, other_device_id: str) -> None:
+        """다른 PC에서 사용 중인 경우 안내 다이얼로그를 표시한다."""
+        dialog = QMessageBox(self._main_window)
+        dialog.setWindowTitle(t("device_conflict_title"))
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(t("device_conflict_message"))
+        dialog.setInformativeText(
+            t("device_conflict_detail").format(device=other_device_id)
+        )
+        take_over = dialog.addButton(
+            t("device_conflict_takeover"), QMessageBox.ButtonRole.AcceptRole
+        )
+        dialog.addButton(
+            t("device_conflict_cancel"), QMessageBox.ButtonRole.RejectRole
+        )
+        dialog.exec()
+        if dialog.clickedButton() == take_over:
+            log.info("디바이스 강제 전환: %s → %s", other_device_id, self._config.get("auth.device_id"))
+            if self._device_manager:
+                self._device_manager.set_active_device()
+
     def _do_login(self) -> None:
         """Google OAuth와 Firebase Auth를 통해 로그인한다."""
         google_result = self._google_oauth.sign_in()
@@ -220,6 +249,22 @@ class ProgressEyeApp:
         except Exception as exc:
             log.warning("Firebase 기기 등록 실패: %s", exc)
 
+        # 플랜 확인 + Free 단일기기 강제
+        try:
+            plan = self._device_manager.get_user_plan()
+            self._config.set("plan", plan)
+            log.info("유저 플랜: %s", plan)
+            if plan == "free":
+                active = self._device_manager.get_active_device()
+                if active and active != device_id:
+                    if self._device_manager.is_other_device_online(active):
+                        log.warning("다른 PC에서 사용 중: %s", active)
+                        self._show_device_conflict(active)
+                        return
+                self._device_manager.set_active_device()
+        except Exception as exc:
+            log.debug("플랜/디바이스 확인 실패: %s", exc)
+
         # 프로필 저장
         try:
             import time
@@ -242,6 +287,9 @@ class ProgressEyeApp:
         self._heartbeat_timer = heartbeat_timer
 
     def _send_heartbeat(self) -> None:
+        """하트비트 전송 (모니터링 비활성 시에만 동작)."""
+        if self._scheduler.is_running:
+            return  # 모니터링 중이면 batch sync가 lastSeen 갱신
         if self._device_manager:
             try:
                 self._device_manager.heartbeat()
@@ -270,6 +318,7 @@ class ProgressEyeApp:
                 region.get("label", region["id"]),
                 region_type=region.get("type", "bar"),
                 enabled=enabled,
+                alert_threshold=region.get("alert_threshold", 100),
             )
 
     def _start_area_selection(self) -> None:
@@ -365,6 +414,12 @@ class ProgressEyeApp:
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("바 영역 등록: %s (%.1f%%)", region_id, final_progress)
+            # Firebase에 라벨 전송 (등록 시 1회)
+            if self._device_manager:
+                try:
+                    self._device_manager.set_task_label(region_id, region["label"])
+                except Exception:
+                    pass
         else:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_area_selection)
@@ -414,6 +469,12 @@ class ProgressEyeApp:
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("OCR 영역 등록: %s (%.1f%%)", region_id, final_progress)
+            # Firebase에 라벨 전송 (등록 시 1회)
+            if self._device_manager:
+                try:
+                    self._device_manager.set_task_label(region_id, region["label"])
+                except Exception:
+                    pass
         else:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_ocr_area_selection)
@@ -470,6 +531,18 @@ class ProgressEyeApp:
         self._config.remove_region(region_id)
         # UI에서 제거
         self._main_window.remove_region_display(region_id)
+        # Firebase DB에서 제거
+        if self._device_manager:
+            try:
+                self._device_manager.delete_task(region_id)
+                log.info("Firebase DB 삭제: %s", region_id)
+            except Exception as exc:
+                log.warning("Firebase DB 삭제 실패 [%s]: %s", region_id, exc)
+        # 배치에서도 제거
+        self._pending_firebase_batch.pop(region_id, None)
+        self._last_firebase_state.pop(region_id, None)
+        self._completion_confirm.pop(region_id, None)
+        self._template_images.pop(region_id, None)
         log.info("영역 삭제: %s", region_id)
 
     def _open_settings(self) -> None:
@@ -505,9 +578,9 @@ class ProgressEyeApp:
             self._heartbeat_timer = None
         if self._device_manager is not None:
             try:
-                unregister = getattr(self._device_manager, "unregister", None)
-                if callable(unregister):
-                    unregister()
+                if self._config.get("plan", "free") == "free":
+                    self._device_manager.clear_active_device()
+                self._device_manager.set_offline()
             except Exception:
                 pass
             self._device_manager = None
@@ -578,6 +651,11 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, {"label": new_label})
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("OCR 영역 수정: %s → %s", region_id, new_label)
+                if self._device_manager:
+                    try:
+                        self._device_manager.set_task_label(region_id, new_label)
+                    except Exception:
+                        pass
             else:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
@@ -605,6 +683,11 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, updates)
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
+                if self._device_manager:
+                    try:
+                        self._device_manager.set_task_label(region_id, new_label)
+                    except Exception:
+                        pass
             else:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
@@ -718,6 +801,7 @@ class ProgressEyeApp:
             self._main_window.set_monitoring_state(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
+            self._template_images.clear()  # 템플릿 이미지 초기화
         else:
             regions = [r for r in self._config.regions if r.get("enabled", True)]
             if not regions:
@@ -725,7 +809,7 @@ class ProgressEyeApp:
                 return
             interval = self._config.get("capture.interval_seconds", 30)
             self._scheduler.start(regions, interval)
-            self._main_window.set_monitoring_state(True)
+            self._main_window.set_monitoring_state(True, interval)
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
 
@@ -747,11 +831,77 @@ class ProgressEyeApp:
         # 영역 타입에 따라 분석 분기
         region_type = region_config.get("type", "bar")
 
+        # ── 이미지 변경 감지 ──
+        IMAGE_CHANGE_THRESHOLD = 0.3
+        if region_id not in self._template_images:
+            self._template_images[region_id] = image.copy()
+            log.debug("[%s] 템플릿 이미지 저장 (첫 캡처)", region_id)
+        else:
+            similarity = self._check_image_similarity(
+                self._template_images[region_id], image
+            )
+            if similarity < IMAGE_CHANGE_THRESHOLD:
+                last_progress = self._last_firebase_state.get(region_id, {}).get("p", 0)
+                threshold = region_config.get("alert_threshold", 100)
+                if last_progress >= threshold - 10:
+                    # 완료 근접 → 완료 처리
+                    log.info(
+                        "[이미지 변경] %s — 완료 근접 (%.1f%%) → 완료 처리 (유사도: %.2f)",
+                        label, last_progress, similarity,
+                    )
+                    self._alerted_regions[region_id] = last_progress
+                    complete_msg = t("image_changed_completed").format(
+                        label=label, progress=last_progress
+                    )
+                    self._action_queue.put(
+                        lambda _msg=complete_msg: self._tray.show_notification(
+                            title="ProgressEye", message=_msg
+                        )
+                    )
+                else:
+                    # 경고 + 해당 영역 모니터링 중지
+                    log.warning(
+                        "[이미지 변경] %s — 화면 크게 변경 (유사도: %.2f, 진행률: %.1f%%) → 모니터링 중지",
+                        label, similarity, last_progress,
+                    )
+                    warn_msg = t("image_changed_warning").format(label=label)
+                    self._action_queue.put(
+                        lambda _msg=warn_msg: self._tray.show_notification(
+                            title="ProgressEye", message=_msg
+                        )
+                    )
+                    self._scheduler.remove_region(region_id)
+                # 템플릿 정리
+                self._template_images.pop(region_id, None)
+                return
+
         if region_type == "ocr":
             # OCR로 숫자% 읽기
             progress = self._ocr_reader.read_progress(image, region_id=region_id)
             if progress is None:
-                log.warning("[%s] OCR 숫자 인식 실패", region_id)
+                if region_id in self._alerted_regions:
+                    # 완료 후 OCR 실패 → 창 닫힘 감지 (시나리오 2)
+                    fails = self._post_completion_fails.get(region_id, 0)
+                    if fails < 0:
+                        return  # 이미 창 닫힘 알림 발송됨
+                    fails += 1
+                    self._post_completion_fails[region_id] = fails
+                    log.debug("[%s] 완료 후 OCR 실패 (%d/3)", region_id, fails)
+                    if fails >= 3:
+                        alert_progress = self._alerted_regions[region_id]
+                        log.info(
+                            "[완료 시나리오] %s — 창 닫힘 감지 (%.1f%% 완료 후 OCR 실패 %d회)",
+                            label, alert_progress, fails,
+                        )
+                        self._post_completion_fails[region_id] = -1  # 중복 알림 방지
+                        closed_msg = t("completion_closed").format(label=label)
+                        self._action_queue.put(
+                            lambda _msg=closed_msg: self._tray.show_notification(
+                                title="ProgressEye", message=_msg
+                            )
+                        )
+                else:
+                    log.warning("[%s] OCR 숫자 인식 실패", region_id)
                 return
         else:
             # 바 영역 탐지 + 전환점 분석
@@ -761,27 +911,24 @@ class ProgressEyeApp:
         log.info("[%s] 진행률: %.1f%% (%s)", region_id, progress, region_type)
 
         # 멈춤 감지
+        prev_frozen = False
+        prev_state = self._freeze_detector.get_state(region_id)
+        if prev_state is not None:
+            prev_frozen = prev_state.is_frozen
         freeze_state = self._freeze_detector.update(region_id, progress)
+        log.debug(
+            "[%s] 프리징 체크 — progress=%.1f%%, prev_frozen=%s, is_frozen=%s, elapsed=%dm",
+            region_id, progress, prev_frozen, freeze_state.is_frozen, freeze_state.frozen_minutes,
+        )
+        if prev_frozen and not freeze_state.is_frozen:
+            log.info("[%s] 프리징 해제 — 진행률 변화 감지: %.1f%%", region_id, progress)
 
-        # Firebase 전송
-        if self._realtime_db and self._firebase_id_token:
-            uid = str(self._config.get("auth.uid", ""))
-            device_id = str(self._config.get("auth.device_id", ""))
-            if uid and device_id:
-                import time
-
-                task_data = {
-                    "label": label,
-                    "progress": round(progress, 1),
-                    "status": "freeze" if freeze_state.is_frozen else "running",
-                    "updatedAt": int(time.time() * 1000),
-                }
-                try:
-                    path = f"users/{uid}/tasks/{device_id}/{region_id}"
-                    self._realtime_db.patch(path, task_data)
-                except Exception as exc:
-                    log.debug("Firebase 전송 실패 [%s]: %s", region_id, exc)
-
+        # Firebase 배치 수집 (변화 있을 때만)
+        status_code = "c" if region_id in self._alerted_regions else ("f" if freeze_state.is_frozen else "r")
+        new_state = {"p": round(progress, 1), "s": status_code}
+        if new_state != self._last_firebase_state.get(region_id):
+            self._pending_firebase_batch[region_id] = new_state
+            self._last_firebase_state[region_id] = new_state
         self._tray.update_tooltip(f"ProgressEye - {label}: {progress:.1f}%")
         # UI 업데이트 — 큐로 메인 스레드 전달
         self._action_queue.put(
@@ -790,13 +937,87 @@ class ProgressEyeApp:
             )
         )
 
+        # ── 완료 후 시나리오 감지 ──
+        threshold = region_config.get("alert_threshold", 100)
+        if region_id in self._alerted_regions:
+            alert_progress = self._alerted_regions[region_id]
+            self._post_completion_fails.pop(region_id, None)  # OCR 성공 → 실패 카운터 리셋
+            if alert_progress - progress >= 30.0:
+                # 시나리오 1: 게이지 초기화 (큰 폭 하락)
+                log.info(
+                    "[완료 시나리오] %s — 게이지 초기화 (%.1f%% → %.1f%%)",
+                    label, alert_progress, progress,
+                )
+                self._alerted_regions.pop(region_id, None)
+                reset_msg = t("completion_reset").format(
+                    label=label, old=alert_progress, new=progress,
+                )
+                self._action_queue.put(
+                    lambda _msg=reset_msg: self._tray.show_notification(
+                        title="ProgressEye", message=_msg
+                    )
+                )
+            elif progress >= threshold:
+                # 시나리오 3: 완료 상태 유지
+                log.debug("[완료 시나리오] %s — 완료 유지 (%.1f%%)", label, progress)
+            else:
+                # 임계값 아래 소폭 하락 → 재알람 허용
+                log.info(
+                    "[완료 시나리오] %s — 진행률 하락 (%.1f%% → %.1f%%), 재알람 대기",
+                    label, alert_progress, progress,
+                )
+                self._alerted_regions.pop(region_id, None)
+
+        # 완료 알람 체크
+        log.debug(
+            "[%s] 완료 체크 — progress=%.1f%%, threshold=%d%%, alerted=%s",
+            region_id, progress, threshold, region_id in self._alerted_regions,
+        )
+        if (
+            region_id not in self._alerted_regions
+            and progress >= threshold
+        ):
+            # 연속 2회 이상 threshold 도달 시에만 완료 판정 (스파이크 방지)
+            confirm = self._completion_confirm.get(region_id, 0) + 1
+            self._completion_confirm[region_id] = confirm
+            log.debug("[%s] 완료 확인 %d/2회 (%.1f%%)", region_id, confirm, progress)
+            if confirm >= 2:
+                self._alerted_regions[region_id] = progress
+                self._completion_confirm.pop(region_id, None)
+                alert_msg = t("alert_triggered").format(label=label, progress=progress)
+                log.info("[완료 알람] %s", alert_msg)
+                self._action_queue.put(
+                    lambda _msg=alert_msg, _l=label: self._tray.show_notification(
+                        title="ProgressEye", message=_msg
+                    )
+                )
+        else:
+            # threshold 미달 또는 이미 완료 → 카운터 리셋
+            self._completion_confirm.pop(region_id, None)
+
         if freeze_state.is_frozen:
             log.warning(
-                "[%s] 멈춤 감지: %.1f%%에서 %d분째",
+                "[%s] 프리징 지속: %.1f%%에서 %d분째 멈춤",
                 region_id,
                 progress,
                 freeze_state.frozen_minutes,
             )
+
+    def _on_cycle_complete(self) -> None:
+        """캡처 사이클 완료 — 배치 Firebase 전송."""
+        if not self._pending_firebase_batch or not self._device_manager:
+            return
+        try:
+            self._device_manager.sync_tasks(dict(self._pending_firebase_batch))
+        except Exception as exc:
+            log.debug("Firebase 배치 전송 실패: %s", exc)
+        self._pending_firebase_batch.clear()
+    def _on_threshold_changed(self, region_id: str, threshold: int) -> None:
+        """완료 알람 임계값 변경 — config에 저장한다."""
+        self._config.update_region(region_id, {"alert_threshold": threshold})
+        # 임계값 변경시 알람 상태 초기화 (재알람 가능)
+        self._alerted_regions.pop(region_id, None)
+        log.info("[완료 알람] %s 임계값 변경: %d%%", region_id, threshold)
 
     def _show_main_window(self) -> None:
         """메인 창을 표시한다. pystray 스레드에서 호출됨."""
@@ -817,6 +1038,8 @@ class ProgressEyeApp:
             self._heartbeat_timer.stop()
         if self._device_manager:
             try:
+                if self._config.get("plan", "free") == "free":
+                    self._device_manager.clear_active_device()
                 self._device_manager.set_offline()
             except Exception:
                 pass
@@ -828,6 +1051,31 @@ class ProgressEyeApp:
         setattr(self._main_window, "_really_quit", True)
         self._main_window.close()
         self._app.quit()
+
+    def _check_image_similarity(
+        self, img1: PILImage.Image, img2: PILImage.Image
+    ) -> float:
+        """두 이미지의 유사도를 반환한다 (0.0~1.0).
+
+        64x64 grayscale 다운스케일 후 numpy 상관계수로 비교.
+        """
+        import cv2
+        import numpy as np
+
+        size = (64, 64)
+        arr1 = cv2.cvtColor(
+            np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY
+        )
+        arr2 = cv2.cvtColor(
+            np.array(img2.resize(size)), cv2.COLOR_RGB2GRAY
+        )
+        flat1 = arr1.astype(np.float32).flatten()
+        flat2 = arr2.astype(np.float32).flatten()
+        # 표준편차가 0이면 동일 이미지 (단색)
+        if np.std(flat1) < 1e-6 and np.std(flat2) < 1e-6:
+            return 1.0
+        corr = np.corrcoef(flat1, flat2)[0, 1]
+        return max(0.0, float(corr))
 
     def _smart_bar_analyze(
         self, image: PILImage.Image,

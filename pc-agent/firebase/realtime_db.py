@@ -4,9 +4,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -21,6 +24,15 @@ class RealtimeDB:
     def __init__(self, db_url: str, get_id_token: Callable[[], str]) -> None:
         self._db_url = db_url.rstrip("/")
         self._get_id_token = get_id_token
+        # 재시도 설정: SSL/연결 오류 시 3회 재시도 (1s, 2s, 4s backoff)
+        retry = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "PUT", "PATCH", "DELETE"],
+        )
+        self._session = requests.Session()
+        self._session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def get(self, path: str) -> Any:
         """경로 데이터를 조회한다."""
@@ -48,7 +60,7 @@ class RealtimeDB:
         url = f"{self._db_url}/{normalized_path}.json"
 
         try:
-            response = requests.request(
+            response = self._session.request(
                 method,
                 url,
                 params={"auth": token},
