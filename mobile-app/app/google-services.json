@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "989425742328",
+    "firebase_url": "https://progresseye-49244-default-rtdb.firebaseio.com",
+    "project_id": "progresseye-49244",
+    "storage_bucket": "progresseye-49244.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:989425742328:android:7da2c539196141c3d8e60d",
+        "android_client_info": {
+          "package_name": "com.chg.progeresseye"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "989425742328-38hun2d4obo8i86h2itd1emuo9ge95nq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFw-JUOFntW_SFFsJMChB2aibwAMRp_ug"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "989425742328-38hun2d4obo8i86h2itd1emuo9ge95nq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

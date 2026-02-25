@@ -87,6 +87,8 @@ private val GoogleGreen = Color(0xFF34A853)
 @Composable
 fun LoginScreen(
     onSignInClick: () -> Unit = {},
+    isLoading: Boolean = false,
+    error: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Track the logo circle's center in root coordinates
@@ -142,7 +144,7 @@ fun LoginScreen(
             }
 
             // Bottom pinned area
-            BottomActions(onSignInClick = onSignInClick)
+            BottomActions(onSignInClick = onSignInClick, isLoading = isLoading, error = error)
         }
     }
 }
@@ -391,7 +393,11 @@ private fun MiniProgressBar(
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun BottomActions(onSignInClick: () -> Unit) {
+private fun BottomActions(
+    onSignInClick: () -> Unit,
+    isLoading: Boolean = false,
+    error: String? = null,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -407,7 +413,15 @@ private fun BottomActions(onSignInClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        GoogleSignInButton(onClick = onSignInClick)
+        error?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFEF4444),
+                textAlign = TextAlign.Center,
+            )
+        }
+        GoogleSignInButton(onClick = onSignInClick, isLoading = isLoading)
         TermsText()
     }
 }
@@ -417,7 +431,7 @@ private fun BottomActions(onSignInClick: () -> Unit) {
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun GoogleSignInButton(onClick: () -> Unit) {
+private fun GoogleSignInButton(onClick: () -> Unit, isLoading: Boolean = false) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -429,7 +443,8 @@ private fun GoogleSignInButton(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = Color.White,
+        color = if (isLoading) Color.White.copy(alpha = 0.7f) else Color.White,
+        enabled = !isLoading,
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -440,10 +455,18 @@ private fun GoogleSignInButton(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            GoogleColorIcon(modifier = Modifier.size(20.dp))
+            if (isLoading) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Slate900,
+                )
+            } else {
+                GoogleColorIcon(modifier = Modifier.size(20.dp))
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Sign in with Google",
+                text = if (isLoading) "Signing in..." else "Sign in with Google",
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
