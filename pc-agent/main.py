@@ -526,8 +526,9 @@ class ProgressEyeApp:
             log.warning("토큰 삭제 실패: %s", exc)
         self._config.set("auth.uid", "")
         self._config.set("auth.email", "")
-        log.info("로그아웃 완료 — 재로그인 시도")
-        self._ensure_login()
+        log.info("로그아웃 완료 — 앱 종료")
+        self._tray.stop()
+        self._do_quit()
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
