@@ -1,13 +1,12 @@
-"""설정 다이얼로그.
+"""설정 오버레이 패널.
 
-모니터링 간격, 언어 설정을 제공한다.
+MainWindow 내부 반투명 배경 + 중앙 카드 형태의 설정 UI를 제공한다.
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QMouseEvent
 from PyQt6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -34,58 +33,60 @@ LANGUAGES = [
 ]
 
 
-class SettingsDialog(QDialog):
-    """설정 다이얼로그.
+class SettingsOverlay(QWidget):
+    """MainWindow 내부 오버레이 설정 패널."""
 
-    모니터링 간격과 언어를 설정한다.
-    """
+    saved = pyqtSignal(int, str)  # (interval_seconds, language)
+    logout_requested = pyqtSignal()
+    closed = pyqtSignal()  # 취소/배경클릭
 
-    def __init__(
-        self,
-        interval_seconds: int = 30,
-        language: str = "ko",
-        email: str = "",
-        welcome_mode: bool = False,
-        parent: QWidget | None = None,
-    ) -> None:
+    def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self._interval = interval_seconds
-        self._language = language
-        self._email = email
-        self._welcome_mode = welcome_mode
-        self._logout_requested = False
-
-        self.setWindowTitle(t("settings_window_title"))
-        self.setFixedWidth(360)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        self.setStyleSheet(f"QDialog {{ background: {APP_BG}; }}")
-
+        self._welcome_mode = False
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("background: rgba(0, 0, 0, 150);")
+        self.hide()
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
-        layout = QVBoxLayout(self)
+        # ── 중앙 배치용 외부 레이아웃 ──
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addStretch()
+
+        card_row = QHBoxLayout()
+        card_row.addStretch()
+
+        # ── 카드 위젯 ──
+        self._card = QWidget()
+        self._card.setFixedWidth(360)
+        self._card.setStyleSheet(
+            f"background: {APP_BG};border: 1px solid {CARD_BORDER};border-radius: 16px;"
+        )
+
+        layout = QVBoxLayout(self._card)
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
 
         # ── 타이틀 ──
-        title_text = t("settings_title")
-        title = QLabel(title_text)
+        title = QLabel(t("settings_title"))
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent;")
+        title.setStyleSheet(
+            f"color: {TITLE_TEXT}; background: transparent; border: none;"
+        )
         layout.addWidget(title)
 
-        if self._welcome_mode:
-            subtitle = QLabel(t("welcome_subtitle"))
-            subtitle.setStyleSheet(
-                f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent;"
-            )
-            layout.addWidget(subtitle)
+        # ── 웰컴 서브타이틀 ──
+        self._welcome_subtitle = QLabel(t("welcome_subtitle"))
+        self._welcome_subtitle.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent; border: none;"
+        )
+        self._welcome_subtitle.setVisible(False)
+        layout.addWidget(self._welcome_subtitle)
 
         # ── 공통 스타일 ──
-        label_style = (
-            f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent;"
-        )
+        label_style = f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent; border: none;"
         input_style = (
             f"QSpinBox, QComboBox {{"
             f"  background: {CARD_BG};"
@@ -110,7 +111,7 @@ class SettingsDialog(QDialog):
             f"}}"
         )
 
-        # ── 계정 ──
+        # ── 계정 구분선 ──
         account_line = QFrame()
         account_line.setFrameShape(QFrame.Shape.HLine)
         account_line.setStyleSheet(f"color: {CARD_BORDER};")
@@ -121,11 +122,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(account_label)
 
         account_row = QHBoxLayout()
-        account_email = QLabel(t("settings_logged_in_as").format(email=self._email))
-        account_email.setStyleSheet(
-            f"color: {TITLE_TEXT}; font-size: 13px; background: transparent;"
+        self._email_label = QLabel("")
+        self._email_label.setStyleSheet(
+            f"color: {TITLE_TEXT}; font-size: 13px; background: transparent; border: none;"
         )
-        account_row.addWidget(account_email)
+        account_row.addWidget(self._email_label)
         account_row.addStretch()
 
         btn_style_logout = (
@@ -142,11 +143,10 @@ class SettingsDialog(QDialog):
             "  color: #ffffff;"
             "}"
         )
-        btn_logout = QPushButton(t("btn_logout"))
-        btn_logout.setStyleSheet(btn_style_logout)
-        btn_logout.setVisible(not self._welcome_mode)
-        btn_logout.clicked.connect(self._on_logout_clicked)
-        account_row.addWidget(btn_logout)
+        self._btn_logout = QPushButton(t("btn_logout"))
+        self._btn_logout.setStyleSheet(btn_style_logout)
+        self._btn_logout.clicked.connect(self._on_logout_clicked)
+        account_row.addWidget(self._btn_logout)
 
         layout.addLayout(account_row)
 
@@ -158,7 +158,7 @@ class SettingsDialog(QDialog):
         interval_row = QHBoxLayout()
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(5, 600)
-        self._interval_spin.setValue(self._interval)
+        self._interval_spin.setValue(30)
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_spin.setStyleSheet(input_style)
         self._interval_spin.setFixedHeight(36)
@@ -173,12 +173,8 @@ class SettingsDialog(QDialog):
         self._lang_combo = QComboBox()
         self._lang_combo.setStyleSheet(input_style)
         self._lang_combo.setFixedHeight(36)
-        current_index = 0
-        for i, (code, name) in enumerate(LANGUAGES):
+        for code, name in LANGUAGES:
             self._lang_combo.addItem(name, code)
-            if code == self._language:
-                current_index = i
-        self._lang_combo.setCurrentIndex(current_index)
         layout.addWidget(self._lang_combo)
 
         layout.addSpacing(8)
@@ -198,11 +194,10 @@ class SettingsDialog(QDialog):
             f"}}"
             f"QPushButton:hover {{ background: {CARD_BORDER}; }}"
         )
-        btn_cancel = QPushButton(t("btn_cancel"))
-        btn_cancel.setStyleSheet(btn_style_cancel)
-        btn_cancel.clicked.connect(self.reject)
-        btn_cancel.setVisible(not self._welcome_mode)
-        btn_row.addWidget(btn_cancel)
+        self._btn_cancel = QPushButton(t("btn_cancel"))
+        self._btn_cancel.setStyleSheet(btn_style_cancel)
+        self._btn_cancel.clicked.connect(self._on_cancel_clicked)
+        btn_row.addWidget(self._btn_cancel)
 
         btn_style_save = (
             f"QPushButton {{"
@@ -216,17 +211,42 @@ class SettingsDialog(QDialog):
             f"}}"
             f"QPushButton:hover {{ background: #2563eb; }}"
         )
-        btn_save = QPushButton(
-            t("btn_start_app") if self._welcome_mode else t("btn_save")
-        )
-        btn_save.setStyleSheet(btn_style_save)
-        btn_save.setDefault(True)
-        btn_save.clicked.connect(self.accept)
-        btn_row.addWidget(btn_save)
+        self._btn_save = QPushButton(t("btn_save"))
+        self._btn_save.setStyleSheet(btn_style_save)
+        self._btn_save.setDefault(True)
+        self._btn_save.clicked.connect(self._on_save_clicked)
+        btn_row.addWidget(self._btn_save)
 
         layout.addLayout(btn_row)
 
-    # ── 프로퍼티 ──
+        card_row.addWidget(self._card)
+        card_row.addStretch()
+        outer.addLayout(card_row)
+        outer.addStretch()
+
+    # ── 공개 메서드 ──
+
+    def show_settings(
+        self,
+        interval: int,
+        language: str,
+        email: str,
+        welcome_mode: bool = False,
+    ) -> None:
+        """설정값을 세팅하고 오버레이를 표시한다."""
+        self._welcome_mode = welcome_mode
+        self._interval_spin.setValue(interval)
+        for i in range(self._lang_combo.count()):
+            if self._lang_combo.itemData(i) == language:
+                self._lang_combo.setCurrentIndex(i)
+                break
+        self._email_label.setText(t("settings_logged_in_as").format(email=email))
+        self._btn_logout.setVisible(not welcome_mode)
+        self._btn_cancel.setVisible(not welcome_mode)
+        self._btn_save.setText(t("btn_start_app") if welcome_mode else t("btn_save"))
+        self._welcome_subtitle.setVisible(welcome_mode)
+        self.show()
+        self.raise_()
 
     @property
     def interval_seconds(self) -> int:
@@ -238,11 +258,24 @@ class SettingsDialog(QDialog):
         """설정된 언어 코드 ('ko' 또는 'en')."""
         return self._lang_combo.currentData()
 
-    @property
-    def is_logout_requested(self) -> bool:
-        """로그아웃 버튼 클릭 여부."""
-        return self._logout_requested
+    # ── 내부 핸들러 ──
+
+    def _on_save_clicked(self) -> None:
+        self.saved.emit(self.interval_seconds, self.language)
+        self.hide()
+
+    def _on_cancel_clicked(self) -> None:
+        self.closed.emit()
+        self.hide()
 
     def _on_logout_clicked(self) -> None:
-        self._logout_requested = True
-        self.done(2)
+        self.logout_requested.emit()
+        self.hide()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        """배경(카드 바깥) 클릭 시 닫기. 웰컴 모드에서는 무시."""
+        if self._welcome_mode:
+            return
+        if not self._card.geometry().contains(event.pos()):
+            self.closed.emit()
+            self.hide()

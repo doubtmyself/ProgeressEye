@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from utils.logger import log
 from utils.i18n import t
+from ui.settings_dialog import SettingsOverlay
 
 # ── Color Palette ──────────────────────────────────────────────
 APP_BG = "#0f0f1a"
@@ -246,6 +247,8 @@ class MainWindow(QMainWindow):
     region_view_requested = pyqtSignal(str)
     region_edit_requested = pyqtSignal(str)
     settings_requested = pyqtSignal()
+    settings_saved = pyqtSignal(int, str)
+    settings_logout_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -257,6 +260,12 @@ class MainWindow(QMainWindow):
         self.resize(420, 500)
 
         self._setup_ui()
+
+        # ── Settings overlay ──
+        self._settings_overlay = SettingsOverlay(self)
+        self._settings_overlay.hide()
+        self._settings_overlay.saved.connect(self.settings_saved)
+        self._settings_overlay.logout_requested.connect(self.settings_logout_requested)
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -518,6 +527,19 @@ class MainWindow(QMainWindow):
             self._btn_toggle.setText(t("btn_start"))
         for card in self._region_cards.values():
             card.refresh_texts()
+
+    def show_settings(
+        self, interval: int, language: str, email: str, welcome_mode: bool = False
+    ) -> None:
+        """설정 오버레이를 표시한다."""
+        self._settings_overlay.setGeometry(self.centralWidget().geometry())
+        self._settings_overlay.show_settings(interval, language, email, welcome_mode)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """오버레이가 창 크기에 맞게 조정된다."""
+        super().resizeEvent(event)
+        if hasattr(self, '_settings_overlay'):
+            self._settings_overlay.setGeometry(self.centralWidget().geometry())
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""

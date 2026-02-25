@@ -34,7 +34,7 @@ from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRel
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
 from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
-from ui.settings_dialog import SettingsDialog  # pyright: ignore[reportImplicitRelativeImport]
+
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -100,6 +100,8 @@ class ProgressEyeApp:
         self._main_window.region_view_requested.connect(self._show_region_view)
         self._main_window.region_edit_requested.connect(self._on_edit_region)
         self._main_window.settings_requested.connect(self._open_settings)
+        self._main_window.settings_saved.connect(self._on_settings_saved)
+        self._main_window.settings_logout_requested.connect(self._do_logout)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -472,34 +474,26 @@ class ProgressEyeApp:
         log.info("영역 삭제: %s", region_id)
 
     def _open_settings(self) -> None:
-        """설정 다이얼로그를 열고 저장 시 반영한다."""
+        """설정 오버레이를 표시한다."""
+        self._main_window.show_settings(
+            interval=self._config.get("capture.interval_seconds", 30),
+            language=self._config.get("language", "ko"),
+            email=self._config.get("auth.email", ""),
+        )
+
+    def _on_settings_saved(self, new_interval: int, new_lang: str) -> None:
+        """설정 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
         current_lang = self._config.get("language", "ko")
-        email = self._config.get("auth.email", "")
-        dialog = SettingsDialog(
-            interval_seconds=current_interval,
-            language=current_lang,
-            email=email,
-            parent=self._main_window,
-        )
-        result = dialog.exec()
-        if dialog.is_logout_requested:
-            self._do_logout()
-            return
-        if result:
-            new_interval = dialog.interval_seconds
-            new_lang = dialog.language
-            # 모니터링 간격 반영
-            if new_interval != current_interval:
-                self._config.set("capture.interval_seconds", new_interval)
-                self._scheduler.update_interval(new_interval)
-                log.info("모니터링 간격 변경: %d초", new_interval)
-            # 언어 반영
-            if new_lang != current_lang:
-                self._config.set("language", new_lang)
-                set_language(new_lang)
-                self._main_window.refresh_texts()
-                log.info("언어 변경: %s", new_lang)
+        if new_interval != current_interval:
+            self._config.set("capture.interval_seconds", new_interval)
+            self._scheduler.update_interval(new_interval)
+            log.info("모니터링 간격 변경: %d초", new_interval)
+        if new_lang != current_lang:
+            self._config.set("language", new_lang)
+            set_language(new_lang)
+            self._main_window.refresh_texts()
+            log.info("언어 변경: %s", new_lang)
 
     def _do_logout(self) -> None:
         """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 재로그인."""
@@ -532,24 +526,12 @@ class ProgressEyeApp:
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
-        email = self._config.get("auth.email", "")
-        dialog = SettingsDialog(
-            interval_seconds=self._config.get("capture.interval_seconds", 30),
+        self._main_window.show_settings(
+            interval=self._config.get("capture.interval_seconds", 30),
             language=self._config.get("language", "ko"),
-            email=email,
+            email=self._config.get("auth.email", ""),
             welcome_mode=True,
-            parent=self._main_window,
         )
-        if dialog.exec():
-            new_interval = dialog.interval_seconds
-            new_lang = dialog.language
-            self._config.set("capture.interval_seconds", new_interval)
-            self._scheduler.update_interval(new_interval)
-            if new_lang != self._config.get("language", "ko"):
-                self._config.set("language", new_lang)
-                set_language(new_lang)
-                self._main_window.refresh_texts()
-            log.info("웰컴 설정 완료: interval=%d, lang=%s", new_interval, new_lang)
 
     def _on_edit_region(self, region_id: str) -> None:
         """작업 수정 요청 — 기존 영역 데이터로 프리뷰 다이얼로그를 연다."""
