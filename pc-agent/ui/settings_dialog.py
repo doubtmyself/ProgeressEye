@@ -99,6 +99,8 @@ class SettingsOverlay(QWidget):
             f"QSpinBox:focus, QComboBox:focus {{"
             f"  border-color: {CHECKBOX_BLUE};"
             f"}}"
+            f"QSpinBox::up-button {{ width: 24px; }}"
+            f"QSpinBox::down-button {{ width: 24px; }}"
             f"QComboBox::drop-down {{"
             f"  border: none;"
             f"  width: 24px;"

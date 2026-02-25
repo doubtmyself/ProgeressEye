@@ -65,6 +65,14 @@ class TrayIcon:
         if self._icon is not None:
             self._icon.title = text
 
+    def show_notification(self, title: str, message: str) -> None:
+        """시스템 알림을 표시한다."""
+        if self._icon is not None:
+            try:
+                self._icon.notify(message, title)
+            except Exception as e:
+                log.debug("트레이 알림 실패: %s", e)
+
     def _build_menu(self) -> Menu:
         """컨텍스트 메뉴를 빌드한다."""
         return Menu(

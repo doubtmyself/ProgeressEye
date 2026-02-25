@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
     QCheckBox,
+    QSpinBox,
 )
 
 from utils.logger import log
@@ -61,12 +62,14 @@ class RegionCard(QFrame):
     delete_requested = pyqtSignal(str)
     edit_requested = pyqtSignal(str)
     view_requested = pyqtSignal(str)
+    threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
 
     def __init__(
         self,
         region_id: str,
         label: str,
         region_type: str = "bar",
+        alert_threshold: int = 100,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -87,15 +90,16 @@ class RegionCard(QFrame):
 
 
         type_text = t("type_ocr") if region_type == "ocr" else t("type_bar")
-        # ── Row 1: 작업 이름 라벨 (큰 글씨, 볼드) ──
-        self._label = QLabel(label)
+        self._label_text = label
+        # ── Row 1: 작업 이름 (종류:타입) 라벨 (큰 글씨, 볼드) ──
+        self._label = QLabel(f"{label} ({t('type_prefix')}{type_text})")
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self._label.setStyleSheet(
             f"color: {CARD_LABEL}; background: transparent; border: none;"
         )
         layout.addWidget(self._label)
 
-        # ── Row 2: 체크박스 + 타입 라벨 (작은 글씨) ──
+        # ── Row 2: 체크박스 + 모니터링 여부 라벨 (작은 글씨) ──
         header_row = QHBoxLayout()
         self._checkbox = QCheckBox()
         self._checkbox.setChecked(True)
@@ -114,7 +118,7 @@ class RegionCard(QFrame):
         )
         self._checkbox.stateChanged.connect(self._on_check_changed)
         header_row.addWidget(self._checkbox)
-        self._type_label = QLabel(type_text)
+        self._type_label = QLabel(t("monitoring_check"))
         self._type_label.setStyleSheet(
             f"color: {SUBTITLE_TEXT};"
             f"background: transparent;"
@@ -152,6 +156,39 @@ class RegionCard(QFrame):
             f"}}"
         )
         layout.addWidget(self._progress_bar)
+
+        # ── Alert threshold row: 🔔 완료 알람 [80-100] % ──
+        threshold_row = QHBoxLayout()
+        self._threshold_label = QLabel(t("alert_threshold_label"))
+        self._threshold_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px;"
+            f" background: transparent; border: none;"
+        )
+        threshold_row.addWidget(self._threshold_label)
+
+        spin_style = (
+            f"QSpinBox {{"
+            f"  background: {APP_BG};"
+            f"  border: 1px solid {CARD_BORDER};"
+            f"  border-radius: 4px;"
+            f"  padding: 2px 6px;"
+            f"  color: {TITLE_TEXT};"
+            f"  font-size: 11px;"
+            f"}}"
+            f"QSpinBox:focus {{ border-color: {CHECKBOX_BLUE}; }}"
+            f"QSpinBox::up-button {{ width: 20px; }}"
+            f"QSpinBox::down-button {{ width: 20px; }}"
+        )
+        self._threshold_spin = QSpinBox()
+        self._threshold_spin.setRange(80, 100)
+        self._threshold_spin.setValue(alert_threshold)
+        self._threshold_spin.setSuffix(t("alert_threshold_suffix"))
+        self._threshold_spin.setStyleSheet(spin_style)
+        self._threshold_spin.setFixedSize(110, 30)
+        self._threshold_spin.valueChanged.connect(self._on_threshold_changed)
+        threshold_row.addWidget(self._threshold_spin)
+        threshold_row.addStretch()
+        layout.addLayout(threshold_row)
 
         # ── Bottom row: timestamp ──
         self._time_label = QLabel(t("card_standby"))
@@ -205,12 +242,22 @@ class RegionCard(QFrame):
         btn_row.insertStretch(0)
         layout.addLayout(btn_row)
 
+    def set_buttons_visible(self, visible: bool) -> None:
+        """카드 버튼(작업 수정/삭제)의 표시 여부를 설정한다. 영역보기는 항상 표시."""
+        self._btn_edit.setVisible(visible)
+        self._btn_view.setVisible(True)  # 영역보기는 모니터링 중에도 항상 표시
+        self._btn_delete.setVisible(visible)
+
 
 
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
         enabled = state == Qt.CheckState.Checked.value
         self.toggled.emit(self.region_id, enabled)
+
+    def _on_threshold_changed(self, value: int) -> None:
+        """완료 알람 임계값 변경 시 시그널을 발생시킨다."""
+        self.threshold_changed.emit(self.region_id, value)
 
     def update_progress(self, progress: float) -> None:
         """진행률을 업데이트한다."""
@@ -231,7 +278,10 @@ class RegionCard(QFrame):
         self._btn_edit.setText(t("btn_edit"))
         self._btn_view.setText(t("btn_view"))
         self._btn_delete.setText(t("btn_delete"))
-        self._type_label.setText(t("type_ocr") if self._region_type == "ocr" else t("type_bar"))
+        type_text = t("type_ocr") if self._region_type == "ocr" else t("type_bar")
+        self._label.setText(f"{self._label_text} ({t('type_prefix')}{type_text})")
+        self._type_label.setText(t("monitoring_check"))
+        self._threshold_label.setText(t("alert_threshold_label"))
 
 class MainWindow(QMainWindow):
     """ProgressEye 메인 윈도우.
@@ -249,10 +299,12 @@ class MainWindow(QMainWindow):
     settings_requested = pyqtSignal()
     settings_saved = pyqtSignal(int, str)
     settings_logout_requested = pyqtSignal()
+    region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._monitoring = False
+        self._monitoring_interval: int = 0
         self._region_cards: dict[str, RegionCard] = {}
 
         self.setWindowTitle("ProgressEye")
@@ -430,20 +482,24 @@ class MainWindow(QMainWindow):
         label: str,
         region_type: str = "bar",
         enabled: bool = True,
+        alert_threshold: int = 100,
     ) -> None:
         """영역 카드를 추가한다."""
         if region_id in self._region_cards:
             return
         self._empty_label.hide()
-        card = RegionCard(region_id, label, region_type=region_type)
+        card = RegionCard(region_id, label, region_type=region_type, alert_threshold=alert_threshold)
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
         card.delete_requested.connect(self.region_delete_requested)
         card.view_requested.connect(self.region_view_requested)
         card.edit_requested.connect(self.region_edit_requested)
+        card.threshold_changed.connect(self.region_threshold_changed)
         self._region_cards[region_id] = card
         # addStretch 앞에 삽입
         self._region_layout.insertWidget(self._region_layout.count() - 1, card)
+        if self._monitoring:
+            card.set_buttons_visible(False)
         log.info("영역 카드 추가: %s (%s)", region_id, label)
 
     def remove_region_display(self, region_id: str) -> None:
@@ -467,10 +523,16 @@ class MainWindow(QMainWindow):
         if label:
             card.set_label(label)
 
-    def set_monitoring_state(self, active: bool) -> None:
+    def set_monitoring_state(self, active: bool, interval: int = 0) -> None:
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active
+        self._monitoring_interval = interval
         if active:
+            self._subtitle.setText(
+                t("progress_monitoring_interval").format(interval=interval)
+                if interval > 0
+                else t("progress_monitoring")
+            )
             self._status_label.setText(t("status_monitoring"))
             self._status_label.setStyleSheet(
                 f"color: {STATUS_GREEN}; font-size: 13px;"
@@ -492,6 +554,7 @@ class MainWindow(QMainWindow):
                 f"}}"
             )
         else:
+            self._subtitle.setText(t("progress_monitoring"))
             self._status_label.setText(t("status_standby"))
             self._status_label.setStyleSheet(
                 f"color: {STATUS_GRAY}; font-size: 13px;"
@@ -513,9 +576,20 @@ class MainWindow(QMainWindow):
                 f"}}"
             )
 
+        # 모니터링 중에는 추가 버튼과 카드 버튼 숨기기
+        self._btn_add_bar.setVisible(not active)
+        self._btn_add_ocr.setVisible(not active)
+        for card in self._region_cards.values():
+            card.set_buttons_visible(not active)
+
     def refresh_texts(self) -> None:
         """언어 변경 시 UI 텍스트를 갱신한다."""
-        self._subtitle.setText(t("progress_monitoring"))
+        if self._monitoring and self._monitoring_interval > 0:
+            self._subtitle.setText(
+                t("progress_monitoring_interval").format(interval=self._monitoring_interval)
+            )
+        else:
+            self._subtitle.setText(t("progress_monitoring"))
         self._empty_label.setText(t("empty_state"))
         self._btn_add_bar.setText(t("btn_add_bar"))
         self._btn_add_ocr.setText(t("btn_add_ocr"))
