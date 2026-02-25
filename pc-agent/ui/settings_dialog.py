@@ -69,7 +69,7 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
 
         # ── 타이틀 ──
-        title_text = t("welcome_title") if self._welcome_mode else t("settings_title")
+        title_text = t("settings_title")
         title = QLabel(title_text)
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent;")
