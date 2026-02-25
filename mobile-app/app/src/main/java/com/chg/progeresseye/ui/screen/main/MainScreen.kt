@@ -1,0 +1,236 @@
+package com.chg.progeresseye.ui.screen.main
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.RemoveRedEye
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.chg.progeresseye.ui.screen.alerts.AlertsContent
+import com.chg.progeresseye.ui.screen.dashboard.DashboardContent
+import com.chg.progeresseye.ui.screen.settings.SettingsContent
+import com.chg.progeresseye.ui.theme.BackgroundDark
+import com.chg.progeresseye.ui.theme.OnSurfaceDark
+import com.chg.progeresseye.ui.theme.Primary
+import com.chg.progeresseye.ui.theme.ProgressEyeTheme
+import com.chg.progeresseye.ui.theme.SurfaceDark
+
+// ── Local palette ──
+private val Slate400 = Color(0xFF94A3B8)
+
+// ── Nav items ──
+private data class NavItem(
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+)
+
+private val navItems = listOf(
+    NavItem("Dashboard", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
+    NavItem("Alerts", Icons.Outlined.Notifications, Icons.Filled.Notifications),
+    NavItem("Settings", Icons.Outlined.Settings, Icons.Filled.Settings),
+)
+
+// ═════════════════════════════════════════════════════════
+// MainScreen — Scaffold + BottomNav + tab content
+// ═════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(
+    modifier: Modifier = Modifier,
+) {
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    Scaffold(
+        topBar = {
+            when (selectedTab) {
+                0 -> DashboardTopBar(onSettingsClick = { selectedTab = 2 })
+                else -> TabTopBar(
+                    title = when (selectedTab) {
+                        1 -> "Alerts"
+                        2 -> "Settings"
+                        else -> ""
+                    },
+                )
+            }
+        },
+        bottomBar = {
+            MainBottomBar(
+                selectedIndex = selectedTab,
+                onIndexSelected = { selectedTab = it },
+            )
+        },
+        containerColor = BackgroundDark,
+        modifier = modifier,
+    ) { padding ->
+        when (selectedTab) {
+            0 -> DashboardContent(modifier = Modifier.padding(padding))
+            1 -> AlertsContent(modifier = Modifier.padding(padding))
+            2 -> SettingsContent(modifier = Modifier.padding(padding))
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════
+// Dashboard Top Bar — logo + title + settings
+// ═════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DashboardTopBar(onSettingsClick: () -> Unit) {
+    TopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Primary.copy(alpha = 0.20f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.RemoveRedEye,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Text(
+                    text = "ProgressEye",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    letterSpacing = (-0.3).sp,
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "Settings",
+                    tint = Slate400,
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = BackgroundDark,
+            titleContentColor = OnSurfaceDark,
+        ),
+    )
+}
+
+// ═════════════════════════════════════════════════════════
+// Simple Top Bar — for Alerts / Settings tabs
+// ═════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TabTopBar(title: String) {
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+            )
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = BackgroundDark,
+            titleContentColor = OnSurfaceDark,
+        ),
+    )
+}
+
+// ═════════════════════════════════════════════════════════
+// Bottom Navigation Bar
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun MainBottomBar(
+    selectedIndex: Int,
+    onIndexSelected: (Int) -> Unit,
+) {
+    NavigationBar(
+        containerColor = SurfaceDark,
+        contentColor = Slate400,
+        tonalElevation = 0.dp,
+    ) {
+        navItems.forEachIndexed { index, item ->
+            val selected = index == selectedIndex
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onIndexSelected(index) },
+                icon = {
+                    Icon(
+                        imageVector = if (selected) item.selectedIcon else item.icon,
+                        contentDescription = item.label,
+                    )
+                },
+                label = {
+                    Text(
+                        text = item.label,
+                        fontSize = 10.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Primary,
+                    selectedTextColor = Primary,
+                    indicatorColor = Primary.copy(alpha = 0.10f),
+                    unselectedIconColor = Slate400,
+                    unselectedTextColor = Slate400,
+                ),
+            )
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════
+// Preview
+// ═════════════════════════════════════════════════════════
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun MainScreenPreview() {
+    ProgressEyeTheme {
+        MainScreen()
+    }
+}
