@@ -13,11 +13,12 @@
 | DI | Hilt | Android 표준 DI 프레임워크 |
 | 네비게이션 | Navigation Compose | 단일 Activity + Compose 네비게이션 |
 | 인증 | Firebase Auth + Google Sign-In | Android 네이티브 One Tap UI |
-| Firebase | Firebase Android SDK | Realtime DB, FCM, Auth |
+| Firebase | Firebase Android SDK | Realtime DB, Storage, FCM, Auth |
 | 로컬 저장 | DataStore (Preferences) | 설정 값 영속화 |
 | 비동기 | Kotlin Coroutines + Flow | 실시간 데이터 스트림 처리 |
 | 차트 | Vico | Compose 네이티브 차트 라이브러리 |
 | 위젯 | Glance | Compose 기반 앱 위젯 |
+| 이미지 로딩 | Coil | Compose 네이티브 이미지 로더 (스크린샷 표시) |
 
 ---
 
@@ -40,6 +41,7 @@ mobile-app/
 │   │   │   │   ├── remote/
 │   │   │   │   │   ├── FirebaseAuthSource.kt   # Firebase Auth + Google Sign-In
 │   │   │   │   │   ├── FirebaseDataSource.kt   # Firebase Realtime DB
+│   │   │   │   │   ├── FirebaseStorageSource.kt # Firebase Storage (스크린샷)
 │   │   │   │   │   └── FirebaseMessaging.kt    # FCM 서비스
 │   │   │   │   ├── local/
 │   │   │   │   │   └── PreferencesDataStore.kt # 로컬 설정 저장
@@ -47,7 +49,8 @@ mobile-app/
 │   │   │   │       ├── User.kt                 # 사용자 모델
 │   │   │   │       ├── Device.kt               # PC 기기 모델
 │   │   │   │       ├── Task.kt                 # 작업 모델
-│   │   │   │       └── Command.kt              # 원격 명령 모델
+│   │   │   │       ├── Command.kt              # 원격 명령 모델
+│   │   │   │       └── Screenshot.kt           # 스크린샷 모델 (url, ts)
 │   │   │   │
 │   │   │   ├── domain/
 │   │   │   │   ├── usecase/
@@ -57,6 +60,8 @@ mobile-app/
 │   │   │   │   │   ├── ObserveDevicesUseCase.kt     # PC 목록 실시간 관찰
 │   │   │   │   │   ├── ObserveTasksUseCase.kt       # 작업 목록 실시간 관찰
 │   │   │   │   │   ├── SendCommandUseCase.kt        # 원격 명령 전송
+│   │   │   │   │   ├── RequestScreenshotUseCase.kt  # 스크린샷 요청
+│   │   │   │   │   ├── ObserveScreenshotUseCase.kt  # 스크린샷 URL 관찰
 │   │   │   │   │   └── GetProgressHistoryUseCase.kt # 진행 이력 조회
 │   │   │   │   └── model/
 │   │   │   │       └── TaskStatus.kt                # 상태 enum
@@ -154,7 +159,7 @@ class TaskRepository @Inject constructor(
     fun observeAllTasks(): Flow<Map<String, List<Task>>> {
         val uid = firebaseAuth.currentUser!!.uid
         return firebaseDataSource
-            .observeRealtimeDB("users/$uid/tasks")
+            .observeRealtimeDB("users/$uid/devices")
             .map { snapshot -> snapshot.toTaskMap() }
             .distinctUntilChanged()
     }
@@ -194,19 +199,76 @@ class ProgressEyeMessagingService : FirebaseMessagingService() {
 }
 ```
 
-### 3.4 원격 명령 전송
+### 3.4 원격 명령 전송 (양방향 통신)
+
+PC Agent는 `users/{uid}/commands/` 경로를 SSE(Server-Sent Events)로 실시간 감시한다.
+모바일 앱이 해당 경로에 데이터를 기록하면 PC Agent가 즉시 수신하여 처리한다.
+
+```
+┌─────────────┐     Firebase RTDB      ┌─────────────┐
+│  PC Agent   │ ──── 진행률 push ────→ │  Mobile App │
+│  (Python)   │ ←─── 명령 SSE ──────── │  (Flutter)  │
+└──────┬──────┘                        └──────┬──────┘
+       │          Firebase Storage            │
+       └──── 스크린샷 업로드 ──────────────────┘
+              모바일에서 URL로 표시
+```
+
+#### 명령 종류
+
+| 명령 | RTDB 경로 | 값 | PC Agent 동작 |
+|------|-----------|-----|---------------|
+| 스크린샷 | `users/{uid}/commands/screenshot` | `{ts: <epoch>}` | 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록 |
+| 모니터링 | `users/{uid}/commands/monitor` | `{action: "start"\|"stop", ts}` | 모니터링 시작/정지 토글 |
+
+#### 스크린샷 플로우
+
+```kotlin
+// 1. 모바일: 스크린샷 요청
+class RequestScreenshotUseCase @Inject constructor(
+    private val deviceRepository: DeviceRepository,
+    private val firebaseAuth: FirebaseAuth
+) {
+    suspend operator fun invoke(): Result<Unit> {
+        val uid = firebaseAuth.currentUser!!.uid
+        val ts = System.currentTimeMillis() / 1000
+        return deviceRepository.writeCommand(
+            path = "users/$uid/commands/screenshot",
+            data = mapOf("ts" to ts)
+        )
+    }
+}
+
+// 2. PC Agent (Python): SSE로 수신 → 캡처 → 업로드 → URL 기록
+//    (firebase/command_listener.py + firebase/storage.py에서 처리)
+
+// 3. 모바일: URL 리스너로 이미지 수신
+class ObserveScreenshotUseCase @Inject constructor(
+    private val firebaseDataSource: FirebaseDataSource,
+    private val firebaseAuth: FirebaseAuth
+) {
+    fun observe(deviceId: String): Flow<Screenshot?> {
+        val uid = firebaseAuth.currentUser!!.uid
+        return firebaseDataSource
+            .observeRealtimeDB("users/$uid/devices/$deviceId/screenshots/latest")
+            .map { snapshot -> snapshot?.toScreenshot() }
+    }
+}
+```
+
+#### 모니터링 제어 플로우
 
 ```kotlin
 class SendCommandUseCase @Inject constructor(
     private val deviceRepository: DeviceRepository,
     private val firebaseAuth: FirebaseAuth
 ) {
-    suspend operator fun invoke(pcId: String, command: Command): Result<Unit> {
+    suspend fun toggleMonitoring(action: String): Result<Unit> {
         val uid = firebaseAuth.currentUser!!.uid
-        return deviceRepository.sendCommand(
-            uid = uid,
-            pcId = pcId,
-            command = command  // SHUTDOWN | SLEEP
+        val ts = System.currentTimeMillis() / 1000
+        return deviceRepository.writeCommand(
+            path = "users/$uid/commands/monitor",
+            data = mapOf("action" to action, "ts" to ts)
         )
     }
 }
@@ -254,6 +316,39 @@ class SendCommandUseCase @Inject constructor(
 | error | Error (Red) | 오류 발생 |
 | offline | Surface Variant (Gray) | PC 오프라인 |
 
+### Firebase RTDB 데이터 구조
+
+```
+users/{uid}/
+  plan: "free" | "pro"
+  activeDevice: "pc_xxxx"
+  profile: {email, displayName, lastLoginAt}
+  commands/                    ← 모바일 → PC 명령 채널
+    screenshot: {ts: 1234567890}
+    monitor: {action: "start" | "stop", ts: 1234567890}
+  devices/
+    pc_xxxx/
+      name, platform, status, lastSeen, appVersion, createdAt
+      screenshots/             ← PC → 모바일 스크린샷 URL
+        latest: {url: "https://...", ts: 1234567890}
+      tasks/
+        region_1/
+          p: 45.2      ← progress
+          s: "r"        ← status (r=running, f=freeze, c=completed)
+          l: "작업이름"  ← label
+```
+
+### Firebase Storage 경로
+
+```
+screenshots/{uid}/{timestamp}.jpg    ← PC Agent가 업로드
+```
+
+다운로드 URL 형식:
+```
+https://firebasestorage.googleapis.com/v0/b/{bucket}/o/screenshots%2F{uid}%2F{ts}.jpg?alt=media&token={token}
+```
+
 ---
 
 ## 5. 빌드 및 배포
@@ -281,11 +376,15 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.x.x"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-database-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
     
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.x.x")
 }
+    
+    // Image Loading (스크린샷 표시)
+    implementation("io.coil-kt:coil-compose:2.x.x")
 ```
 
 ### CI/CD

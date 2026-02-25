@@ -2,7 +2,27 @@
 
 PC 화면의 진행바를 캡처하여 **진행바 픽셀 분석(OpenCV)** 또는 **OCR 숫자 감지(pytesseract)** 두 가지 모드로 진행률(%)을 산출하는 Windows 데스크톱 에이전트.
 
-Firebase Realtime Database를 통해 모바일 앱과 실시간 동기화한다.
+Firebase Realtime Database를 통해 모바일 앱과 실시간 양방향 동기화한다.
+
+## 아키텍처
+
+```
+┌─────────────┐     Firebase RTDB      ┌─────────────┐
+│  PC Agent   │ ──── 진행률 push ────→ │  Mobile App │
+│  (Python)   │ ←─── 명령 SSE ──────── │  (Flutter)  │
+└──────┬──────┘                        └──────┬──────┘
+       │          Firebase Storage            │
+       └──── 스크린샷 업로드 ──────────────────┘
+              모바일에서 URL로 표시
+```
+
+### 통신 흐름
+
+| 방향 | 채널 | 용도 |
+|---|---|---|
+| PC → Mobile | Firebase RTDB (REST PATCH) | 진행률, 상태, 하트비트 |
+| Mobile → PC | Firebase RTDB (SSE 스트리밍) | 명령 (스크린샷 요청, 모니터링 제어) |
+| PC → Mobile | Firebase Storage | 스크린샷 이미지 (JPEG) |
 
 ## 실행 방법
 
@@ -46,6 +66,7 @@ winget install UB-Mannheim.TesseractOCR
 - `pystray` — 시스템 트레이
 - `google-auth` / `google-auth-oauthlib` — Google OAuth 2.0 로그인
 - `requests` — Firebase REST API 호출
+- `sseclient-py` — Firebase RTDB SSE 스트리밍 (명령 수신)
 - `keyring` — Windows 자격증명 관리자에 토큰 안전 저장
 - `PyQt6` — UI 프레임워크 (다크 테마)
 
@@ -61,6 +82,12 @@ winget install UB-Mannheim.TesseractOCR
 - **프리징 감지**: 설정 시간(1~60분) 동안 진행률 변화 없으면 멈춤으로 판정
 - **템플릿 이미지 영구 저장**: `templates/{region_id}.png`에 영역 등록 시점의 스크린샷을 저장, 작업 삭제 시에만 파일 삭제
 - **모니터 절전 방지**: 모니터링 중 `SetThreadExecutionState`로 모니터 절전을 자동 방지, 정지 시 복귀
+
+### 모바일 연동 (예정)
+
+- **SSE 리스너**: Firebase RTDB `users/{uid}/commands/` 경로를 실시간 감시, 모바일 명령 즉시 수신
+- **스크린샷 요청**: 모바일에서 명령 → PC 전체 화면 캡처 → JPEG 압축 → Firebase Storage 업로드 → RTDB에 URL 기록
+- **모니터링 제어**: 모바일에서 시작/정지 명령
 
 ### 완료 시나리오 (3가지)
 
@@ -85,15 +112,29 @@ users/{uid}/
   plan: "free" | "pro"
   activeDevice: "pc_xxxx"
   profile: {email, displayName, lastLoginAt}
+  commands/                    ← 모바일 → PC 명령 채널
+    screenshot: {ts: 1234567890}
+    monitor: {action: "start" | "stop", ts: 1234567890}
   devices/
     pc_xxxx/
       name, platform, status, lastSeen, appVersion, createdAt
+      screenshots/             ← PC → 모바일 스크린샷 URL
+        latest: {url: "https://...", ts: 1234567890}
       tasks/
         region_1/
           p: 45.2      ← progress
           s: "r"        ← status (r=running, f=freeze, c=completed)
           l: "작업이름"  ← label
 ```
+
+### Firebase 비용 (Spark 무료 플랜)
+
+| 서비스 | 무료 한도 | 예상 사용량 (1인) |
+|---|---|---|
+| RTDB 다운로드 | 10GB/월 | ~22MB/월 |
+| RTDB 동시접속 | 100 | 2~3 (PC + 모바일) |
+| Storage 저장 | 5GB | 수십MB (자동 정리) |
+| Storage 다운로드 | 1GB/일 | 수MB/일 |
 
 ## 성능 최적화
 

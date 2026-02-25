@@ -30,7 +30,7 @@ ProgressEye 모바일 앱은 Android 기반으로, **Google 로그인**으로 �
 | 상세 | - PC별 카드 형태로 목록 표시 |
 |  | - 각 카드: PC 이름, 작업 라벨, 진행률(%), 진행바 시각화 |
 |  | - PC 온라인/오프라인 상태 표시 |
-|  | - 실시간 업데이트 (Firebase `users/{uid}/tasks` 리스너) |
+|  | - 실시간 업데이트 (Firebase `users/{uid}/devices/{deviceId}/tasks` 리스너) |
 |  | - 당겨서 새로고침 (Pull-to-refresh) |
 |  | - PC 미등록 시 안내 메시지 표시 ("PC Agent에서 같은 Google 계정으로 로그인하세요") |
 | 우선순위 | **필수 (P0)** |
@@ -64,12 +64,14 @@ ProgressEye 모바일 앱은 Android 기반으로, **Google 로그인**으로 �
 | 항목 | 내용 |
 |------|------|
 | 설명 | 모바일에서 PC에 명령 전송 |
-| 상세 | - **PC 종료**: 작업 완료 후 원격 종료 |
-|  | - **절전 모드**: 절전 모드 전환 |
-|  | - 명령 경로: `users/{uid}/commands/{pcId}` |
+| 상세 | - **모니터링 시작/정지**: `users/{uid}/commands/monitor` 경로에 `{action: "start" \| "stop", ts}` 기록 |
+|  | - **스크린샷 요청**: FR-MOB-008 참조 |
+|  | - 명령 경로: `users/{uid}/commands/` (PC Agent가 SSE로 실시간 수신) |
+|  | - **절전 모드**: 절전 모드 전환 (2단계) |
+|  | - 명령 경로: `users/{uid}/commands/` (PC Agent가 SSE로 실시간 수신) |
 |  | - 명령 전송 전 확인 다이얼로그 표시 |
 |  | - 명령 실행 결과 피드백 (성공/실패) |
-| 우선순위 | **2단계 (P1)** |
+| 우선순위 | **필수 (P0)** — 모니터링 제어, 스크린샷은 1단계 / PC 종료, 절전은 2단계 |
 
 ### FR-MOB-006: 설정 (Settings)
 
@@ -94,6 +96,21 @@ ProgressEye 모바일 앱은 Android 기반으로, **Google 로그인**으로 �
 |  | - 위젯 탭 시 앱 대시보드로 이동 |
 |  | - 백그라운드 자동 업데이트 |
 | 우선순위 | **3단계 (P2)** |
+
+### FR-MOB-008: 스크린샷 요청 (Screenshot Request)
+
+| 항목 | 내용 |
+|------|------|
+| 설명 | 모바일에서 PC 화면 스크린샷을 요청하고 확인 |
+| 상세 | - 대시보드 또는 작업 상세에서 "스크린샷" 버튼 탭 |
+|  | - `users/{uid}/commands/screenshot` 경로에 `{ts: <timestamp>}` 기록 |
+|  | - PC Agent가 SSE로 명령 수신 → 전체 화면 캡처 → JPEG 압축 → Firebase Storage 업로드 |
+|  | - 업로드 완료 후 `users/{uid}/devices/{deviceId}/screenshots/latest` 에 `{url, ts}` 기록 |
+|  | - 모바일 앱이 RTDB 리스너로 URL 수신 → 이미지 표시 |
+|  | - 요청 중 로딩 인디케이터 표시 (요청 → URL 수신까지) |
+|  | - 이미지 핀치-투-줌 지원 |
+|  | - PC 오프라인 시 요청 불가 안내 |
+| 우선순위 | **필수 (P0)** |
 
 ---
 
