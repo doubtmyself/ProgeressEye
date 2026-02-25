@@ -34,7 +34,9 @@ from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRel
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
 from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
+from ui.settings_dialog import SettingsDialog  # pyright: ignore[reportImplicitRelativeImport]
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import set_language  # pyright: ignore[reportImplicitRelativeImport]
 
 
 class ProgressEyeApp:
@@ -83,6 +85,9 @@ class ProgressEyeApp:
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
 
+        # 초기 언어 설정
+        set_language(self._config.get("language", "ko"))
+
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
         self._main_window.toggle_monitoring_requested.connect(self._toggle_monitoring)
@@ -94,6 +99,7 @@ class ProgressEyeApp:
         self._main_window.region_delete_requested.connect(self._on_region_deleted)
         self._main_window.region_view_requested.connect(self._show_region_view)
         self._main_window.region_edit_requested.connect(self._on_edit_region)
+        self._main_window.settings_requested.connect(self._open_settings)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -461,6 +467,30 @@ class ProgressEyeApp:
         # UI에서 제거
         self._main_window.remove_region_display(region_id)
         log.info("영역 삭제: %s", region_id)
+
+    def _open_settings(self) -> None:
+        """설정 다이얼로그를 열고 저장 시 반영한다."""
+        current_interval = self._config.get("capture.interval_seconds", 30)
+        current_lang = self._config.get("language", "ko")
+        dialog = SettingsDialog(
+            interval_seconds=current_interval,
+            language=current_lang,
+            parent=self._main_window,
+        )
+        if dialog.exec():
+            new_interval = dialog.interval_seconds
+            new_lang = dialog.language
+            # 모니터링 간격 반영
+            if new_interval != current_interval:
+                self._config.set("capture.interval_seconds", new_interval)
+                self._scheduler.update_interval(new_interval)
+                log.info("모니터링 간격 변경: %d초", new_interval)
+            # 언어 반영
+            if new_lang != current_lang:
+                self._config.set("language", new_lang)
+                set_language(new_lang)
+                self._main_window.refresh_texts()
+                log.info("언어 변경: %s", new_lang)
 
     def _on_edit_region(self, region_id: str) -> None:
         """작업 수정 요청 — 기존 영역 데이터로 프리뷰 다이얼로그를 연다."""
