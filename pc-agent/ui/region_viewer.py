@@ -32,6 +32,7 @@ class RegionViewer(QWidget):
         region_rect: QRect,
         bar_rect: QRect | None,
         progress: float,
+        region_type: str = "bar",
         parent: QWidget | None = None,
     ) -> None:
         """
@@ -39,12 +40,14 @@ class RegionViewer(QWidget):
             region_rect: 등록된 영역 (Qt 위젯 좌표).
             bar_rect: 탐지된 바 영역 (Qt 위젯 좌표, 절대). None이면 바 미탐지.
             progress: 현재 진행률 (%).
+            region_type: 영역 타입 ("bar" 또는 "ocr").
             parent: 부모 위젯.
         """
         super().__init__(parent)
         self._region_rect = region_rect
         self._bar_rect = bar_rect
         self._progress = progress
+        self._region_type = region_type
 
         # 스크린샷 (오버레이 표시 전에 캡처)
         self._screenshot: QPixmap | None = None
@@ -164,7 +167,7 @@ class RegionViewer(QWidget):
             # 바 미탐지 — 영역 중앙에 안내
             painter.setFont(QFont("Segoe UI", 12))
             painter.setPen(QColor(255, 100, 100))
-            no_bar_text = f"바 미탐지  |  진행률: {self._progress:.1f}%"
+            no_bar_text = f"OCR 감지  |  진행률: {self._progress:.1f}%" if self._region_type == "ocr" else f"바 미탐지  |  진행률: {self._progress:.1f}%"
             no_bar_rect = QRect(r.left(), r.bottom() + 8, 280, 26)
             if no_bar_rect.bottom() > self.height():
                 no_bar_rect = QRect(r.left(), r.top() - 28, 280, 26)

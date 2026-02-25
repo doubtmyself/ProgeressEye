@@ -323,7 +323,7 @@ class ProgressEyeApp:
             region_id = f"task_{self._task_counter:03d}"
             region = {
                 "id": region_id,
-                "label": f"작업 {self._task_counter}",
+                "label": dialog.task_name or f"작업 {self._task_counter}",
                 "type": "bar",
                 "monitor": area.get("monitor", 0),
                 "x": area["x"],
@@ -375,7 +375,7 @@ class ProgressEyeApp:
             region_id = f"task_{self._task_counter:03d}"
             region = {
                 "id": region_id,
-                "label": f"작업 {self._task_counter}",
+                "label": dialog.task_name or f"작업 {self._task_counter}",
                 "type": "ocr",
                 "monitor": area.get("monitor", 0),
                 "x": area["x"],
@@ -453,37 +453,41 @@ class ProgressEyeApp:
             log.error("영역 캕처 실패: %s", e)
             return
 
-        # 3. 바 탐지
-        bar_region = self._bar_finder.find(image)
-
-        # 4. 진행률 분석
-        bar_image = image.crop(bar_region.bbox) if bar_region else image
-        direction = bar_region.direction if bar_region else "horizontal"
-        result = self._analyzer.analyze(bar_image, direction=direction)
-
-        # 5. mss 좌표 → Qt 위젯 좌표 변환
+        # 3. 영역 타입에 따라 분석 분기
+        region_type = area.get("type", "bar")
         region_rect = self._mss_to_qt_rect(area)
-
-        # 바 영역의 Qt 좌표 (영역 내 상대 좌표 → 절대 Qt 좌표)
         bar_qt_rect = None
-        if bar_region is not None:
-            bar_area = {
-                "monitor": area.get("monitor", 0),
-                "x": area["x"] + bar_region.left,
-                "y": area["y"] + bar_region.top,
-                "width": bar_region.width,
-                "height": bar_region.height,
-            }
-            bar_qt_rect = self._mss_to_qt_rect(bar_area)
-
-        # 6. 뷰어 생성 + 표시
+        if region_type == "ocr":
+            # OCR: 숫자% 읽기
+            progress_val = self._ocr_reader.read_progress(image)
+            if progress_val is None:
+                progress_val = 0.0
+        else:
+            # 바: 기존 로직 유지
+            bar_region = self._bar_finder.find(image)
+            bar_image = image.crop(bar_region.bbox) if bar_region else image
+            direction = bar_region.direction if bar_region else "horizontal"
+            result = self._analyzer.analyze(bar_image, direction=direction)
+            progress_val = result.progress
+            if bar_region is not None:
+                bar_area = {
+                    "monitor": area.get("monitor", 0),
+                    "x": area["x"] + bar_region.left,
+                    "y": area["y"] + bar_region.top,
+                    "width": bar_region.width,
+                    "height": bar_region.height,
+                }
+                bar_qt_rect = self._mss_to_qt_rect(bar_area)
+        # 4. 뷰어 생성 + 표시
         if self._region_viewer is not None:
             try:
                 self._region_viewer.close()
             except RuntimeError:
                 pass
 
-        self._region_viewer = RegionViewer(region_rect, bar_qt_rect, result.progress)
+        self._region_viewer = RegionViewer(
+            region_rect, bar_qt_rect, progress_val, region_type=region_type
+        )
         self._region_viewer.closed.connect(self._on_region_viewer_closed)
         self._region_viewer.show()
 
