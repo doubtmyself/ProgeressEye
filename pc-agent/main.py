@@ -26,6 +26,8 @@ from auth.google_oauth import GoogleOAuth  # pyright: ignore[reportImplicitRelat
 from auth.token_manager import TokenManager  # pyright: ignore[reportImplicitRelativeImport]
 from config import Config  # pyright: ignore[reportImplicitRelativeImport]
 from firebase import RealtimeDB, DeviceManager  # pyright: ignore[reportImplicitRelativeImport]
+from firebase.storage import FirebaseStorage  # pyright: ignore[reportImplicitRelativeImport]
+from firebase.command_listener import CommandListener  # pyright: ignore[reportImplicitRelativeImport]
 from core.bar_analyzer import AnalysisResult, BarAnalyzer  # pyright: ignore[reportImplicitRelativeImport]
 from core.bar_finder import BarFinder, BarRegion  # pyright: ignore[reportImplicitRelativeImport]
 from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
@@ -72,17 +74,27 @@ class ProgressEyeApp:
         self._realtime_db: RealtimeDB | None = None
         self._device_manager: DeviceManager | None = None
         self._heartbeat_timer: QTimer | None = None
+        self._command_listener: CommandListener | None = None
+        self._firebase_storage: FirebaseStorage | None = None
+        self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
         self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
         self._alerted_regions: dict[str, float] = {}  # region_id -> alert progress
         self._post_completion_fails: dict[str, int] = {}  # 완료 후 연속 캡쳐 실패 횟수
         self._pending_firebase_batch: dict[str, dict] = {}  # 사이클별 Firebase 배치
-        self._last_firebase_state: dict[str, dict] = {}  # region_id -> {p, s} 마지막 전송값
-        self._completion_confirm: dict[str, int] = {}  # region_id -> 연속 threshold 도달 횟수
-        self._template_images: dict[str, PILImage.Image] = {}  # 이미지 변경 감지용 메모리 캐시
-        self._template_dir = pathlib.Path(os.path.dirname(os.path.abspath(__file__))) / "templates"
+        self._last_firebase_state: dict[
+            str, dict
+        ] = {}  # region_id -> {p, s} 마지막 전송값
+        self._completion_confirm: dict[
+            str, int
+        ] = {}  # region_id -> 연속 threshold 도달 횟수
+        self._template_images: dict[
+            str, PILImage.Image
+        ] = {}  # 이미지 변경 감지용 메모리 캐시
+        self._template_dir = (
+            pathlib.Path(os.path.dirname(os.path.abspath(__file__))) / "templates"
+        )
         self._template_dir.mkdir(exist_ok=True)
-
 
         # UI
         # UI
@@ -101,6 +113,11 @@ class ProgressEyeApp:
         self._poll_timer = QTimer()
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
+
+        # 모바일 명령 큐 폴링 (200ms)
+        self._cmd_poll_timer = QTimer()
+        self._cmd_poll_timer.timeout.connect(self._process_commands)
+        self._cmd_poll_timer.start(200)
 
         # 초기 언어 설정
         set_language(self._config.get("language", "ko"))
@@ -205,12 +222,14 @@ class ProgressEyeApp:
         take_over = dialog.addButton(
             t("device_conflict_takeover"), QMessageBox.ButtonRole.AcceptRole
         )
-        dialog.addButton(
-            t("device_conflict_cancel"), QMessageBox.ButtonRole.RejectRole
-        )
+        dialog.addButton(t("device_conflict_cancel"), QMessageBox.ButtonRole.RejectRole)
         dialog.exec()
         if dialog.clickedButton() == take_over:
-            log.info("디바이스 강제 전환: %s → %s", other_device_id, self._config.get("auth.device_id"))
+            log.info(
+                "디바이스 강제 전환: %s → %s",
+                other_device_id,
+                self._config.get("auth.device_id"),
+            )
             if self._device_manager:
                 self._device_manager.set_active_device()
 
@@ -318,6 +337,22 @@ class ProgressEyeApp:
         heartbeat_timer.start(30_000)
         self._heartbeat_timer = heartbeat_timer
 
+        # Firebase Storage 초기화
+        self._firebase_storage = FirebaseStorage(
+            bucket="progresseye-49244.firebasestorage.app",
+            get_id_token=get_token,
+        )
+
+        # 명령 리스너 초기화
+        if self._command_listener:
+            self._command_listener.stop()
+        self._command_listener = CommandListener(
+            db_url="https://progresseye-49244-default-rtdb.firebaseio.com",
+            get_id_token=get_token,
+            command_queue=self._command_queue,
+        )
+        self._command_listener.start(uid)
+
     def _send_heartbeat(self) -> None:
         """하트비트 전송 (모니터링 비활성 시에만 동작)."""
         if self._scheduler.is_running:
@@ -341,6 +376,63 @@ class ProgressEyeApp:
             except queue.Empty:
                 break
 
+    def _process_commands(self) -> None:
+        """모바일 명령 큐를 폴링하여 처리한다."""
+        while not self._command_queue.empty():
+            try:
+                cmd = self._command_queue.get_nowait()
+            except queue.Empty:
+                break
+            cmd_type = cmd.get("type")
+            if cmd_type == "screenshot":
+                self._handle_screenshot_command()
+            elif cmd_type == "monitor":
+                data = cmd.get("data", {})
+                action = data.get("action") if isinstance(data, dict) else None
+                if action in ("start", "stop"):
+                    # 모니터링 토글 (시작/정지)
+                    if action == "start" and not self._scheduler.is_running:
+                        self._toggle_monitoring()
+                    elif action == "stop" and self._scheduler.is_running:
+                        self._toggle_monitoring()
+
+    def _handle_screenshot_command(self) -> None:
+        """모바일 스크린샷 요청: 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록."""
+        import io
+        import mss as mss_lib
+
+        if not self._firebase_storage or not self._realtime_db:
+            log.warning("스크린샷 명령 무시: Firebase 미초기화")
+            return
+
+        try:
+            with mss_lib.mss() as sct:
+                monitor = sct.monitors[0]  # 모든 모니터 합성
+                shot = sct.grab(monitor)
+                img = PILImage.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=70)
+            jpeg_bytes = buf.getvalue()
+
+            uid = str(self._config.get("auth.uid", ""))
+            device_id = str(self._config.get("auth.device_id", ""))
+            ts = int(time.time())
+            storage_path = f"screenshots/{uid}/{ts}.jpg"
+
+            download_url = self._firebase_storage.upload_jpeg(storage_path, jpeg_bytes)
+
+            self._realtime_db.patch(
+                f"users/{uid}/devices/{device_id}/screenshots",
+                {"latest": {"url": download_url, "ts": ts}},
+            )
+
+            # 명령 소비 (삭제)
+            self._realtime_db.delete(f"users/{uid}/commands/screenshot")
+            log.info("스크린샷 업로드 완료: %s", storage_path)
+        except Exception as exc:
+            log.warning("스크린샷 처리 실패: %s", exc)
+
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
@@ -356,6 +448,7 @@ class ProgressEyeApp:
             tpl = self._load_template(region["id"])
             if tpl is not None:
                 self._template_images[region["id"]] = tpl
+
     def _start_area_selection(self) -> None:
         """프로그래스바 영역 선택을 시작한다."""
         self._selection_mode = "bar"
@@ -600,7 +693,10 @@ class ProgressEyeApp:
         )
 
     def _on_settings_saved(
-        self, new_interval: int, new_lang: str, new_freeze: int,
+        self,
+        new_interval: int,
+        new_lang: str,
+        new_freeze: int,
     ) -> None:
         """설정 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
@@ -630,6 +726,9 @@ class ProgressEyeApp:
         if self._heartbeat_timer is not None:
             self._heartbeat_timer.stop()
             self._heartbeat_timer = None
+        if self._command_listener:
+            self._command_listener.stop()
+            self._command_listener = None
         if self._device_manager is not None:
             try:
                 if self._config.get("plan", "free") == "free":
@@ -884,6 +983,7 @@ class ProgressEyeApp:
                 log.info("모니터 절전 방지 해제")
         except Exception as exc:
             log.warning("SetThreadExecutionState 실패: %s", exc)
+
     def _do_toggle_monitoring(self) -> None:
         """실제 모니터링 토글 (메인 스레드)."""
         if self._scheduler.is_running:
@@ -954,7 +1054,9 @@ class ProgressEyeApp:
                 similarity = 1.0  # 실패 시 유사하다고 간주하고 모니터링 계속
             log.info(
                 "[%s] 이미지 유사도: %.4f (threshold: %.1f)",
-                region_id, similarity, IMAGE_CHANGE_THRESHOLD,
+                region_id,
+                similarity,
+                IMAGE_CHANGE_THRESHOLD,
             )
             if similarity < IMAGE_CHANGE_THRESHOLD:
                 last_progress = self._last_firebase_state.get(region_id, {}).get("p", 0)
@@ -963,7 +1065,9 @@ class ProgressEyeApp:
                     # 완료 근접 → 완료 처리
                     log.info(
                         "[이미지 변경] %s — 완료 근접 (%.1f%%) → 완료 처리 (유사도: %.2f)",
-                        label, last_progress, similarity,
+                        label,
+                        last_progress,
+                        similarity,
                     )
                     self._alerted_regions[region_id] = last_progress
                     complete_msg = t("image_changed_completed").format(
@@ -978,7 +1082,9 @@ class ProgressEyeApp:
                     # 경고 + 해당 영역 모니터링 중지
                     log.warning(
                         "[이미지 변경] %s — 화면 크게 변경 (유사도: %.2f, 진행률: %.1f%%) → 모니터링 중지",
-                        label, similarity, last_progress,
+                        label,
+                        similarity,
+                        last_progress,
                     )
                     warn_msg = t("image_changed_warning").format(label=label)
                     stopped_msg = t("image_changed_stopped")
@@ -1018,7 +1124,9 @@ class ProgressEyeApp:
                         alert_progress = self._alerted_regions[region_id]
                         log.info(
                             "[완료 시나리오] %s — 창 닫힘 감지 (%.1f%% 완료 후 OCR 실패 %d회)",
-                            label, alert_progress, fails,
+                            label,
+                            alert_progress,
+                            fails,
                         )
                         self._post_completion_fails[region_id] = -1  # 중복 알림 방지
                         closed_msg = t("completion_closed").format(label=label)
@@ -1045,13 +1153,21 @@ class ProgressEyeApp:
         freeze_state = self._freeze_detector.update(region_id, progress)
         log.debug(
             "[%s] 프리징 체크 — progress=%.1f%%, prev_frozen=%s, is_frozen=%s, elapsed=%dm",
-            region_id, progress, prev_frozen, freeze_state.is_frozen, freeze_state.frozen_minutes,
+            region_id,
+            progress,
+            prev_frozen,
+            freeze_state.is_frozen,
+            freeze_state.frozen_minutes,
         )
         if prev_frozen and not freeze_state.is_frozen:
             log.info("[%s] 프리징 해제 — 진행률 변화 감지: %.1f%%", region_id, progress)
 
         # Firebase 배치 수집 (변화 있을 때만)
-        status_code = "c" if region_id in self._alerted_regions else ("f" if freeze_state.is_frozen else "r")
+        status_code = (
+            "c"
+            if region_id in self._alerted_regions
+            else ("f" if freeze_state.is_frozen else "r")
+        )
         new_state = {"p": round(progress, 1), "s": status_code}
         if new_state != self._last_firebase_state.get(region_id):
             self._pending_firebase_batch[region_id] = new_state
@@ -1068,16 +1184,22 @@ class ProgressEyeApp:
         threshold = region_config.get("alert_threshold", 100)
         if region_id in self._alerted_regions:
             alert_progress = self._alerted_regions[region_id]
-            self._post_completion_fails.pop(region_id, None)  # OCR 성공 → 실패 카운터 리셋
+            self._post_completion_fails.pop(
+                region_id, None
+            )  # OCR 성공 → 실패 카운터 리셋
             if alert_progress - progress >= 30.0:
                 # 시나리오 1: 게이지 초기화 (큰 폭 하락)
                 log.info(
                     "[완료 시나리오] %s — 게이지 초기화 (%.1f%% → %.1f%%)",
-                    label, alert_progress, progress,
+                    label,
+                    alert_progress,
+                    progress,
                 )
                 self._alerted_regions.pop(region_id, None)
                 reset_msg = t("completion_reset").format(
-                    label=label, old=alert_progress, new=progress,
+                    label=label,
+                    old=alert_progress,
+                    new=progress,
                 )
                 self._action_queue.put(
                     lambda _msg=reset_msg: self._tray.show_notification(
@@ -1091,19 +1213,21 @@ class ProgressEyeApp:
                 # 임계값 아래 소폭 하락 → 재알람 허용
                 log.info(
                     "[완료 시나리오] %s — 진행률 하락 (%.1f%% → %.1f%%), 재알람 대기",
-                    label, alert_progress, progress,
+                    label,
+                    alert_progress,
+                    progress,
                 )
                 self._alerted_regions.pop(region_id, None)
 
         # 완료 알람 체크
         log.debug(
             "[%s] 완료 체크 — progress=%.1f%%, threshold=%d%%, alerted=%s",
-            region_id, progress, threshold, region_id in self._alerted_regions,
+            region_id,
+            progress,
+            threshold,
+            region_id in self._alerted_regions,
         )
-        if (
-            region_id not in self._alerted_regions
-            and progress >= threshold
-        ):
+        if region_id not in self._alerted_regions and progress >= threshold:
             # 연속 2회 이상 threshold 도달 시에만 완료 판정 (스파이크 방지)
             confirm = self._completion_confirm.get(region_id, 0) + 1
             self._completion_confirm[region_id] = confirm
@@ -1139,6 +1263,7 @@ class ProgressEyeApp:
         except Exception as exc:
             log.debug("Firebase 배치 전송 실패: %s", exc)
         self._pending_firebase_batch.clear()
+
     def _on_threshold_changed(self, region_id: str, threshold: int) -> None:
         """완료 알람 임계값 변경 — config에 저장한다."""
         self._config.update_region(region_id, {"alert_threshold": threshold})
@@ -1164,6 +1289,9 @@ class ProgressEyeApp:
         self._capturer.close()
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
+        if self._command_listener:
+            self._command_listener.stop()
+            self._command_listener = None
         if self._device_manager:
             try:
                 if self._config.get("plan", "free") == "free":
@@ -1176,6 +1304,7 @@ class ProgressEyeApp:
     def _do_quit(self) -> None:
         """앱 종료 (메인 스레드)."""
         self._poll_timer.stop()
+        self._cmd_poll_timer.stop()
         setattr(self._main_window, "_really_quit", True)
         self._main_window.close()
         self._app.quit()
@@ -1228,12 +1357,8 @@ class ProgressEyeApp:
         import numpy as np
 
         size = (64, 64)
-        arr1 = cv2.cvtColor(
-            np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY
-        )
-        arr2 = cv2.cvtColor(
-            np.array(img2.resize(size)), cv2.COLOR_RGB2GRAY
-        )
+        arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)
+        arr2 = cv2.cvtColor(np.array(img2.resize(size)), cv2.COLOR_RGB2GRAY)
         flat1 = arr1.astype(np.float32).flatten()
         flat2 = arr2.astype(np.float32).flatten()
         # 표준편차가 0이면 동일 이미지 (단색)
@@ -1245,12 +1370,14 @@ class ProgressEyeApp:
         corr = np.corrcoef(flat1, flat2)[0, 1]
         # NaN 방어 (corrcoef가 NaN 반환 시 0.0 처리)
         import math
+
         if math.isnan(corr):
             return 0.0
         return max(0.0, float(corr))
 
     def _smart_bar_analyze(
-        self, image: PILImage.Image,
+        self,
+        image: PILImage.Image,
     ) -> tuple[BarRegion | None, AnalysisResult]:
         """Smart 바 분석: 다운스케일 시도 → 신뢰도 낮으면 원본 fallback.
 
@@ -1264,20 +1391,22 @@ class ProgressEyeApp:
         result = self._analyzer.analyze(bar_image, direction=direction, downscale=ds)
 
         # Fallback 조건: 신뢰도 부족 또는 uniform bar 의심 (0%/100% + 낮은 신뢰도)
-        needs_fallback = (
-            ds < 1.0
-            and (
-                result.confidence < 0.5
-                or (result.confidence <= 0.7 and result.progress in (0.0, 100.0))
-            )
+        needs_fallback = ds < 1.0 and (
+            result.confidence < 0.5
+            or (result.confidence <= 0.7 and result.progress in (0.0, 100.0))
         )
         if needs_fallback:
-            log.debug("다운스케일 신뢰도 부족 (%.2f, %.1f%%) → 원본 재분석",
-                      result.confidence, result.progress)
+            log.debug(
+                "다운스케일 신뢰도 부족 (%.2f, %.1f%%) → 원본 재분석",
+                result.confidence,
+                result.progress,
+            )
             bar_region = self._bar_finder.find(image, downscale=1.0)
             bar_image = image.crop(bar_region.bbox) if bar_region else image
             direction = bar_region.direction if bar_region else "horizontal"
-            result = self._analyzer.analyze(bar_image, direction=direction, downscale=1.0)
+            result = self._analyzer.analyze(
+                bar_image, direction=direction, downscale=1.0
+            )
 
         return bar_region, result
 
