@@ -91,8 +91,8 @@ class RegionCard(QFrame):
 
         type_text = t("type_ocr") if region_type == "ocr" else t("type_bar")
         self._label_text = label
-        # ── Row 1: 작업 이름 (종류:타입) 라벨 (큰 글씨, 볼드) ──
-        self._label = QLabel(f"{label} ({t('type_prefix')}{type_text})")
+        # ── Row 1: 작업 이름 (타입) 라벨 (큰 글씨, 볼드) ──
+        self._label = QLabel(f"{label} ({type_text})")
         self._label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self._label.setStyleSheet(
             f"color: {CARD_LABEL}; background: transparent; border: none;"
@@ -267,7 +267,9 @@ class RegionCard(QFrame):
 
     def set_label(self, label: str) -> None:
         """라벨을 변경한다."""
-        self._label.setText(label)
+        self._label_text = label
+        type_text = t("type_ocr") if self._region_type == "ocr" else t("type_bar")
+        self._label.setText(f"{label} ({type_text})")
 
     def set_checked(self, checked: bool) -> None:
         """체크박스 상태를 설정한다."""
@@ -279,7 +281,7 @@ class RegionCard(QFrame):
         self._btn_view.setText(t("btn_view"))
         self._btn_delete.setText(t("btn_delete"))
         type_text = t("type_ocr") if self._region_type == "ocr" else t("type_bar")
-        self._label.setText(f"{self._label_text} ({t('type_prefix')}{type_text})")
+        self._label.setText(f"{self._label_text} ({type_text})")
         self._type_label.setText(t("monitoring_check"))
         self._threshold_label.setText(t("alert_threshold_label"))
 
@@ -317,8 +319,8 @@ class MainWindow(QMainWindow):
         self._region_cards: dict[str, RegionCard] = {}
 
         self.setWindowTitle("ProgressEye")
-        self.setMinimumSize(400, 350)
-        self.resize(420, 500)
+        self.setMinimumSize(400, 500)
+        self.resize(420, 700)
 
         self._setup_ui()
 
