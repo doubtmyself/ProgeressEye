@@ -34,7 +34,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_start": False,
         "start_minimized": True,
     },
-    "language": "ko",
+    "language": "en",
 }
 
 
