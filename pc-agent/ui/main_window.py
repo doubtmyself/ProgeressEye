@@ -117,6 +117,7 @@ class RegionCard(QFrame):
             f"}}"
         )
         self._checkbox.stateChanged.connect(self._on_check_changed)
+        self._checkbox.setToolTip(t("tooltip_checkbox"))
         header_row.addWidget(self._checkbox)
         self._type_label = QLabel(t("monitoring_check"))
         self._type_label.setStyleSheet(
@@ -186,6 +187,7 @@ class RegionCard(QFrame):
         self._threshold_spin.setStyleSheet(spin_style)
         self._threshold_spin.setFixedSize(110, 30)
         self._threshold_spin.valueChanged.connect(self._on_threshold_changed)
+        self._threshold_spin.setToolTip(t("tooltip_threshold"))
         threshold_row.addWidget(self._threshold_spin)
         threshold_row.addStretch()
         layout.addLayout(threshold_row)
@@ -221,6 +223,7 @@ class RegionCard(QFrame):
         self._btn_edit.clicked.connect(
             lambda: self.edit_requested.emit(self.region_id)
         )
+        self._btn_edit.setToolTip(t("tooltip_edit"))
         btn_row.addWidget(self._btn_edit)
 
         self._btn_view = QPushButton(t("btn_view"))
@@ -229,6 +232,7 @@ class RegionCard(QFrame):
         self._btn_view.clicked.connect(
             lambda: self.view_requested.emit(self.region_id)
         )
+        self._btn_view.setToolTip(t("tooltip_view"))
         btn_row.addWidget(self._btn_view)
 
         self._btn_delete = QPushButton(t("btn_delete"))
@@ -237,6 +241,7 @@ class RegionCard(QFrame):
         self._btn_delete.clicked.connect(
             lambda: self.delete_requested.emit(self.region_id)
         )
+        self._btn_delete.setToolTip(t("tooltip_delete"))
         btn_row.addWidget(self._btn_delete)
 
         btn_row.insertStretch(0)
@@ -285,6 +290,11 @@ class RegionCard(QFrame):
         self._type_label.setText(t("monitoring_check"))
         self._threshold_label.setText(t("alert_threshold_label"))
 
+        self._checkbox.setToolTip(t("tooltip_checkbox"))
+        self._btn_edit.setToolTip(t("tooltip_edit"))
+        self._btn_view.setToolTip(t("tooltip_view"))
+        self._btn_delete.setToolTip(t("tooltip_delete"))
+        self._threshold_spin.setToolTip(t("tooltip_threshold"))
     def set_warning(self, message: str) -> None:
         """카드에 경고 상태를 표시한다."""
         self._time_label.setText(message)
@@ -308,7 +318,7 @@ class MainWindow(QMainWindow):
     region_view_requested = pyqtSignal(str)
     region_edit_requested = pyqtSignal(str)
     settings_requested = pyqtSignal()
-    settings_saved = pyqtSignal(int, str, int, str, str, str)  # (interval, lang, freeze, tg_token, tg_chat, dc_webhook)
+    settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
 
@@ -368,6 +378,7 @@ class MainWindow(QMainWindow):
         self._btn_settings.clicked.connect(
             lambda: self.settings_requested.emit()
         )
+        self._btn_settings.setToolTip(t("tooltip_settings"))
         header_row.addWidget(self._btn_settings)
         layout.addLayout(header_row)
 
@@ -458,12 +469,14 @@ class MainWindow(QMainWindow):
         self._btn_add_bar.setFixedHeight(36)
         self._btn_add_bar.setStyleSheet(_btn_add_style)
         self._btn_add_bar.clicked.connect(self.select_area_requested.emit)
+        self._btn_add_bar.setToolTip(t("tooltip_add_bar"))
         btn_layout.addWidget(self._btn_add_bar)
 
         self._btn_add_ocr = QPushButton(t("btn_add_ocr"))
         self._btn_add_ocr.setFixedHeight(36)
         self._btn_add_ocr.setStyleSheet(_btn_add_style)
         self._btn_add_ocr.clicked.connect(self.select_ocr_area_requested.emit)
+        self._btn_add_ocr.setToolTip(t("tooltip_add_ocr"))
         btn_layout.addWidget(self._btn_add_ocr)
 
         self._btn_toggle = QPushButton(t("btn_start"))
@@ -483,6 +496,7 @@ class MainWindow(QMainWindow):
             f"}}"
         )
         self._btn_toggle.clicked.connect(self.toggle_monitoring_requested.emit)
+        self._btn_toggle.setToolTip(t("tooltip_start"))
         btn_layout.addWidget(self._btn_toggle)
 
         layout.addLayout(btn_layout)
@@ -555,6 +569,7 @@ class MainWindow(QMainWindow):
                 f"font-weight: bold; background: transparent;"
             )
             self._btn_toggle.setText(t("btn_stop"))
+            self._btn_toggle.setToolTip(t("tooltip_stop"))
             self._btn_toggle.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: {BTN_STOP_BG};"
@@ -577,6 +592,7 @@ class MainWindow(QMainWindow):
                 f"font-weight: bold; background: transparent;"
             )
             self._btn_toggle.setText(t("btn_start"))
+            self._btn_toggle.setToolTip(t("tooltip_start"))
             self._btn_toggle.setStyleSheet(
                 f"QPushButton {{"
                 f"  background-color: {BTN_START_BG};"
@@ -617,17 +633,22 @@ class MainWindow(QMainWindow):
             self._btn_toggle.setText(t("btn_start"))
         for card in self._region_cards.values():
             card.refresh_texts()
+        self._btn_settings.setToolTip(t("tooltip_settings"))
+        self._btn_add_bar.setToolTip(t("tooltip_add_bar"))
+        self._btn_add_ocr.setToolTip(t("tooltip_add_ocr"))
+        if self._monitoring:
+            self._btn_toggle.setToolTip(t("tooltip_stop"))
+        else:
+            self._btn_toggle.setToolTip(t("tooltip_start"))
 
     def show_settings(
         self, interval: int, language: str, email: str,
-        freeze_minutes: int = 5, tg_token: str = "", tg_chat_id: str = "",
-        dc_webhook: str = "", welcome_mode: bool = False,
+        freeze_minutes: int = 5, welcome_mode: bool = False,
     ) -> None:
         """설정 오버레이를 표시한다."""
         self._settings_overlay.setGeometry(self.centralWidget().geometry())
         self._settings_overlay.show_settings(
-            interval, language, email, freeze_minutes,
-            tg_token, tg_chat_id, dc_webhook, welcome_mode,
+            interval, language, email, freeze_minutes, welcome_mode,
         )
 
     def resizeEvent(self, event) -> None:  # noqa: N802

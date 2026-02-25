@@ -12,6 +12,7 @@ import os
 import pathlib
 import sys
 import uuid
+import ctypes
 from typing import Callable
 
 from PIL import Image as PILImage
@@ -37,7 +38,6 @@ from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRel
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
 from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
-from telegram import TelegramBot, DiscordWebhook  # pyright: ignore[reportImplicitRelativeImport]
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
@@ -83,19 +83,8 @@ class ProgressEyeApp:
         self._template_dir = pathlib.Path(os.path.dirname(os.path.abspath(__file__))) / "templates"
         self._template_dir.mkdir(exist_ok=True)
 
-        # Telegram Bot
-        tg_token = str(self._config.get("telegram.token", ""))
-        tg_chat_id = str(self._config.get("telegram.chat_id", ""))
-        self._telegram = TelegramBot(
-            token=tg_token,
-            chat_id=tg_chat_id,
-            on_command=self._on_telegram_command,
-        )
 
-        # Discord Webhook
-        dc_webhook = str(self._config.get("discord.webhook_url", ""))
-        self._discord = DiscordWebhook(webhook_url=dc_webhook)
-
+        # UI
         # UI
         self._main_window = MainWindow()
         self._tray = TrayIcon(
@@ -143,8 +132,6 @@ class ProgressEyeApp:
         if is_first and self._config.get("auth.uid", ""):
             self._show_welcome()
         self._tray.start()
-        if self._telegram.is_configured:
-            self._telegram.start_polling()
         self._main_window.show()
         return self._app.exec()
 
@@ -610,14 +597,10 @@ class ProgressEyeApp:
             language=self._config.get("language", "ko"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
-            tg_token=str(self._config.get("telegram.token", "")),
-            tg_chat_id=str(self._config.get("telegram.chat_id", "")),
-            dc_webhook=str(self._config.get("discord.webhook_url", "")),
         )
 
     def _on_settings_saved(
         self, new_interval: int, new_lang: str, new_freeze: int,
-        new_tg_token: str = "", new_tg_chat_id: str = "", new_dc_webhook: str = "",
     ) -> None:
         """설정 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
@@ -636,25 +619,6 @@ class ProgressEyeApp:
             self._config.set("freeze_detection.timeout_minutes", new_freeze)
             self._freeze_detector._timeout_seconds = new_freeze * 60
             log.info("프리징 감지 시간 변경: %d분", new_freeze)
-        # Telegram 설정 반영
-        cur_tg_token = str(self._config.get("telegram.token", ""))
-        cur_tg_chat = str(self._config.get("telegram.chat_id", ""))
-        if new_tg_token != cur_tg_token or new_tg_chat_id != cur_tg_chat:
-            self._config.set("telegram.token", new_tg_token)
-            self._config.set("telegram.chat_id", new_tg_chat_id)
-            self._telegram.update_credentials(new_tg_token, new_tg_chat_id)
-            if self._telegram.is_configured:
-                self._telegram.start_polling()
-                log.info("Telegram Bot 설정 변경 — 폴링 시작")
-            else:
-                self._telegram.stop_polling()
-                log.info("Telegram Bot 설정 제거")
-        # Discord 설정 반영
-        cur_dc_webhook = str(self._config.get("discord.webhook_url", ""))
-        if new_dc_webhook != cur_dc_webhook:
-            self._config.set("discord.webhook_url", new_dc_webhook)
-            self._discord.update_url(new_dc_webhook)
-            log.info("Discord Webhook 설정 변경")
 
     def _do_logout(self) -> None:
         """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 재로그인."""
@@ -662,6 +626,7 @@ class ProgressEyeApp:
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
+            self._set_display_required(False)
         if self._heartbeat_timer is not None:
             self._heartbeat_timer.stop()
             self._heartbeat_timer = None
@@ -689,12 +654,9 @@ class ProgressEyeApp:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
         self._main_window.show_settings(
             interval=self._config.get("capture.interval_seconds", 30),
-            language=self._config.get("language", "ko"),
+            language=self._config.get("language", "en"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
-            tg_token=str(self._config.get("telegram.token", "")),
-            tg_chat_id=str(self._config.get("telegram.chat_id", "")),
-            dc_webhook=str(self._config.get("discord.webhook_url", "")),
             welcome_mode=True,
         )
 
@@ -901,13 +863,33 @@ class ProgressEyeApp:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
+            self._set_display_required(False)
             log.info("모니터링 자동 정지 (활성 영역 없음)")
 
+    def _set_display_required(self, required: bool) -> None:
+        """모니터 절전 방지를 설정/해제한다.
+
+        모니터링 중에는 ES_DISPLAY_REQUIRED | ES_CONTINUOUS를 설정하여
+        Windows가 모니터를 절전모드로 전환하지 않도록 한다.
+        모니터링 정지 시 ES_CONTINUOUS만 설정하여 정상 절전으로 복귀한다.
+        """
+        try:
+            if required:
+                # ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000002 | 0x00000001)
+                log.info("모니터 절전 방지 설정")
+            else:
+                # ES_CONTINUOUS only — 정상 절전 복귀
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+                log.info("모니터 절전 방지 해제")
+        except Exception as exc:
+            log.warning("SetThreadExecutionState 실패: %s", exc)
     def _do_toggle_monitoring(self) -> None:
         """실제 모니터링 토글 (메인 스레드)."""
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
+            self._set_display_required(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
             # 모니터링 정지 시 템플릿 유지 (등록 시점 기준)
@@ -927,6 +909,7 @@ class ProgressEyeApp:
             self._main_window.set_monitoring_state(True, interval)
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
+            self._set_display_required(True)
             # 템플릿 이미지가 없는 영역은 현재 화면으로 템플릿 생성 (앱 재시작 후 복원된 영역)
             for r in regions:
                 rid = r["id"]
@@ -991,7 +974,6 @@ class ProgressEyeApp:
                             title="ProgressEye", message=_msg
                         )
                     )
-                    self._send_notification(complete_msg)
                 else:
                     # 경고 + 해당 영역 모니터링 중지
                     log.warning(
@@ -1005,7 +987,6 @@ class ProgressEyeApp:
                             title="ProgressEye", message=_msg
                         )
                     )
-                    self._send_notification(warn_msg)
                     # UI에 경고 표시 + 체크 해제
                     self._action_queue.put(
                         lambda _id=region_id, _m=stopped_msg: (
@@ -1046,7 +1027,6 @@ class ProgressEyeApp:
                                 title="ProgressEye", message=_msg
                             )
                         )
-                        self._send_notification(closed_msg)
                 else:
                     log.warning("[%s] OCR 숫자 인식 실패", region_id)
                 return
@@ -1104,7 +1084,6 @@ class ProgressEyeApp:
                         title="ProgressEye", message=_msg
                     )
                 )
-                self._send_notification(reset_msg)
             elif progress >= threshold:
                 # 시나리오 3: 완료 상태 유지
                 log.debug("[완료 시나리오] %s — 완료 유지 (%.1f%%)", label, progress)
@@ -1139,7 +1118,6 @@ class ProgressEyeApp:
                         title="ProgressEye", message=_msg
                     )
                 )
-                self._send_notification(alert_msg)
         else:
             # threshold 미달 또는 이미 완료 → 카운터 리셋
             self._completion_confirm.pop(region_id, None)
@@ -1178,102 +1156,12 @@ class ProgressEyeApp:
         self._main_window.activateWindow()
         self._main_window.raise_()
 
-    def _send_notification(self, message: str) -> None:
-        """트레이 + Telegram + Discord로 알림을 보낸다."""
-        if self._telegram.is_configured:
-            self._telegram.send_message(message)
-        if self._discord.is_configured:
-            self._discord.send_message(message)
-
-    def _on_telegram_command(self, command: str, args: list[str]) -> None:
-        """텔레그램 명령을 처리한다 (폴링 스레드에서 호출)."""
-        if command == "/status":
-            self._handle_status_command()
-        elif command == "/screenshot":
-            self._handle_screenshot_command(args)
-        elif command == "/start_monitor":
-            self._action_queue.put(lambda: self._toggle_monitoring_from_telegram(True))
-        elif command == "/stop_monitor":
-            self._action_queue.put(lambda: self._toggle_monitoring_from_telegram(False))
-        elif command in ("/help", "/start"):
-            self._telegram.send_message(t("telegram_help"))
-
-    def _handle_status_command(self) -> None:
-        """/status 명령: 전체 작업 현황을 전송한다."""
-        regions = self._config.regions
-        if not regions:
-            self._telegram.send_message(t("telegram_status_empty"))
-            return
-        lines = [t("telegram_status_header")]
-        for region in regions:
-            rid = region["id"]
-            label = region.get("label", rid)
-            enabled = region.get("enabled", True)
-            progress = 0.0
-            status = "🔘 대기"
-            # 상태 판별
-            if rid in self._alerted_regions:
-                status = "✅ 완료"
-                progress = self._alerted_regions[rid]
-            elif not enabled:
-                status = "⏸ 비활성"
-            elif self._scheduler.is_running:
-                status = "▶ 감시 중"
-                freeze_state = self._freeze_detector.get_state(rid)
-                if freeze_state and freeze_state.is_frozen:
-                    status = f"⚠ 멈춤 ({freeze_state.frozen_minutes}분)"
-            # 마지막 전송된 진행률
-            last = self._last_firebase_state.get(rid, {})
-            if "p" in last:
-                progress = last["p"]
-            icon = "✅" if rid in self._alerted_regions else "🟢" if enabled else "⚪"
-            lines.append(f"{icon} {label}: {progress:.1f}% ({status})")
-        self._telegram.send_message("\n".join(lines))
-
-    def _handle_screenshot_command(self, args: list[str]) -> None:
-        """/screenshot 명령: 스크린샷을 캔처하여 전송한다."""
-        import io
-        target_name = " ".join(args).strip() if args else "all"
-        regions = self._config.regions
-        sent = False
-        for region in regions:
-            rid = region["id"]
-            label = region.get("label", rid)
-            if target_name != "all" and target_name.lower() not in label.lower():
-                continue
-            try:
-                area = region["area"]
-                image = self._capturer.capture(area)
-                if image:
-                    buf = io.BytesIO()
-                    image.save(buf, format="PNG")
-                    last = self._last_firebase_state.get(rid, {})
-                    progress = last.get("p", 0.0)
-                    caption = f"📸 {label} ({progress:.1f}%)"
-                    self._telegram.send_photo(buf.getvalue(), caption=caption)
-                    sent = True
-            except Exception as exc:
-                log.warning("Telegram 스크린샷 전송 실패 [%s]: %s", rid, exc)
-        if not sent:
-            self._telegram.send_message(
-                t("telegram_screenshot_not_found").format(name=target_name)
-            )
-
-    def _toggle_monitoring_from_telegram(self, start: bool) -> None:
-        """텔레그램 명령으로 모니터링 시작/정지."""
-        if start and not self._scheduler.is_running:
-            self._main_window.toggle_monitoring_requested.emit()
-            self._telegram.send_message(t("telegram_monitoring_started"))
-        elif not start and self._scheduler.is_running:
-            self._main_window.toggle_monitoring_requested.emit()
-            self._telegram.send_message(t("telegram_monitoring_stopped"))
-
     def _quit(self) -> None:
         """애플리케이션을 종료한다. pystray 스레드에서 호출됨."""
         log.info("ProgressEye 종료")
         self._scheduler.stop()
+        self._set_display_required(False)
         self._capturer.close()
-        self._telegram.stop_polling()
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         if self._device_manager:
