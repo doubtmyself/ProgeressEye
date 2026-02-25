@@ -151,7 +151,7 @@ class AuthRepository @Inject constructor(
 ### 3.2 실시간 진행률 수신 (현재 구현)
 
 ```kotlin
-// DashboardViewModel.kt — RTDB 리스너 기반
+// DashboardViewModel.kt — Lifecycle-aware RTDB 리스너
 class DashboardViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseDatabase.getInstance()
@@ -161,9 +161,9 @@ class DashboardViewModel : ViewModel() {
     private var devicesRef: DatabaseReference? = null
     private var devicesListener: ValueEventListener? = null
 
-    init { startListening() }
-
-    private fun startListening() {
+    // Lifecycle-driven: MainScreen이 ON_START/ON_STOP에서 호출
+    fun startListening() {
+        if (devicesListener != null) return  // already listening
         val uid = auth.currentUser?.uid ?: return
         devicesRef = db.reference.child("users").child(uid).child("devices")
         devicesListener = object : ValueEventListener {
@@ -176,20 +176,35 @@ class DashboardViewModel : ViewModel() {
         devicesRef?.addValueEventListener(devicesListener!!)
     }
 
-    // RTDB 데이터 파싱: tasks/{region_id}/{p, s, l}
-    // p = progress (0-100, UI에서 0f..1f로 변환)
-    // s = status ("r"=running, "f"=frozen, "c"=completed)
-    // l = label (작업 이름)
+    fun stopListening() {
+        devicesListener?.let { devicesRef?.removeEventListener(it) }
+        devicesListener = null
+    }
 
     override fun onCleared() {
-        devicesListener?.let { devicesRef?.removeEventListener(it) }
+        super.onCleared()
+        stopListening()
     }
+}
+
+// MainScreen.kt — LifecycleStartEffect로 포그라운드에서만 리스너 활성화
+LifecycleStartEffect(dashboardViewModel) {
+    dashboardViewModel.startListening()
+    onStopOrDispose { dashboardViewModel.stopListening() }
 }
 ```
 
+> **데이터 최적화 설계 (중요)**:
+> - RTDB 리스너는 **앱이 포그라운드일 때만** 활성화된다.
+> - 백그라운드 진입 시 리스너를 해제하여 **heartbeat 등 불필요한 push 수신을 차단**한다.
+> - 완료/프리징 같은 중요 이벤트는 **FCM 푸시 알림**으로 전달 예정 (백그라운드에서도 수신 가능).
+> - 이 구조에서 **모바일 앱이 꺼져 있으면 RTDB 다운로드 비용 = 0**이다.
+>
+> Firebase RTDB Spark(무료) 플랜에서 쓰기(PATCH/PUT)는 과금되지 않으며,
+> 리스너가 받는 push(다운로드)만 전송량에 잡힌다.
+
 > **TODO**: Hilt DI 도입 시 Repository 계층 분리 예정
 > **TODO**: CPU 사용량, 온도 메트릭 추가 예정
-
 ### 3.3 FCM 푸시 알림 처리
 
 ```kotlin
@@ -216,7 +231,7 @@ PC Agent는 `users/{uid}/commands/` 경로를 SSE(Server-Sent Events)로 실시�
 ```
 ┌─────────────┐     Firebase RTDB      ┌─────────────┐
 │  PC Agent   │ ──── 진행률 push ────→ │  Mobile App │
-│  (Python)   │ ←─── 명령 SSE ──────── │  (Flutter)  │
+│  (Python)   │ ←─── 명령 SSE ──────── │  (Kotlin)   │
 └──────┬──────┘                        └──────┬──────┘
        │          Firebase Storage            │
        └──── 스크린샷 업로드 ──────────────────┘
@@ -230,39 +245,29 @@ PC Agent는 `users/{uid}/commands/` 경로를 SSE(Server-Sent Events)로 실시�
 | 스크린샷 | `users/{uid}/commands/screenshot` | `{ts: <epoch>}` | 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록 |
 | 모니터링 | `users/{uid}/commands/monitor` | `{action: "start"\|"stop", ts}` | 모니터링 시작/정지 토글 |
 
-#### 스크린샷 플로우
+#### 스크린샷 플로우 (현재 구현)
 
 ```kotlin
-// 1. 모바일: 스크린샷 요청
-class RequestScreenshotUseCase @Inject constructor(
-    private val deviceRepository: DeviceRepository,
-    private val firebaseAuth: FirebaseAuth
-) {
-    suspend operator fun invoke(): Result<Unit> {
-        val uid = firebaseAuth.currentUser!!.uid
-        val ts = System.currentTimeMillis() / 1000
-        return deviceRepository.writeCommand(
-            path = "users/$uid/commands/screenshot",
-            data = mapOf("ts" to ts)
-        )
-    }
+// 1. 모바일: DashboardViewModel.requestScreenshot(deviceId)
+fun requestScreenshot(deviceId: String) {
+    val uid = auth.currentUser?.uid ?: return
+    _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
+    val commandRef = db.reference
+        .child("users").child(uid)
+        .child("commands").child("screenshot")
+    commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
 }
 
-// 2. PC Agent (Python): SSE로 수신 → 캡처 → 업로드 → URL 기록
+// 2. PC Agent: SSE로 수신 → mss 캡처 → JPEG q=70 → Storage 업로드 → RTDB URL 기록
 //    (firebase/command_listener.py + firebase/storage.py에서 처리)
 
-// 3. 모바일: URL 리스너로 이미지 수신
-class ObserveScreenshotUseCase @Inject constructor(
-    private val firebaseDataSource: FirebaseDataSource,
-    private val firebaseAuth: FirebaseAuth
-) {
-    fun observe(deviceId: String): Flow<Screenshot?> {
-        val uid = firebaseAuth.currentUser!!.uid
-        return firebaseDataSource
-            .observeRealtimeDB("users/$uid/devices/$deviceId/screenshots/latest")
-            .map { snapshot -> snapshot?.toScreenshot() }
-    }
-}
+// 3. 모바일: RTDB devices/{id}/screenshots/latest 리스너가 URL 수신
+//    → Coil SubcomposeAsyncImage로 프리뷰 표시 (16:9)
+//    → 클릭 시 풀스크린 다이얼로그 (핀치줌, Modifier.transformable)
+
+// 4. 로딩 상태: screenshotLoadingDeviceId로 추적
+//    → 버튼 "Capturing..." + CircularProgressIndicator
+//    → RTDB에서 screenshotUrl 변경 감지 시 자동 해제
 ```
 
 #### 모니터링 제어 플로우

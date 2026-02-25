@@ -83,10 +83,41 @@ sealed class Screen(val route: String) {
 | 탭 | 아이콘 | 라벨(EN) | 라벨(KO) |
 |---|---|---|---|
 | 대시보드 | `Icons.Filled.Dashboard` | Dashboard | 대시보드 |
+| 알림 | `Icons.Filled.Notifications` | Alerts | 알림 |
 | 설정 | `Icons.Filled.Settings` | Settings | 설정 |
 
-> 탭 2개만으로 충분. 대시보드가 앱의 핵심이고, 그 외 기능은 설정에 수렴한다.
-> 향후 P2에서 "기록" 탭 추가 시 3탭으로 확장 가능.
+> 3탭 구조. Dashboard(핵심), Alerts(알림 이력), Settings(계정/설정).
+
+### 2.4 공통 상단바 (CommonTopBar)
+
+모든 탭 화면에서 동일한 `TopAppBar`를 사용한다. 탭별로 아이콘 + 타이틀이 변경된다.
+
+| 탭 | 아이콘 | 타이틀 |
+|---|---|---|
+| Dashboard | `Icons.Filled.Dashboard` | Dashboard |
+| Alerts | `Icons.Filled.Notifications` | Alerts |
+| Settings | `Icons.Filled.Settings` | Settings |
+
+```kotlin
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommonTopBar(icon: ImageVector, title: String) {
+    TopAppBar(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(title)
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    )
+}
+```
+
+> 상단바에 별도 액션 아이콘(설정 등)을 두지 않는다. 설정은 하단 네비게이션 탭으로 접근.
 
 ---
 
@@ -153,7 +184,7 @@ sealed class Screen(val route: String) {
 
 ```
 ┌─────────────────────────────────┐
-│  ProgressEye            [⚙️]     │  ← TopAppBar
+│  [📊] Dashboard                  │  ← CommonTopBar
 ├─────────────────────────────────┤
 │                                   │
 │  🖥️ DESKTOP-ABC  🟢 Online       │  ← 기기 헤더
@@ -181,7 +212,7 @@ sealed class Screen(val route: String) {
 │  [📸 스크린샷]   [▶ 모니터링 시작] │  ← 빠른 액션 버튼
 │                                   │
 └─────────────────────────────────┘
-│  [ 🏠 대시보드 ]  [ ⚙️ 설정 ]      │  ← BottomNavigation
+│  [ 📊 대시보드 ] [ 🔔 알림 ] [ ⚙️ 설정 ] │  ← BottomNavigation (3탭)
 └─────────────────────────────────┘
 ```
 
@@ -189,7 +220,7 @@ sealed class Screen(val route: String) {
 
 ```
 ┌─────────────────────────────────┐
-│  ProgressEye            [⚙️]     │
+│  [📊] Dashboard                  │
 ├─────────────────────────────────┤
 │                                   │
 │  ▼ 🖥️ 작업용 PC       🟢 Online  │  ← 펼침 (ExpandableCard)
@@ -207,7 +238,7 @@ sealed class Screen(val route: String) {
 
 ```
 ┌─────────────────────────────────┐
-│  ProgressEye            [⚙️]     │
+│  [📊] Dashboard                  │
 ├─────────────────────────────────┤
 │                                   │
 │                                   │
@@ -459,27 +490,40 @@ data class Screenshot(
 ### 4.2 데이터 흐름 (현재 구현)
 
 ```
-Firebase RTDB
-    ↓ (ValueEventListener)
-DashboardViewModel (MutableStateFlow<DashboardUiState>)
-    ↓ (.collectAsStateWithLifecycle())
-Compose UI (자동 recomposition)
+앱 포그라운드 (LifecycleStartEffect)
+    │
+    ├─ onStart → DashboardViewModel.startListening()
+    │    └─ Firebase RTDB ValueEventListener 등록
+    │        └─ ↓ (push)
+    │    DashboardViewModel (MutableStateFlow<DashboardUiState>)
+    │        └─ ↓ (.collectAsStateWithLifecycle())
+    │    Compose UI (자동 recomposition)
+    │
+    └─ onStop → DashboardViewModel.stopListening()
+         └─ ValueEventListener 해제 → 데이터 전송 0
 ```
 
 > **Note**: Hilt DI 미적용 상태. ViewModel이 직접 FirebaseDatabase 인스턴스를 생성하여 리스너 관리.
 > 추후 Hilt 도입 시 Repository 계층 분리 예정.
 
+**데이터 최적화 설계:**
+- **포그라운드 전용 리스너**: `LifecycleStartEffect`로 앱이 화면에 보일 때만 RTDB 리스너 활성화
+- **백그라운드 전송 0**: 앱이 백그라운드로 가면 리스너 해제 → Firebase 데이터 전송량 발생 안 함
+- **완료/프리징 알림**: FCM 푸시 알림으로 처리 (추후 구현)
+- **쿠리 무료**: RTDB PATCH/PUT(쓰기)는 과금 안 됨. 리스너가 받는 push(다운로드)만 전송량 카운트
+
 **구현된 상태:**
-- DashboardViewModel: `users/{uid}/devices` 경로에 ValueEventListener 등록
+- DashboardViewModel: `startListening()`/`stopListening()` 메서드로 lifecycle-aware 리스너 관리
+- `users/{uid}/devices` 경로에 ValueEventListener 등록/해제
 - 디바이스 + 작업 데이터 실시간 수신 → DashboardUiState로 변환
 - 로딩/에러/빈 상태/데이터 표시 4가지 UI 상태 처리
 - 온라인 판단: lastSeen이 2분 이내이면 Online
+- 스크린샷 요청/표시: Coil 3 AsyncImage + 풀스크린 다이얼로그(핀치 줌)
 
 **TODO:**
 - CPU 사용량, 온도 메트릭 표시 (MetricChip) — 추후 구현
 - Pull-to-Refresh 지원
-- 스크린샷 요청/표시 기능
-
+- FCM 푸시 알림 구현 (완료/프리징 백그라운드 알림)
 ### 4.3 리스너 경로
 
 | 데이터 | RTDB 경로 | 갱신 주기 |
