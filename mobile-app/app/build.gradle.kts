@@ -62,6 +62,8 @@ dependencies {
     // Image loading (Coil 3)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // Splash Screen
+    implementation(libs.core.splashscreen)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

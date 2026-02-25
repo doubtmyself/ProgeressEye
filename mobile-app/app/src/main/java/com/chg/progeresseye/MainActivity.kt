@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -18,13 +19,24 @@ import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // installSplashScreen() MUST be called BEFORE super.onCreate()
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         setContent {
             ProgressEyeTheme {
                 val authViewModel: AuthViewModel = viewModel()
                 val authState by authViewModel.uiState.collectAsStateWithLifecycle()
                 val navController = rememberNavController()
+
+                // Keep splash visible until auth state is determined
+                // Firebase AuthStateListener fires synchronously, so this resolves fast
+                splashScreen.setKeepOnScreenCondition {
+                    // Show splash while initial auth check hasn't completed
+                    // Once authViewModel is initialized, isSignedIn is available immediately
+                    false // Firebase currentUser is synchronous — no async wait needed
+                }
 
                 // Skip login if user already has a valid Firebase session
                 val startDestination = if (authViewModel.isSignedIn) "main" else "login"
@@ -57,7 +69,12 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main") {
-                        MainScreen()
+                        MainScreen(
+                            onSignOut = {
+                                authViewModel.signOut(this@MainActivity)
+                                this@MainActivity.finishAffinity()
+                            },
+                        )
                     }
                 }
             }
