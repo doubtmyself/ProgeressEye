@@ -3,7 +3,6 @@ package com.chg.progeresseye.ui.screen.settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -22,14 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.chg.progeresseye.R
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.ErrorRed
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
@@ -98,7 +96,7 @@ fun SettingsContent(
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
     ) {
         // ── ACCOUNT ──
-        item { SectionHeader("ACCOUNT") }
+        item { SectionHeader(stringResource(R.string.settings_section_account)) }
         item { Spacer(Modifier.height(8.dp)) }
         item {
             AccountCard(
@@ -110,7 +108,7 @@ fun SettingsContent(
 
         // ── NOTIFICATIONS ──
         item { Spacer(Modifier.height(24.dp)) }
-        item { SectionHeader("NOTIFICATIONS") }
+        item { SectionHeader(stringResource(R.string.settings_section_notifications)) }
         item { Spacer(Modifier.height(8.dp)) }
         item {
             NotificationsCard(
@@ -125,18 +123,15 @@ fun SettingsContent(
 
         // ── APPEARANCE ──
         item { Spacer(Modifier.height(24.dp)) }
-        item { SectionHeader("APPEARANCE") }
+        item { SectionHeader(stringResource(R.string.settings_section_appearance)) }
         item { Spacer(Modifier.height(8.dp)) }
         item {
-            AppearanceCard(
-                selectedLanguage = state.selectedLanguage,
-                onLanguageSelected = viewModel::setLanguage,
-            )
+            AppearanceCard()
         }
 
         // ── ABOUT ──
         item { Spacer(Modifier.height(24.dp)) }
-        item { SectionHeader("ABOUT") }
+        item { SectionHeader(stringResource(R.string.settings_section_about)) }
         item { Spacer(Modifier.height(8.dp)) }
         item { AboutCard() }
     }
@@ -218,7 +213,7 @@ private fun AccountCard(
                         .data(photoUrl)
                         .crossfade(true)
                         .build(),
-                    contentDescription = "Profile photo",
+                    contentDescription = stringResource(R.string.cd_profile_photo),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(56.dp)
@@ -234,13 +229,13 @@ private fun AccountCard(
 
             Column {
                 Text(
-                    text = email ?: "No email",
+                    text = email ?: stringResource(R.string.settings_no_email),
                     style = MaterialTheme.typography.titleMedium,
                     color = OnSurfaceDark,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "Free Plan",
+                    text = stringResource(R.string.settings_free_plan),
                     style = MaterialTheme.typography.bodySmall,
                     color = OnSurfaceVariantDark,
                 )
@@ -267,7 +262,7 @@ private fun AccountCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Log out",
+                    text = stringResource(R.string.settings_logout),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -289,11 +284,11 @@ private fun NotificationsCard(
     onToggleOffline: () -> Unit,
 ) {
     SettingsCard {
-        ToggleRow("Completion alerts", completionAlerts, onToggleCompletion)
+        ToggleRow(stringResource(R.string.settings_completion_alerts), completionAlerts, onToggleCompletion)
         HorizontalDivider(color = OutlineVariantDark)
-        ToggleRow("Stall warnings", stallWarnings, onToggleStall)
+        ToggleRow(stringResource(R.string.settings_stall_warnings), stallWarnings, onToggleStall)
         HorizontalDivider(color = OutlineVariantDark)
-        ToggleRow("Offline alerts", offlineAlerts, onToggleOffline)
+        ToggleRow(stringResource(R.string.settings_offline_alerts), offlineAlerts, onToggleOffline)
     }
 }
 
@@ -332,13 +327,11 @@ private fun ToggleRow(
 }
 
 // ═════════════════════════════════════════════════════════
-// APPEARANCE card — theme (disabled) + language selector
+// APPEARANCE card — theme (disabled)
 // ═════════════════════════════════════════════════════════
 
 @Composable
 private fun AppearanceCard(
-    selectedLanguage: String,
-    onLanguageSelected: (String) -> Unit,
 ) {
     SettingsCard {
         // Theme row — dark only for now
@@ -350,89 +343,16 @@ private fun AppearanceCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Theme",
+                text = stringResource(R.string.settings_theme),
                 style = MaterialTheme.typography.bodyLarge,
                 color = OnSurfaceDark,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "Dark",
+                text = stringResource(R.string.settings_theme_dark),
                 style = MaterialTheme.typography.bodyMedium,
                 color = OnSurfaceVariantDark,
             )
-        }
-
-        HorizontalDivider(color = OutlineVariantDark)
-
-        // Language row
-        // TODO: 실제 로케일 변경 구현 (AppCompatDelegate.setApplicationLocales)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Language",
-                style = MaterialTheme.typography.bodyLarge,
-                color = OnSurfaceDark,
-                modifier = Modifier.weight(1f),
-            )
-            LanguageSelector(
-                selected = selectedLanguage,
-                onSelect = onLanguageSelected,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LanguageSelector(
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
-    val languages = listOf("English", "한국어")
-    var expanded by remember { mutableStateOf(false) }
-
-    Box {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = selected,
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceDark,
-            )
-            Icon(
-                imageVector = Icons.Filled.ArrowDropDown,
-                contentDescription = null,
-                tint = OnSurfaceVariantDark,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            languages.forEach { lang ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = lang,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    },
-                    onClick = {
-                        onSelect(lang)
-                        expanded = false
-                    },
-                )
-            }
         }
     }
 }
@@ -452,7 +372,7 @@ private fun AboutCard() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Version",
+                text = stringResource(R.string.settings_version),
                 style = MaterialTheme.typography.bodyLarge,
                 color = OnSurfaceDark,
                 modifier = Modifier.weight(1f),
@@ -476,7 +396,7 @@ private fun AboutCard() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Open Source Licenses",
+                text = stringResource(R.string.settings_oss_licenses),
                 style = MaterialTheme.typography.bodyLarge,
                 color = OnSurfaceDark,
                 modifier = Modifier.weight(1f),
@@ -507,20 +427,20 @@ private fun LogoutConfirmDialog(
         textContentColor = OnSurfaceVariantDark,
         title = {
             Text(
-                text = "Log out?",
+                text = stringResource(R.string.settings_logout_title),
                 style = MaterialTheme.typography.titleLarge,
             )
         },
         text = {
             Text(
-                text = "You will need to sign in again.",
+                text = stringResource(R.string.settings_logout_message),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
-                    text = "Log out",
+                    text = stringResource(R.string.settings_logout),
                     color = ErrorRed,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -529,7 +449,7 @@ private fun LogoutConfirmDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    text = "Cancel",
+                    text = stringResource(R.string.settings_cancel),
                     color = OnSurfaceVariantDark,
                 )
             }

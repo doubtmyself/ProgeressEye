@@ -30,43 +30,45 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.annotation.StringRes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chg.progeresseye.R
 import com.chg.progeresseye.ui.screen.alerts.AlertsContent
 import com.chg.progeresseye.ui.screen.dashboard.DashboardContent
+import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
 import com.chg.progeresseye.ui.screen.settings.SettingsContent
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.SurfaceDark
-import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 // ── Local palette ──
 private val Slate400 = Color(0xFF94A3B8)
 
 // ── Nav items ──
 private data class NavItem(
-    val label: String,
+    @param:StringRes val labelResId: Int,
     val icon: ImageVector,
     val selectedIcon: ImageVector,
 )
 
 private val navItems = listOf(
-    NavItem("Dashboard", Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
-    NavItem("Alerts", Icons.Outlined.Notifications, Icons.Filled.Notifications),
-    NavItem("Settings", Icons.Outlined.Settings, Icons.Filled.Settings),
+    NavItem(R.string.nav_dashboard, Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
+    NavItem(R.string.nav_alerts, Icons.Outlined.Notifications, Icons.Filled.Notifications),
+    NavItem(R.string.nav_settings, Icons.Outlined.Settings, Icons.Filled.Settings),
 )
 
 // ═════════════════════════════════════════════════════════
@@ -91,7 +93,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             val currentNav = navItems[selectedTab]
-            CommonTopBar(title = currentNav.label, icon = currentNav.selectedIcon)
+            CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
         },
         bottomBar = {
             MainBottomBar(
@@ -179,12 +181,12 @@ private fun MainBottomBar(
                 icon = {
                     Icon(
                         imageVector = if (selected) item.selectedIcon else item.icon,
-                        contentDescription = item.label,
+                        contentDescription = stringResource(item.labelResId),
                     )
                 },
                 label = {
                     Text(
-                        text = item.label,
+                        text = stringResource(item.labelResId),
                         fontSize = 10.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     )

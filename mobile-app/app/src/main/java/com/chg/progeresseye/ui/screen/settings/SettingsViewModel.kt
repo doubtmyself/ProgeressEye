@@ -15,7 +15,6 @@ data class SettingsUiState(
     val completionAlerts: Boolean = true,
     val stallWarnings: Boolean = true,
     val offlineAlerts: Boolean = false,
-    val selectedLanguage: String = "English",
 )
 
 // ═════════════════════════════════════════════════════════
@@ -37,10 +36,5 @@ class SettingsViewModel : ViewModel() {
 
     fun toggleOfflineAlerts() {
         _uiState.update { it.copy(offlineAlerts = !it.offlineAlerts) }
-    }
-
-    fun setLanguage(language: String) {
-        // TODO: 실제 로케일 변경 구현 (AppCompatDelegate.setApplicationLocales)
-        _uiState.update { it.copy(selectedLanguage = language) }
     }
 }

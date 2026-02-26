@@ -1,3 +1,73 @@
 <resources>
     <string name="app_name">ProgressEye</string>
+
+    <!-- ── Navigation ── -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_alerts">Alerts</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- ── Dashboard ── -->
+    <string name="dashboard_no_devices_title">No devices registered</string>
+    <string name="dashboard_no_devices_body">Connect a PC with ProgressEye agent\nto start monitoring.</string>
+    <string name="dashboard_no_tasks">No active tasks</string>
+    <string name="dashboard_status_online">Online</string>
+    <string name="dashboard_status_offline">Offline</string>
+    <string name="dashboard_task_running">Running</string>
+    <string name="dashboard_task_done">Done</string>
+    <string name="dashboard_task_stalled">Stalled</string>
+    <string name="dashboard_task_unknown">Unknown</string>
+    <string name="dashboard_frozen_warning">No change detected</string>
+    <string name="dashboard_completed">Completed</string>
+    <string name="dashboard_screenshot">Screenshot</string>
+    <string name="dashboard_capturing">Capturing…</string>
+    <string name="dashboard_image_load_failed">Failed to load image</string>
+    <string name="cd_screenshot_preview">Screenshot preview</string>
+    <string name="cd_screenshot_fullscreen">Screenshot fullscreen</string>
+    <string name="cd_image_load_failed">Failed to load</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_more_options">More options</string>
+    <string name="cd_complete">Complete</string>
+    <string name="cd_profile_photo">Profile photo</string>
+
+    <!-- ── Alerts ── -->
+    <string name="alerts_empty_title">All caught up!</string>
+    <string name="alerts_empty_body">You\'ll be notified when tasks\ncomplete or stall.</string>
+    <string name="alerts_clear_all">Clear all</string>
+    <string name="alerts_just_now">Just now</string>
+    <string name="alerts_yesterday">Yesterday</string>
+    <plurals name="alerts_count">
+        <item quantity="one">%d alert</item>
+        <item quantity="other">%d alerts</item>
+    </plurals>
+    <plurals name="alerts_min_ago">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="alerts_hours_ago">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
+    <plurals name="alerts_days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+
+    <!-- ── Settings ── -->
+    <string name="settings_section_account">ACCOUNT</string>
+    <string name="settings_section_notifications">NOTIFICATIONS</string>
+    <string name="settings_section_appearance">APPEARANCE</string>
+    <string name="settings_section_about">ABOUT</string>
+    <string name="settings_no_email">No email</string>
+    <string name="settings_free_plan">Free Plan</string>
+    <string name="settings_logout">Log out</string>
+    <string name="settings_completion_alerts">Completion alerts</string>
+    <string name="settings_stall_warnings">Stall warnings</string>
+    <string name="settings_offline_alerts">Offline alerts</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_oss_licenses">Open Source Licenses</string>
+    <string name="settings_logout_title">Log out?</string>
+    <string name="settings_logout_message">You will need to sign in again.</string>
+    <string name="settings_cancel">Cancel</string>
 </resources>

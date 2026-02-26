@@ -60,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -70,6 +71,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import com.chg.progeresseye.R
 import com.chg.progeresseye.data.model.DashboardUiState
 import com.chg.progeresseye.data.model.DeviceData
 import com.chg.progeresseye.data.model.TaskData
@@ -137,13 +139,13 @@ fun DashboardContent(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No devices registered",
+                        text = stringResource(R.string.dashboard_no_devices_title),
                         style = MaterialTheme.typography.titleMedium,
                         color = OnSurfaceDark,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Connect a PC with ProgressEye agent\nto start monitoring.",
+                        text = stringResource(R.string.dashboard_no_devices_body),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Slate400,
                         textAlign = TextAlign.Center,
@@ -205,7 +207,7 @@ private fun DeviceCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "No active tasks",
+                        text = stringResource(R.string.dashboard_no_tasks),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Slate400,
                     )
@@ -267,7 +269,7 @@ private fun ScreenshotPreview(url: String, onClick: () -> Unit) {
                     .data(url)
                     .crossfade(true)
                     .build(),
-                contentDescription = "Screenshot preview",
+                contentDescription = stringResource(R.string.cd_screenshot_preview),
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -292,7 +294,7 @@ private fun ScreenshotPreview(url: String, onClick: () -> Unit) {
                     ) {
                         Icon(
                             Icons.Outlined.BrokenImage,
-                            contentDescription = "Failed to load",
+                            contentDescription = stringResource(R.string.cd_image_load_failed),
                             tint = Slate400,
                             modifier = Modifier.size(32.dp),
                         )
@@ -330,7 +332,7 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
                     .data(url)
                     .crossfade(true)
                     .build(),
-                contentDescription = "Screenshot fullscreen",
+                contentDescription = stringResource(R.string.cd_screenshot_fullscreen),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxSize()
@@ -362,7 +364,7 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
                                 modifier = Modifier.size(48.dp),
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Failed to load image", color = Slate400)
+                            Text(stringResource(R.string.dashboard_image_load_failed), color = Slate400)
                         }
                     }
                 },
@@ -377,7 +379,7 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
             ) {
                 Icon(
                     Icons.Filled.Close,
-                    contentDescription = "Close",
+                    contentDescription = stringResource(R.string.cd_close),
                     tint = Color.White,
                     modifier = Modifier.size(28.dp),
                 )
@@ -435,7 +437,11 @@ private fun DeviceHeader(name: String, isOnline: Boolean) {
                         .background(if (isOnline) StatusComplete else StatusOffline),
                 )
                 Text(
-                    text = if (isOnline) "Online" else "Offline",
+                    text = if (isOnline) {
+                        stringResource(R.string.dashboard_status_online)
+                    } else {
+                        stringResource(R.string.dashboard_status_offline)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
                     color = if (isOnline) StatusComplete else StatusOffline,
@@ -445,7 +451,7 @@ private fun DeviceHeader(name: String, isOnline: Boolean) {
         }
 
         IconButton(onClick = { /* TODO: device options menu */ }) {
-            Icon(Icons.Outlined.MoreVert, "More options", tint = Slate400)
+            Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
         }
     }
 }
@@ -476,7 +482,7 @@ private fun TaskItem(task: TaskData) {
 
             when (task.status) {
                 TaskStatus.COMPLETED -> Icon(
-                    Icons.Outlined.CheckCircle, "Complete",
+                    Icons.Outlined.CheckCircle, stringResource(R.string.cd_complete),
                     tint = StatusComplete, modifier = Modifier.size(20.dp),
                 )
 
@@ -511,7 +517,7 @@ private fun TaskItem(task: TaskData) {
                 ) {
                     Icon(Icons.Outlined.Warning, null, tint = Amber600, modifier = Modifier.size(14.dp))
                     Text(
-                        text = "No change detected",
+                        text = stringResource(R.string.dashboard_frozen_warning),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = Amber600,
@@ -520,7 +526,11 @@ private fun TaskItem(task: TaskData) {
             }
 
             TaskStatus.COMPLETED -> {
-                Text("Completed", style = MaterialTheme.typography.bodySmall, color = StatusComplete)
+                Text(
+                    stringResource(R.string.dashboard_completed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StatusComplete,
+                )
             }
 
             else -> {} // Running — no extra subtitle needed
@@ -535,10 +545,10 @@ private fun TaskItem(task: TaskData) {
 @Composable
 private fun StatusBadge(status: String) {
     val (bgColor, textColor, label) = when (status) {
-        TaskStatus.RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, "Running")
-        TaskStatus.COMPLETED -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, "Done")
-        TaskStatus.FROZEN -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, "Stalled")
-        else -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, "Unknown")
+        TaskStatus.RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, stringResource(R.string.dashboard_task_running))
+        TaskStatus.COMPLETED -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, stringResource(R.string.dashboard_task_done))
+        TaskStatus.FROZEN -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, stringResource(R.string.dashboard_task_stalled))
+        else -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_unknown))
     }
     Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {
         Text(
@@ -610,7 +620,11 @@ private fun ScreenshotButton(isLoading: Boolean, onClick: () -> Unit) {
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isLoading) "Capturing..." else "Screenshot",
+                        text = if (isLoading) {
+                            stringResource(R.string.dashboard_capturing)
+                        } else {
+                            stringResource(R.string.dashboard_screenshot)
+                        },
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = OnSurfaceDark,

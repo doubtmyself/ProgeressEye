@@ -36,12 +36,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.chg.progeresseye.R
 import com.chg.progeresseye.data.model.AlertItem
 import com.chg.progeresseye.data.model.AlertType
 import com.chg.progeresseye.ui.theme.BackgroundDark
@@ -98,12 +101,12 @@ private fun EmptyAlertsState(modifier: Modifier = Modifier) {
                 modifier = Modifier.size(48.dp),
             )
             Text(
-                text = "All caught up!",
+                text = stringResource(R.string.alerts_empty_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = OnSurfaceVariantDark,
             )
             Text(
-                text = "You'll be notified when tasks\ncomplete or stall.",
+                text = stringResource(R.string.alerts_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = StatusOffline,
                 textAlign = TextAlign.Center,
@@ -138,14 +141,14 @@ private fun AlertList(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "${alerts.size} alert${if (alerts.size != 1) "s" else ""}",
+                    text = pluralStringResource(R.plurals.alerts_count, alerts.size, alerts.size),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = OnSurfaceVariantDark,
                 )
                 TextButton(onClick = onClearAll) {
                     Text(
-                        text = "Clear all",
+                        text = stringResource(R.string.alerts_clear_all),
                         style = MaterialTheme.typography.labelLarge,
                         color = Primary,
                     )
@@ -254,17 +257,30 @@ private fun alertVisuals(type: AlertType): Pair<ImageVector, Color> = when (type
  *
  * Returns "Just now", "X min ago", "X hours ago", "Yesterday", or "X days ago".
  */
+@Composable
 internal fun formatRelativeTime(timestamp: Long): String {
     val diff = System.currentTimeMillis() - timestamp
     val minutes = diff / 60_000
     val hours = diff / 3_600_000
     val days = diff / 86_400_000
     return when {
-        minutes < 1  -> "Just now"
-        minutes < 60 -> "$minutes min ago"
-        hours < 24   -> "$hours hours ago"
-        hours < 48   -> "Yesterday"
-        else         -> "$days days ago"
+        minutes < 1 -> stringResource(R.string.alerts_just_now)
+        minutes < 60 -> pluralStringResource(
+            R.plurals.alerts_min_ago,
+            minutes.toInt(),
+            minutes.toInt(),
+        )
+        hours < 24 -> pluralStringResource(
+            R.plurals.alerts_hours_ago,
+            hours.toInt(),
+            hours.toInt(),
+        )
+        hours < 48 -> stringResource(R.string.alerts_yesterday)
+        else -> pluralStringResource(
+            R.plurals.alerts_days_ago,
+            days.toInt(),
+            days.toInt(),
+        )
     }
 }
 
