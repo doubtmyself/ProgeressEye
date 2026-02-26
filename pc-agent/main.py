@@ -329,12 +329,12 @@ class ProgressEyeApp:
         except Exception as exc:
             log.debug("프로필 저장 실패: %s", exc)
 
-        # 하트비트 타이머 (30초)
+        # 하트비트 타이머 (90초 — 모바일 온라인 판정 2분 이내 충분)
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         heartbeat_timer = QTimer()
         heartbeat_timer.timeout.connect(self._send_heartbeat)
-        heartbeat_timer.start(30_000)
+        heartbeat_timer.start(90_000)
         self._heartbeat_timer = heartbeat_timer
 
         # Firebase Storage 초기화

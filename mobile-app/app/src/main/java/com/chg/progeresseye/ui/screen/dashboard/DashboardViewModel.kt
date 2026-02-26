@@ -6,6 +6,7 @@ import com.chg.progeresseye.data.model.DashboardUiState
 import com.chg.progeresseye.data.model.DeviceData
 import com.chg.progeresseye.data.model.TaskData
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
@@ -17,6 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
 
 // ═════════════════════════════════════════════════════════
 // DashboardViewModel — RTDB listener for devices + tasks
+//
+// 대역폭 최적화:
+//   Listener A: users/{uid}/devices  → ChildEventListener
+//     - 디바이스/태스크/스크린샷 변경 시에만 해당 기기 데이터 수신
+//     - 하트비트(lastSeen) 변경으로는 트리거되지 않음
+//   Listener B: users/{uid}/heartbeat → ValueEventListener
+//     - {deviceId: timestamp_ms} 형태, 페이로드 ~20바이트
+//     - 온라인/오프라인 판정용
 // ═════════════════════════════════════════════════════════
 
 class DashboardViewModel : ViewModel() {
@@ -27,16 +36,22 @@ class DashboardViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    // Listener + ref stored for cleanup
+    // Devices listener (ChildEventListener — only changed device data sent)
     private var devicesRef: DatabaseReference? = null
-    private var devicesListener: ValueEventListener? = null
+    private var devicesChildListener: ChildEventListener? = null
 
-    // Lifecycle-driven: MainScreen calls startListening / stopListening
+    // Heartbeat listener (ValueEventListener — tiny payload)
+    private var heartbeatRef: DatabaseReference? = null
+    private var heartbeatListener: ValueEventListener? = null
+
+    // Local device cache — ChildEventListener gives deltas, we merge locally
+    private val deviceCache = mutableMapOf<String, DeviceData>()
+    private val heartbeatCache = mutableMapOf<String, Long>()
 
     // ── Listener setup ─────────────────────────────────────
 
     fun startListening() {
-        if (devicesListener != null) return  // already listening
+        if (devicesChildListener != null) return // already listening
         val uid = auth.currentUser?.uid
         if (uid == null) {
             _uiState.value = DashboardUiState(
@@ -46,24 +61,33 @@ class DashboardViewModel : ViewModel() {
             return
         }
 
+        deviceCache.clear()
+        heartbeatCache.clear()
+
+        // ── Listener A: devices (ChildEventListener) ──
         devicesRef = db.reference.child("users").child(uid).child("devices")
 
-        devicesListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val devices = snapshot.children.mapNotNull { parseDevice(it) }
-                val currentLoading = _uiState.value.screenshotLoadingDeviceId
-                // Clear loading indicator if screenshot URL changed for that device
-                val stillLoading = if (currentLoading != null) {
-                    val dev = devices.find { it.id == currentLoading }
-                    val prevDev = _uiState.value.devices.find { it.id == currentLoading }
-                    dev != null && dev.screenshotUrl == prevDev?.screenshotUrl
-                } else false
-                _uiState.value = DashboardUiState(
-                    isLoading = false,
-                    devices = devices,
-                    screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
-                    isRefreshing = false,
-                )
+        devicesChildListener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val device = parseDevice(snapshot) ?: return
+                deviceCache[device.id] = device
+                emitState()
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                val device = parseDevice(snapshot) ?: return
+                deviceCache[device.id] = device
+                emitState()
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                val id = snapshot.key ?: return
+                deviceCache.remove(id)
+                emitState()
+            }
+
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
+                // 순서 변경 — 무시
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -74,8 +98,53 @@ class DashboardViewModel : ViewModel() {
                 )
             }
         }
+        devicesRef?.addChildEventListener(devicesChildListener!!)
 
-        devicesRef?.addValueEventListener(devicesListener!!)
+        // ── Listener B: heartbeat (ValueEventListener, ~20 bytes) ──
+        heartbeatRef = db.reference.child("users").child(uid).child("heartbeat")
+
+        heartbeatListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                heartbeatCache.clear()
+                for (child in snapshot.children) {
+                    val deviceId = child.key ?: continue
+                    val ts = child.getValue(Long::class.java) ?: 0L
+                    heartbeatCache[deviceId] = ts
+                }
+                emitState()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "heartbeat:onCancelled", error.toException())
+            }
+        }
+        heartbeatRef?.addValueEventListener(heartbeatListener!!)
+    }
+
+    // ── State emission ─────────────────────────────────────
+
+    private fun emitState() {
+        val devices = deviceCache.values.map { device ->
+            // Online status from heartbeat path (not from device lastSeen)
+            val heartbeatTs = heartbeatCache[device.id] ?: 0L
+            val isOnline = heartbeatTs > 0L &&
+                (System.currentTimeMillis() - heartbeatTs) < ONLINE_THRESHOLD_MS
+            device.copy(isOnline = isOnline, lastSeen = heartbeatTs)
+        }
+
+        val currentLoading = _uiState.value.screenshotLoadingDeviceId
+        val stillLoading = if (currentLoading != null) {
+            val dev = devices.find { it.id == currentLoading }
+            val prevDev = _uiState.value.devices.find { it.id == currentLoading }
+            dev != null && dev.screenshotUrl == prevDev?.screenshotUrl
+        } else false
+
+        _uiState.value = DashboardUiState(
+            isLoading = false,
+            devices = devices,
+            screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
+            isRefreshing = false,
+        )
     }
 
     // ── Snapshot parsing ───────────────────────────────────
@@ -85,9 +154,6 @@ class DashboardViewModel : ViewModel() {
         val name = snapshot.child("name").getValue(String::class.java) ?: id
         val platform = snapshot.child("platform").getValue(String::class.java) ?: ""
         val lastSeen = snapshot.child("lastSeen").getValue(Long::class.java) ?: 0L
-
-        // Determine online: lastSeen within ONLINE_THRESHOLD_MS
-        val isOnline = (System.currentTimeMillis() - lastSeen) < ONLINE_THRESHOLD_MS
 
         val tasks = snapshot.child("tasks").children.mapNotNull { taskSnap ->
             parseTask(taskSnap)
@@ -102,7 +168,7 @@ class DashboardViewModel : ViewModel() {
             id = id,
             name = name,
             platform = platform,
-            isOnline = isOnline,
+            isOnline = false, // will be overridden by heartbeat in emitState()
             lastSeen = lastSeen,
             tasks = tasks,
             screenshotUrl = screenshotUrl,
@@ -138,19 +204,24 @@ class DashboardViewModel : ViewModel() {
     // ── Pull-to-Refresh ────────────────────────────────
 
     fun refresh() {
+        // 리스너를 재연결하지 않음 — 이미 실시간이므로 UI 상태만 리셋
         _uiState.value = _uiState.value.copy(isRefreshing = true)
-        stopListening()
-        startListening()
-        // isRefreshing is cleared when onDataChange fires
+        // 캐시 기반으로 즉시 재방출 → isRefreshing 해제
+        emitState()
     }
 
     // ── Lifecycle: pause / cleanup ──────────────────────
 
     fun stopListening() {
-        devicesListener?.let { listener ->
+        devicesChildListener?.let { listener: ChildEventListener ->
             devicesRef?.removeEventListener(listener)
         }
-        devicesListener = null
+        devicesChildListener = null
+
+        heartbeatListener?.let { listener ->
+            heartbeatRef?.removeEventListener(listener)
+        }
+        heartbeatListener = null
     }
 
     override fun onCleared() {
@@ -160,7 +231,7 @@ class DashboardViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "DashboardViewModel"
-        /** Consider device offline if lastSeen > 2 minutes ago. */
+        /** Consider device offline if heartbeat > 2 minutes ago. */
         private const val ONLINE_THRESHOLD_MS = 2 * 60 * 1000L
     }
 }

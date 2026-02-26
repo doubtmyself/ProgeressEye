@@ -29,6 +29,8 @@ class DeviceManager:
             "createdAt": now,
         }
         self._db.patch(self._path, payload)
+        # 하트비트 전용 경로 초기화
+        self._db.patch(f"users/{self._uid}/heartbeat", {self._device_id: now})
 
     def update_status(self, status: str = "online") -> None:
         """상태와 마지막 접속 시각을 갱신한다."""
@@ -43,10 +45,25 @@ class DeviceManager:
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""
         self.update_status("offline")
+        # 하트비트 경로도 0으로 설정하여 오프라인 신호
+        try:
+            self._db.patch(
+                f"users/{self._uid}/heartbeat",
+                {self._device_id: 0},
+            )
+        except Exception:
+            pass
 
     def heartbeat(self) -> None:
-        """마지막 접속 시각만 갱신한다."""
-        self._db.patch(self._path, {"lastSeen": int(time.time() * 1000)})
+        """하트비트 전용 경로에 lastSeen만 갱신한다.
+
+        devices 서브트리 밖의 별도 경로를 사용하여
+        메인 리스너 트리거를 방지한다.
+        """
+        self._db.patch(
+            f"users/{self._uid}/heartbeat",
+            {self._device_id: int(time.time() * 1000)},
+        )
 
     def sync_tasks(self, task_updates: dict[str, dict[str, Any]]) -> None:
         """Multi-path update로 작업 데이터 + 하트비트를 한 번에 전송한다.
