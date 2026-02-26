@@ -20,6 +20,7 @@
     <string name="dashboard_completed">Completed</string>
     <string name="dashboard_screenshot">Screenshot</string>
     <string name="dashboard_capturing">Capturing…</string>
+    <string name="dashboard_pc_offline">PC Offline</string>
     <string name="dashboard_image_load_failed">Failed to load image</string>
     <string name="cd_screenshot_preview">Screenshot preview</string>
     <string name="cd_screenshot_fullscreen">Screenshot fullscreen</string>

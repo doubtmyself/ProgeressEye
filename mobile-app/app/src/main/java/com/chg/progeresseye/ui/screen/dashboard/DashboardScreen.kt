@@ -231,6 +231,7 @@ private fun DeviceCard(
 
             ScreenshotButton(
                 isLoading = isScreenshotLoading,
+                isOnline = device.isOnline,
                 onClick = onRequestScreenshot,
             )
         }
@@ -594,11 +595,13 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun ScreenshotButton(isLoading: Boolean, onClick: () -> Unit) {
+private fun ScreenshotButton(isLoading: Boolean, isOnline: Boolean, onClick: () -> Unit) {
+    val enabled = isOnline && !isLoading
+    val contentAlpha = if (enabled) 1f else 0.38f
     Surface(color = Slate800.copy(alpha = 0.50f)) {
         Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Surface(
-                onClick = { if (!isLoading) onClick() },
+                onClick = { if (enabled) onClick() },
                 shape = RoundedCornerShape(12.dp),
                 color = SurfaceContainerDark,
                 border = BorderStroke(1.dp, SurfaceContainerHighDark),
@@ -611,23 +614,23 @@ private fun ScreenshotButton(isLoading: Boolean, onClick: () -> Unit) {
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(
-                            color = OnSurfaceDark,
+                            color = OnSurfaceDark.copy(alpha = contentAlpha),
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
                         )
                     } else {
-                        Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark.copy(alpha = contentAlpha), modifier = Modifier.size(20.dp))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isLoading) {
-                            stringResource(R.string.dashboard_capturing)
-                        } else {
-                            stringResource(R.string.dashboard_screenshot)
+                        text = when {
+                            isLoading -> stringResource(R.string.dashboard_capturing)
+                            !isOnline -> stringResource(R.string.dashboard_pc_offline)
+                            else -> stringResource(R.string.dashboard_screenshot)
                         },
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = OnSurfaceDark,
+                        color = OnSurfaceDark.copy(alpha = contentAlpha),
                     )
                 }
             }

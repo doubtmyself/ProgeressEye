@@ -18,6 +18,7 @@
     <string name="dashboard_completed">완료됨</string>
     <string name="dashboard_screenshot">스크린샷</string>
     <string name="dashboard_capturing">캡처 중…</string>
+    <string name="dashboard_pc_offline">PC 오프라인</string>
     <string name="dashboard_image_load_failed">이미지를 불러올 수 없습니다</string>
     <string name="cd_screenshot_preview">스크린샷 미리보기</string>
     <string name="cd_screenshot_fullscreen">스크린샷 전체 화면</string>

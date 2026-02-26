@@ -8,6 +8,7 @@ MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
 
 import queue
 import time
+import threading
 import os
 import pathlib
 import sys
@@ -318,7 +319,6 @@ class ProgressEyeApp:
 
         # 프로필 저장
         try:
-            import time
 
             profile_data = {
                 "email": self._config.get("auth.email", ""),
@@ -718,20 +718,17 @@ class ProgressEyeApp:
 
     def _do_logout(self) -> None:
         """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 앱 종료."""
-        log.info("[LOGOUT-1] 로그아웃 시작")
+        log.info("로그아웃 시작")
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
             self._set_display_required(False)
-        log.info("[LOGOUT-2] 스케줄러/하트비트 정리")
         if self._heartbeat_timer is not None:
             self._heartbeat_timer.stop()
             self._heartbeat_timer = None
-        log.info("[LOGOUT-3] CommandListener 정리")
         if self._command_listener:
             self._command_listener.stop_nowait()
             self._command_listener = None
-        log.info("[LOGOUT-4] Firebase 참조 해제")
 
         # Firebase 정리를 별도 스레드에서 수행 (메인 스레드 블로킹 방지)
         dm = self._device_manager
@@ -748,18 +745,15 @@ class ProgressEyeApp:
                 except Exception:
                     pass
 
-        import threading
         threading.Thread(target=_cleanup_firebase, daemon=True).start()
-        log.info("[LOGOUT-5] Firebase cleanup 스레드 시작")
 
         try:
             self._token_manager.clear()
         except Exception as exc:
             log.warning("토큰 삭제 실패: %s", exc)
-        log.info("[LOGOUT-6] 토큰 삭제 완료")
         self._config.set("auth.uid", "")
         self._config.set("auth.email", "")
-        log.info("[LOGOUT-7] 앱 종료 호출")
+        log.info("로그아웃 완료 — 앱 종료")
         # tray는 daemon 스레드 — _app.quit() 시 자동 종료
         self._do_quit()
 
