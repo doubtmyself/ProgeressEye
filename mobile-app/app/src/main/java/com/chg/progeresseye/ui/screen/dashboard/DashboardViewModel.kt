@@ -47,6 +47,7 @@ class DashboardViewModel : ViewModel() {
 
     // Heartbeat polling job (크래시 감지 fallback, 5분 폴링)
     private var heartbeatPollingJob: Job? = null
+    private var screenshotTimeoutJob: Job? = null
 
     // Local caches
     private val deviceCache = mutableMapOf<String, DeviceData>()
@@ -188,10 +189,19 @@ class DashboardViewModel : ViewModel() {
             dev != null && dev.screenshotTs == prevDev?.screenshotTs
         } else false
 
+        // 스크린샷 성공 시 timeout 취소 + 에러 초기화
+        val screenshotError = if (!stillLoading && currentLoading != null) {
+            screenshotTimeoutJob?.cancel()
+            null
+        } else {
+            _uiState.value.screenshotError
+        }
+
         _uiState.value = DashboardUiState(
             isLoading = false,
             devices = devices,
             screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
+            screenshotError = screenshotError,
             isRefreshing = false,
         )
     }
@@ -248,6 +258,20 @@ class DashboardViewModel : ViewModel() {
         }
         Log.d(TAG, "[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
         _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
+
+        // Timeout: 30s
+        screenshotTimeoutJob?.cancel()
+        screenshotTimeoutJob = viewModelScope.launch {
+            delay(SCREENSHOT_TIMEOUT_MS)
+            if (_uiState.value.screenshotLoadingDeviceId == deviceId) {
+                Log.w(TAG, "[SCREENSHOT] timeout after ${SCREENSHOT_TIMEOUT_MS / 1000}s")
+                _uiState.value = _uiState.value.copy(
+                    screenshotLoadingDeviceId = null,
+                    screenshotError = "PC\uAC00 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. PC\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694."
+                )
+            }
+        }
+
         val commandRef = db.reference
             .child("users").child(uid)
             .child("commands").child("screenshot")
@@ -257,8 +281,16 @@ class DashboardViewModel : ViewModel() {
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "[SCREENSHOT] command write FAILED: ${e.message}")
-                _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = null)
+                screenshotTimeoutJob?.cancel()
+                _uiState.value = _uiState.value.copy(
+                    screenshotLoadingDeviceId = null,
+                    screenshotError = "\uBA85\uB839 \uC804\uC1A1 \uC2E4\uD328: ${e.message}"
+                )
             }
+    }
+
+    fun clearScreenshotError() {
+        _uiState.value = _uiState.value.copy(screenshotError = null)
     }
 
     // ── Pull-to-Refresh ────────────────────────────────
@@ -284,6 +316,8 @@ class DashboardViewModel : ViewModel() {
         statusListener = null
 
         heartbeatPollingJob?.cancel()
+        screenshotTimeoutJob?.cancel()
+        screenshotTimeoutJob = null
         heartbeatPollingJob = null
     }
 
@@ -298,5 +332,7 @@ class DashboardViewModel : ViewModel() {
         private const val HEARTBEAT_POLL_INTERVAL_MS = 5 * 60 * 1000L
         /** Consider device offline if heartbeat > 5 minutes ago. */
         private const val OFFLINE_THRESHOLD_MS = 5 * 60 * 1000L
+        /** Screenshot request timeout. */
+        private const val SCREENSHOT_TIMEOUT_MS = 30_000L
     }
 }

@@ -22,10 +22,15 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,6 +89,16 @@ fun MainScreen(
     val dashboardViewModel: DashboardViewModel = viewModel()
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show screenshot error as Snackbar
+    val screenshotError = dashboardState.screenshotError
+    LaunchedEffect(screenshotError) {
+        if (screenshotError != null) {
+            snackbarHostState.showSnackbar(screenshotError)
+            dashboardViewModel.clearScreenshotError()
+        }
+    }
 
     // RTDB listener active only while app is in foreground (started/resumed)
     LifecycleStartEffect(dashboardViewModel) {
@@ -91,6 +106,16 @@ fun MainScreen(
         onStopOrDispose { dashboardViewModel.stopListening() }
     }
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Color(0xFF1E293B),
+                    contentColor = Color(0xFFEF4444),
+                    shape = RoundedCornerShape(12.dp),
+                )
+            }
+        },
         topBar = {
             val currentNav = navItems[selectedTab]
             CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)

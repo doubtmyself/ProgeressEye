@@ -36,6 +36,8 @@ data class DashboardUiState(
     val error: String? = null,
     /** Device ID currently waiting for screenshot response. */
     val screenshotLoadingDeviceId: String? = null,
+    /** Screenshot error message to display (timeout, failure). */
+    val screenshotError: String? = null,
     /** True during pull-to-refresh. */
     val isRefreshing: Boolean = false,
 )
