@@ -100,7 +100,7 @@ class CommandListener:
                     params=params,
                     headers=headers,
                     stream=True,
-                    timeout=(10, 300),
+                    timeout=(10, 60),
                 ) as response:
                     response.raise_for_status()
                     backoff_seconds = 1
@@ -128,8 +128,9 @@ class CommandListener:
         current_event_type = ""
         current_data_lines: list[str] = []
         initial_snapshot_skipped = False
+        log.info("SSE 스트림 수신 시작")
 
-        raw_lines = cast(Iterable[object], response.iter_lines(decode_unicode=True))
+        raw_lines = cast(Iterable[object], response.iter_lines(chunk_size=1, decode_unicode=True))
         for raw_line_obj in raw_lines:
             if self._stop_event.is_set():
                 return
@@ -186,13 +187,22 @@ class CommandListener:
                     payload[key] = value
 
             path = payload.get("path")
+            log.debug("SSE event: type=%s path=%s", event_type, path)
             if event_type == "put" and path == "/" and not initial_snapshot_skipped:
                 initial_snapshot_skipped = True
+                # 초기 스냅샷에 미처리 명령이 있으면 큐에 추가
+                for command in self._extract_commands(payload):
+                    try:
+                        self._command_queue.put_nowait(command)
+                        log.info("초기 스냅샷 미처리 명령 발견: %s", command.get("type"))
+                    except queue.Full:
+                        log.warning("명령 큐가 가득 차 초기 명령을 버립니다: %s", command)
                 continue
 
             for command in self._extract_commands(payload):
                 try:
                     self._command_queue.put_nowait(command)
+                    log.info("SSE 명령 큐 추가: %s", command.get("type"))
                 except queue.Full:
                     log.warning("명령 큐가 가득 차 명령을 버립니다: %s", command)
 
@@ -234,6 +244,8 @@ class CommandListener:
             return []
 
         if len(segments) == 1:
+            if data is None:
+                return []
             if isinstance(data, dict):
                 command_data: dict[str, object] = {}
                 for key, value in data.items():

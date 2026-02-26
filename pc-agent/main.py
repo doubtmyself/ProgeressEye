@@ -77,6 +77,7 @@ class ProgressEyeApp:
         self._heartbeat_timer: QTimer | None = None
         self._command_listener: CommandListener | None = None
         self._firebase_storage: FirebaseStorage | None = None
+        self._screenshot_cache: dict[str, tuple[str, str]] = {}  # device_id -> (jpeg_hash, download_url)
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
         self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
@@ -384,6 +385,7 @@ class ProgressEyeApp:
             except queue.Empty:
                 break
             cmd_type = cmd.get("type")
+            log.info("[CMD] mobile command received: type=%s", cmd_type)
             if cmd_type == "screenshot":
                 self._handle_screenshot_command()
             elif cmd_type == "monitor":
@@ -398,6 +400,7 @@ class ProgressEyeApp:
 
     def _handle_screenshot_command(self) -> None:
         """모바일 스크린샷 요청: 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록."""
+        import hashlib
         import io
         import mss as mss_lib
 
@@ -405,34 +408,47 @@ class ProgressEyeApp:
             log.warning("스크린샷 명령 무시: Firebase 미초기화")
             return
 
+        uid = str(self._config.get("auth.uid", ""))
+        device_id = str(self._config.get("auth.device_id", ""))
         try:
+            log.info("[SCREENSHOT] capture start")
             with mss_lib.mss() as sct:
-                monitor = sct.monitors[0]  # 모든 모니터 합성
+                monitor = sct.monitors[0]
                 shot = sct.grab(monitor)
                 img = PILImage.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=70)
             jpeg_bytes = buf.getvalue()
+            jpeg_hash = hashlib.md5(jpeg_bytes).hexdigest()
 
-            uid = str(self._config.get("auth.uid", ""))
-            device_id = str(self._config.get("auth.device_id", ""))
             ts = int(time.time())
-            storage_path = f"screenshots/{uid}/{ts}.jpg"
+            cached = self._screenshot_cache.get(device_id)
 
-            download_url = self._firebase_storage.upload_jpeg(storage_path, jpeg_bytes)
+            if cached and cached[0] == jpeg_hash:
+                # 화면 변경 없음 — 업로드 스킵, 기존 URL 재사용
+                download_url = cached[1]
+                log.info("[SCREENSHOT] 화면 변경 없음, 업로드 스킵")
+            else:
+                # 화면 변경됨 — 업로드
+                storage_path = f"screenshots/{uid}/{device_id}/latest.jpg"
+                download_url = self._firebase_storage.upload_jpeg(storage_path, jpeg_bytes)
+                self._screenshot_cache[device_id] = (jpeg_hash, download_url)
+                log.info("[SCREENSHOT] 업로드 완료: %s", storage_path)
 
             self._realtime_db.patch(
                 f"users/{uid}/devices/{device_id}/screenshots",
                 {"latest": {"url": download_url, "ts": ts}},
             )
-
-            # 명령 소비 (삭제)
-            self._realtime_db.delete(f"users/{uid}/commands/screenshot")
-            log.info("스크린샷 업로드 완료: %s", storage_path)
+            log.info("스크린샷 처리 완료 (ts=%d)", ts)
         except Exception as exc:
             log.warning("스크린샷 처리 실패: %s", exc)
-
+        finally:
+            try:
+                if self._realtime_db and uid:
+                    self._realtime_db.delete(f"users/{uid}/commands/screenshot")
+            except Exception:
+                pass
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
@@ -1298,7 +1314,7 @@ class ProgressEyeApp:
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         if self._command_listener:
-            self._command_listener.stop()
+            self._command_listener.stop_nowait()
             self._command_listener = None
         if self._device_manager:
             try:

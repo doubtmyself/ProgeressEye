@@ -1,0 +1,58 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+
+        "profile": {
+          ".validate": "newData.hasChildren(['email', 'displayName'])"
+        },
+        "plan": {
+          ".validate": "newData.isString()"
+        },
+        "activeDevice": {
+          ".validate": "newData.isString()"
+        },
+        "deviceStatus": {
+          "$deviceId": {
+            ".validate": "newData.isString()"
+          }
+        },
+        "heartbeat": {
+          "$deviceId": {
+            ".validate": "newData.isNumber()"
+          }
+        },
+        "commands": {
+          "screenshot": {
+            ".validate": "newData.hasChild('ts')"
+          },
+          "monitor": {
+            ".validate": "newData.hasChild('ts')"
+          }
+        },
+        "devices": {
+          "$pcId": {
+            "name": { ".validate": "newData.isString()" },
+            "platform": { ".validate": "newData.isString()" },
+            "appVersion": { ".validate": "newData.isString()" },
+            "createdAt": { ".validate": "newData.isNumber()" },
+            "screenshots": {
+              "latest": {
+                ".validate": "newData.hasChildren(['url', 'ts'])"
+              }
+            },
+            "tasks": {
+              "$taskId": {
+                "p": { ".validate": "newData.isNumber()" },
+                "s": { ".validate": "newData.isString()" },
+                "l": { ".validate": "newData.isString()" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -185,7 +185,7 @@ class DashboardViewModel : ViewModel() {
         val stillLoading = if (currentLoading != null) {
             val dev = devices.find { it.id == currentLoading }
             val prevDev = _uiState.value.devices.find { it.id == currentLoading }
-            dev != null && dev.screenshotUrl == prevDev?.screenshotUrl
+            dev != null && dev.screenshotTs == prevDev?.screenshotTs
         } else false
 
         _uiState.value = DashboardUiState(
@@ -241,12 +241,24 @@ class DashboardViewModel : ViewModel() {
     // ── Screenshot command ─────────────────────────────────
 
     fun requestScreenshot(deviceId: String) {
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            Log.w(TAG, "[SCREENSHOT] uid is null, aborting")
+            return
+        }
+        Log.d(TAG, "[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
         _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
         val commandRef = db.reference
             .child("users").child(uid)
             .child("commands").child("screenshot")
         commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
+            .addOnSuccessListener {
+                Log.d(TAG, "[SCREENSHOT] command written to RTDB successfully")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "[SCREENSHOT] command write FAILED: ${e.message}")
+                _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = null)
+            }
     }
 
     // ── Pull-to-Refresh ────────────────────────────────
