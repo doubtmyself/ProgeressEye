@@ -12,6 +12,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,12 +23,10 @@ import kotlinx.coroutines.launch
 // ═════════════════════════════════════════════════════════
 // DashboardViewModel — RTDB listener for devices + tasks
 //
-// 대역폭 최적화:
-//   Listener: users/{uid}/devices → ChildEventListener
-//     - 디바이스/태스크/스크린샷 변경 시에만 해당 기기 데이터 수신
-//   Heartbeat: 5분 폴링으로 온라인/오프라인 판정
-//     - 실시간 리스너 대신 주기적 읽기로 대역폭 절감
-//     - 오프라인 감지 시 RTDB에 status write
+// 데이터 경로 분리:
+//   users/{uid}/devices/{id}/...      → ChildEventListener (태스크/스크린샷 변경)
+//   users/{uid}/deviceStatus/{id}     → ValueEventListener (접속 상태, 실시간)
+//   users/{uid}/heartbeat/{id}        → 5분 폴링 (크래시 감지 fallback)
 // ═════════════════════════════════════════════════════════
 
 class DashboardViewModel : ViewModel() {
@@ -38,15 +37,20 @@ class DashboardViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    // Devices listener (ChildEventListener — only changed device data sent)
+    // Listener A: devices (ChildEventListener — 태스크/스크린샷 변경)
     private var devicesRef: DatabaseReference? = null
     private var devicesChildListener: ChildEventListener? = null
 
-    // Heartbeat polling job (실시간 리스너 대신 5분 폴링)
+    // Listener B: deviceStatus (ValueEventListener — 접속 상태 실시간)
+    private var statusRef: DatabaseReference? = null
+    private var statusListener: ValueEventListener? = null
+
+    // Heartbeat polling job (크래시 감지 fallback, 5분 폴링)
     private var heartbeatPollingJob: Job? = null
 
-    // Local device cache — ChildEventListener gives deltas, we merge locally
+    // Local caches
     private val deviceCache = mutableMapOf<String, DeviceData>()
+    private val statusCache = mutableMapOf<String, String>() // deviceId -> "online"/"offline"
     private val heartbeatCache = mutableMapOf<String, Long>()
 
     // ── Listener setup ─────────────────────────────────────────
@@ -63,9 +67,10 @@ class DashboardViewModel : ViewModel() {
         }
 
         deviceCache.clear()
+        statusCache.clear()
         heartbeatCache.clear()
 
-        // ── Listener: devices (ChildEventListener) ──
+        // ── Listener A: devices (ChildEventListener) — 태스크/스크린샷 ──
         devicesRef = db.reference.child("users").child(uid).child("devices")
 
         devicesChildListener = object : ChildEventListener {
@@ -101,7 +106,27 @@ class DashboardViewModel : ViewModel() {
         }
         devicesRef?.addChildEventListener(devicesChildListener!!)
 
-        // ── Heartbeat polling (5분 주기) ──
+        // ── Listener B: deviceStatus (ValueEventListener) — 접속 상태 실시간 ──
+        statusRef = db.reference.child("users").child(uid).child("deviceStatus")
+
+        statusListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                statusCache.clear()
+                for (child in snapshot.children) {
+                    val deviceId = child.key ?: continue
+                    val status = child.getValue(String::class.java) ?: "offline"
+                    statusCache[deviceId] = status
+                }
+                emitState()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "deviceStatus:onCancelled", error.toException())
+            }
+        }
+        statusRef?.addValueEventListener(statusListener!!)
+
+        // ── Heartbeat polling (5분 주기, 크래시 감지) ──
         startHeartbeatPolling(uid)
     }
 
@@ -119,39 +144,40 @@ class DashboardViewModel : ViewModel() {
     }
 
     private fun pollHeartbeat(uid: String) {
-        val heartbeatRef = db.reference.child("users").child(uid).child("heartbeat")
-        heartbeatRef.get().addOnSuccessListener { snapshot ->
-            heartbeatCache.clear()
-            val now = System.currentTimeMillis()
+        val deviceIds = deviceCache.keys.toList()
+        if (deviceIds.isEmpty()) return
 
-            for (child in snapshot.children) {
-                val deviceId = child.key ?: continue
-                val ts = child.getValue(Long::class.java) ?: 0L
-                heartbeatCache[deviceId] = ts
+        val now = System.currentTimeMillis()
+        for (deviceId in deviceIds) {
+            db.reference.child("users").child(uid)
+                .child("heartbeat").child(deviceId)
+                .get().addOnSuccessListener { snapshot ->
+                    val ts = snapshot.getValue(Long::class.java) ?: 0L
+                    heartbeatCache[deviceId] = ts
 
-                // 오프라인 감지: heartbeat가 5분 초과면 status를 offline으로 갱신
-                val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
-                if (isExpired) {
-                    db.reference
-                        .child("users").child(uid)
-                        .child("devices").child(deviceId)
-                        .child("status").setValue("offline")
+                    // 크래시 감지: heartbeat 만료 + 아직 online 상태인 기기만 offline 처리
+                    val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
+                    val currentStatus = statusCache[deviceId]
+                    if (isExpired && currentStatus == "online") {
+                        db.reference
+                            .child("users").child(uid)
+                            .child("deviceStatus").child(deviceId)
+                            .setValue("offline")
+                    }
+
+                    emitState()
+                }.addOnFailureListener { e ->
+                    Log.e(TAG, "heartbeat poll failed: $deviceId", e)
                 }
-            }
-            emitState()
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "heartbeat poll failed", e)
         }
     }
 
     // ── State emission ─────────────────────────────────────
 
     private fun emitState() {
-        val now = System.currentTimeMillis()
         val devices = deviceCache.values.map { device ->
+            val isOnline = statusCache[device.id] == "online"
             val heartbeatTs = heartbeatCache[device.id] ?: 0L
-            val isOnline = heartbeatTs > 0L &&
-                (now - heartbeatTs) < OFFLINE_THRESHOLD_MS
             device.copy(isOnline = isOnline, lastSeen = heartbeatTs)
         }
 
@@ -190,8 +216,8 @@ class DashboardViewModel : ViewModel() {
             id = id,
             name = name,
             platform = platform,
-            isOnline = false, // heartbeat 폴링에서 emitState()가 덮어씀
-            lastSeen = 0L,
+            isOnline = false, // statusCache에서 emitState()가 덮어씀
+            lastSeen = 0L, // heartbeatCache에서 emitState()가 덮어씀
             tasks = tasks,
             screenshotUrl = screenshotUrl,
             screenshotTs = screenshotTs,
@@ -228,7 +254,7 @@ class DashboardViewModel : ViewModel() {
     fun refresh() {
         val uid = auth.currentUser?.uid ?: return
         _uiState.value = _uiState.value.copy(isRefreshing = true)
-        // 즈시 heartbeat 폴링 + UI 재방출
+        // 즉시 heartbeat 폴링 + UI 재방출
         pollHeartbeat(uid)
     }
 
@@ -239,6 +265,11 @@ class DashboardViewModel : ViewModel() {
             devicesRef?.removeEventListener(listener)
         }
         devicesChildListener = null
+
+        statusListener?.let { listener ->
+            statusRef?.removeEventListener(listener)
+        }
+        statusListener = null
 
         heartbeatPollingJob?.cancel()
         heartbeatPollingJob = null

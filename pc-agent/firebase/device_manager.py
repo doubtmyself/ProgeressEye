@@ -23,17 +23,23 @@ class DeviceManager:
         payload = {
             "name": device_name or platform.node(),
             "platform": platform.platform(),
-            "status": "online",
             "appVersion": "1.0.0",
             "createdAt": now,
         }
         self._db.patch(self._path, payload)
-        # 하트비트 전용 경로 초기화
-        self._db.patch(f"users/{self._uid}/heartbeat", {self._device_id: now})
+        # 접속 상태 + 하트비트 별도 경로 초기화
+        self._db.patch(
+            f"users/{self._uid}/deviceStatus", {self._device_id: "online"},
+        )
+        self._db.patch(
+            f"users/{self._uid}/heartbeat", {self._device_id: now},
+        )
 
     def update_status(self, status: str = "online") -> None:
-        """상태를 갱신한다."""
-        self._db.patch(self._path, {"status": status})
+        """접속 상태를 갱신한다 (deviceStatus 별도 경로)."""
+        self._db.patch(
+            f"users/{self._uid}/deviceStatus", {self._device_id: status},
+        )
 
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""
