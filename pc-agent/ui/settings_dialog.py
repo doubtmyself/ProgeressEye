@@ -371,7 +371,7 @@ class SettingsOverlay(QWidget):
         """현재 모드/스텝에 따라 위젯 가시성을 설정한다."""
         if self._welcome_mode and self._welcome_step == 0:
             # Welcome step 0: 언어 선택만
-            self._title_label.setText(t("welcome_title"))
+            self._title_label.setText(t("settings_title"))
             self._welcome_subtitle.setText(t("welcome_lang_subtitle"))
             self._welcome_subtitle.show()
             self._lang_section.show()

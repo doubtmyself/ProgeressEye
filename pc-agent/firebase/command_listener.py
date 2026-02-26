@@ -52,6 +52,16 @@ class CommandListener:
         self._thread.start()
         log.info("CommandListener 시작: users/%s/commands", self._uid)
 
+    def stop_nowait(self) -> None:
+        """비블로킹 종료 — 메인 스레드에서 안전하게 호출 가능."""
+        self._stop_event.set()
+        self._thread = None
+        self._uid = ""
+        # response.close()는 Windows에서 SSE 소켓 대기로 블로킹될 수 있으므로
+        # daemon 스레드에서 처리 — _app.quit() 시 자동 종료됨
+        import threading as _threading
+        _threading.Thread(target=self._close_response, daemon=True).start()
+        log.info("CommandListener 비블로킹 중지")
     def stop(self) -> None:
         """SSE 리스너를 종료한다."""
         self._stop_event.set()

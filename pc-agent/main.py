@@ -120,7 +120,7 @@ class ProgressEyeApp:
         self._cmd_poll_timer.start(200)
 
         # 초기 언어 설정
-        set_language(self._config.get("language", "ko"))
+        set_language(self._config.get("language", "en"))
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
@@ -687,7 +687,7 @@ class ProgressEyeApp:
         """설정 오버레이를 표시한다."""
         self._main_window.show_settings(
             interval=self._config.get("capture.interval_seconds", 30),
-            language=self._config.get("language", "ko"),
+            language=self._config.get("language", "en"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
         )
@@ -700,7 +700,7 @@ class ProgressEyeApp:
     ) -> None:
         """설정 저장 시 반영한다."""
         current_interval = self._config.get("capture.interval_seconds", 30)
-        current_lang = self._config.get("language", "ko")
+        current_lang = self._config.get("language", "en")
         current_freeze = self._config.get("freeze_detection.timeout_minutes", 5)
         if new_interval != current_interval:
             self._config.set("capture.interval_seconds", new_interval)
@@ -717,36 +717,50 @@ class ProgressEyeApp:
             log.info("프리징 감지 시간 변경: %d분", new_freeze)
 
     def _do_logout(self) -> None:
-        """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 재로그인."""
-        log.info("로그아웃 시작")
+        """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 앱 종료."""
+        log.info("[LOGOUT-1] 로그아웃 시작")
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
             self._set_display_required(False)
+        log.info("[LOGOUT-2] 스케줄러/하트비트 정리")
         if self._heartbeat_timer is not None:
             self._heartbeat_timer.stop()
             self._heartbeat_timer = None
+        log.info("[LOGOUT-3] CommandListener 정리")
         if self._command_listener:
-            self._command_listener.stop()
+            self._command_listener.stop_nowait()
             self._command_listener = None
-        if self._device_manager is not None:
-            try:
-                if self._config.get("plan", "free") == "free":
-                    self._device_manager.clear_active_device()
-                self._device_manager.set_offline()
-            except Exception:
-                pass
-            self._device_manager = None
+        log.info("[LOGOUT-4] Firebase 참조 해제")
+
+        # Firebase 정리를 별도 스레드에서 수행 (메인 스레드 블로킹 방지)
+        dm = self._device_manager
+        self._device_manager = None
         self._realtime_db = None
         self._firebase_id_token = None
+
+        def _cleanup_firebase() -> None:
+            if dm is not None:
+                try:
+                    if self._config.get("plan", "free") == "free":
+                        dm.clear_active_device()
+                    dm.set_offline()
+                except Exception:
+                    pass
+
+        import threading
+        threading.Thread(target=_cleanup_firebase, daemon=True).start()
+        log.info("[LOGOUT-5] Firebase cleanup 스레드 시작")
+
         try:
             self._token_manager.clear()
         except Exception as exc:
             log.warning("토큰 삭제 실패: %s", exc)
+        log.info("[LOGOUT-6] 토큰 삭제 완료")
         self._config.set("auth.uid", "")
         self._config.set("auth.email", "")
-        log.info("로그아웃 완료 — 앱 종료")
-        self._tray.stop()
+        log.info("[LOGOUT-7] 앱 종료 호출")
+        # tray는 daemon 스레드 — _app.quit() 시 자동 종료
         self._do_quit()
 
     def _show_welcome(self) -> None:
