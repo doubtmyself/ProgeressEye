@@ -36,6 +36,12 @@
     <!-- ── Alerts ── -->
     <string name="alerts_empty_title">All caught up!</string>
     <string name="alerts_empty_body">You\'ll be notified when tasks\ncomplete or stall.</string>
+    <string name="alert_type_completion">Completion</string>
+    <string name="alert_type_stall">Stall Warning</string>
+    <string name="alert_type_image_change">Screen Change</string>
+    <string name="alert_type_offline">Offline</string>
+    <string name="notification_channel_name">Progress Alerts</string>
+    <string name="notification_channel_description">Alerts for task completion, freezing, and screen changes</string>
     <string name="alerts_clear_all">Clear all</string>
     <string name="alerts_just_now">Just now</string>
     <string name="alerts_yesterday">Yesterday</string>

@@ -31,6 +31,12 @@
     <!-- ── Alerts ── -->
     <string name="alerts_empty_title">모든 알림을 확인했습니다!</string>
     <string name="alerts_empty_body">작업이 완료되거나 멈추면\n알림을 받게 됩니다.</string>
+    <string name="alert_type_completion">완료</string>
+    <string name="alert_type_stall">멈춤 경고</string>
+    <string name="alert_type_image_change">화면 변경</string>
+    <string name="alert_type_offline">오프라인</string>
+    <string name="notification_channel_name">진행률 알림</string>
+    <string name="notification_channel_description">작업 완료, 프리징, 화면 변경 알림</string>
     <string name="alerts_clear_all">모두 지우기</string>
     <string name="alerts_just_now">방금 전</string>
     <string name="alerts_yesterday">어제</string>
