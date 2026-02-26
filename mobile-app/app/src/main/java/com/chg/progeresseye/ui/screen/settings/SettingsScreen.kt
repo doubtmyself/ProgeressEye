@@ -114,10 +114,10 @@ fun SettingsContent(
             NotificationsCard(
                 completionAlerts = state.completionAlerts,
                 stallWarnings = state.stallWarnings,
-                offlineAlerts = state.offlineAlerts,
+
                 onToggleCompletion = viewModel::toggleCompletionAlerts,
                 onToggleStall = viewModel::toggleStallWarnings,
-                onToggleOffline = viewModel::toggleOfflineAlerts,
+
             )
         }
 
@@ -278,17 +278,16 @@ private fun AccountCard(
 private fun NotificationsCard(
     completionAlerts: Boolean,
     stallWarnings: Boolean,
-    offlineAlerts: Boolean,
+
     onToggleCompletion: () -> Unit,
     onToggleStall: () -> Unit,
-    onToggleOffline: () -> Unit,
+
 ) {
     SettingsCard {
         ToggleRow(stringResource(R.string.settings_completion_alerts), completionAlerts, onToggleCompletion)
         HorizontalDivider(color = OutlineVariantDark)
         ToggleRow(stringResource(R.string.settings_stall_warnings), stallWarnings, onToggleStall)
-        HorizontalDivider(color = OutlineVariantDark)
-        ToggleRow(stringResource(R.string.settings_offline_alerts), offlineAlerts, onToggleOffline)
+
     }
 }
 

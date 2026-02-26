@@ -41,7 +41,6 @@ class BarAnalyzer:
         self,
         image: Image.Image,
         direction: str = "horizontal",
-        downscale: float = 1.0,
     ) -> AnalysisResult:
         """진행바 이미지를 분석하여 진행률을 산출한다.
 
@@ -53,7 +52,6 @@ class BarAnalyzer:
         Args:
             image: 크롭된 진행바 PIL 이미지 (RGB).
             direction: "horizontal" 또는 "vertical".
-            downscale: 다운스케일 비율 (0.0~1.0, 1.0=원본). 바 분석 성능 최적화용.
 
         Returns:
             AnalysisResult — 진행률, 신뢰도, 채움/전체 열 수.
@@ -64,12 +62,6 @@ class BarAnalyzer:
 
         if image.mode != "RGB":
             image = image.convert("RGB")
-
-        # 다운스케일 적용 (성능 최적화)
-        if 0.0 < downscale < 1.0:
-            new_w = max(3, int(image.width * downscale))
-            new_h = max(1, int(image.height * downscale))
-            image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
         pixels = np.array(image, dtype=np.float64)  # (H, W, 3)
         height, width, _ = pixels.shape

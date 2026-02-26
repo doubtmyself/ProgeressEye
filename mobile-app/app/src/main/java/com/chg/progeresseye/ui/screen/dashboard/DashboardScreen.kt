@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +78,7 @@ import com.chg.progeresseye.data.model.DashboardUiState
 import com.chg.progeresseye.data.model.DeviceData
 import com.chg.progeresseye.data.model.TaskData
 import com.chg.progeresseye.data.model.TaskStatus
+
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
@@ -106,6 +108,7 @@ private val Amber600 = Color(0xFFD97706)
 @Composable
 fun DashboardContent(
     uiState: DashboardUiState,
+    userPlan: String = "free",
     onRequestScreenshot: (deviceId: String) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -161,22 +164,24 @@ fun DashboardContent(
                 onRefresh = onRefresh,
                 modifier = modifier.fillMaxSize(),
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    items(uiState.devices, key = { it.id }) { device ->
-                        DeviceCard(
-                            device = device,
-                            isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
-                            onRequestScreenshot = { onRequestScreenshot(device.id) },
-                        )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        items(uiState.devices, key = { it.id }) { device ->
+                            DeviceCard(
+                                device = device,
+                                isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                                onRequestScreenshot = { onRequestScreenshot(device.id) },
+                            )
+                        }
                     }
+                }
             }
         }
     }
-}
 }
 
 // ═════════════════════════════════════════════════════════
@@ -189,7 +194,7 @@ private fun DeviceCard(
     isScreenshotLoading: Boolean,
     onRequestScreenshot: () -> Unit,
 ) {
-    var showFullScreenshot by remember { mutableStateOf(false) }
+    var showFullScreenshot by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -203,6 +208,7 @@ private fun DeviceCard(
                 isMonitoring = device.isMonitoring,
                 cpuUsage = device.cpuUsage,
                 gpuUsage = device.gpuUsage,
+                ramUsage = device.ramUsage,
             )
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
@@ -409,6 +415,7 @@ private fun DeviceHeader(
     isMonitoring: Boolean,
     cpuUsage: Float? = null,
     gpuUsage: Float? = null,
+    ramUsage: Float? = null,
 ) {
     Row(
         modifier = Modifier
@@ -461,7 +468,7 @@ private fun DeviceHeader(
                 Text(
                     text = when {
                         isOnline && isMonitoring -> stringResource(R.string.dashboard_status_monitoring)
-                        isOnline -> stringResource(R.string.dashboard_status_standby)
+                        isOnline -> stringResource(R.string.dashboard_status_online)
                         else -> stringResource(R.string.dashboard_status_offline)
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -474,7 +481,7 @@ private fun DeviceHeader(
                 )
             }
             // Hardware stats (online 상태에서만 표시)
-            if (isOnline && (cpuUsage != null || gpuUsage != null)) {
+            if (isOnline && (cpuUsage != null || gpuUsage != null || ramUsage != null)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -482,6 +489,7 @@ private fun DeviceHeader(
                 ) {
                     cpuUsage?.let { MetricChip(label = "CPU", value = "%.0f%%".format(it)) }
                     gpuUsage?.let { MetricChip(label = "GPU", value = "%.0f%%".format(it)) }
+                    ramUsage?.let { MetricChip(label = "RAM", value = "%.0f%%".format(it)) }
                 }
             }
         }
@@ -493,7 +501,7 @@ private fun DeviceHeader(
 }
 
 // ═════════════════════════════════════════════════════════
-// Metric Chip (CPU/GPU usage)
+// Metric Chip (CPU/GPU/RAM usage)
 // ═════════════════════════════════════════════════════════
 
 @Composable
@@ -722,6 +730,7 @@ private val previewDevices = listOf(
         isMonitoring = true,
         cpuUsage = 42f,
         gpuUsage = 72f,
+        ramUsage = 58f,
         tasks = listOf(
             TaskData("r1", "Premiere Rendering", 0.732f, TaskStatus.RUNNING),
             TaskData("r2", "File Download", 1.0f, TaskStatus.COMPLETED),

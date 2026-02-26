@@ -34,7 +34,7 @@ from core.bar_finder import BarFinder, BarRegion  # pyright: ignore[reportImplic
 from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
 from core.freeze_detector import FreezeDetector  # pyright: ignore[reportImplicitRelativeImport]
 from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRelativeImport]
-from core.system_monitor import collect_stats, warmup_cpu_percent  # pyright: ignore[reportImplicitRelativeImport]
+from core.system_monitor import collect_stats, warmup_cpu_percent, stop_sampler  # pyright: ignore[reportImplicitRelativeImport]
 from ui.area_selector import AreaSelector  # pyright: ignore[reportImplicitRelativeImport]
 from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from core.ocr_reader import OcrReader  # pyright: ignore[reportImplicitRelativeImport]
@@ -83,7 +83,7 @@ class ProgressEyeApp:
         ] = {}  # device_id -> (jpeg_hash, download_url)
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
-        self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
+
         self._alerted_regions: dict[str, float] = {}  # region_id -> alert progress
         self._post_completion_fails: dict[str, int] = {}  # 완료 후 연속 캡쳐 실패 횟수
         self._pending_firebase_batch: dict[str, dict] = {}  # 사이클별 Firebase 배치
@@ -1413,6 +1413,7 @@ class ProgressEyeApp:
         self._scheduler.stop()
         self._set_display_required(False)
         self._capturer.close()
+        stop_sampler()
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         if self._command_listener:
@@ -1505,34 +1506,15 @@ class ProgressEyeApp:
         self,
         image: PILImage.Image,
     ) -> tuple[BarRegion | None, AnalysisResult]:
-        """Smart 바 분석: 다운스케일 시도 → 신뢰도 낮으면 원본 fallback.
+        """바 분석: 원본 해상도로 분석.
 
         Returns:
             (bar_region, analysis_result) 튜플.
         """
-        ds = self._bar_downscale
-        bar_region = self._bar_finder.find(image, downscale=ds)
+        bar_region = self._bar_finder.find(image)
         bar_image = image.crop(bar_region.bbox) if bar_region else image
         direction = bar_region.direction if bar_region else "horizontal"
-        result = self._analyzer.analyze(bar_image, direction=direction, downscale=ds)
-
-        # Fallback 조건: 신뢰도 부족 또는 uniform bar 의심 (0%/100% + 낮은 신뢰도)
-        needs_fallback = ds < 1.0 and (
-            result.confidence < 0.5
-            or (result.confidence <= 0.7 and result.progress in (0.0, 100.0))
-        )
-        if needs_fallback:
-            log.debug(
-                "다운스케일 신뢰도 부족 (%.2f, %.1f%%) → 원본 재분석",
-                result.confidence,
-                result.progress,
-            )
-            bar_region = self._bar_finder.find(image, downscale=1.0)
-            bar_image = image.crop(bar_region.bbox) if bar_region else image
-            direction = bar_region.direction if bar_region else "horizontal"
-            result = self._analyzer.analyze(
-                bar_image, direction=direction, downscale=1.0
-            )
+        result = self._analyzer.analyze(bar_image, direction=direction)
 
         return bar_region, result
 

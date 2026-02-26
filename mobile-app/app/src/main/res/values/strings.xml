@@ -72,7 +72,7 @@
     <string name="settings_logout">Log out</string>
     <string name="settings_completion_alerts">Completion alerts</string>
     <string name="settings_stall_warnings">Stall warnings</string>
-    <string name="settings_offline_alerts">Offline alerts</string>
+
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_version">Version</string>

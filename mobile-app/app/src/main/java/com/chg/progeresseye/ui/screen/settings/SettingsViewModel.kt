@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.update
 data class SettingsUiState(
     val completionAlerts: Boolean = true,
     val stallWarnings: Boolean = true,
-    val offlineAlerts: Boolean = false,
+
 )
 
 // ═════════════════════════════════════════════════════════
@@ -31,7 +31,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         SettingsUiState(
             completionAlerts = prefs.getBoolean(KEY_COMPLETION_ALERTS, true),
             stallWarnings = prefs.getBoolean(KEY_STALL_WARNINGS, true),
-            offlineAlerts = prefs.getBoolean(KEY_OFFLINE_ALERTS, false),
+
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -52,18 +52,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun toggleOfflineAlerts() {
-        _uiState.update { current ->
-            val updated = current.copy(offlineAlerts = !current.offlineAlerts)
-            prefs.edit().putBoolean(KEY_OFFLINE_ALERTS, updated.offlineAlerts).apply()
-            updated
-        }
-    }
+
 
     companion object {
         private const val PREFS_NAME = "settings"
         private const val KEY_COMPLETION_ALERTS = "completionAlerts"
         private const val KEY_STALL_WARNINGS = "stallWarnings"
-        private const val KEY_OFFLINE_ALERTS = "offlineAlerts"
+
     }
 }

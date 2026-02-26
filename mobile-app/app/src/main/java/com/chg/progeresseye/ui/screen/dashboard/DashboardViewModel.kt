@@ -1,11 +1,16 @@
 package com.chg.progeresseye.ui.screen.dashboard
 
+import android.app.Activity
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chg.progeresseye.data.model.DashboardUiState
 import com.chg.progeresseye.data.model.DeviceData
 import com.chg.progeresseye.data.model.TaskData
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.ChildEventListener
 import com.google.firebase.database.DataSnapshot
@@ -13,6 +18,8 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.google.android.gms.ads.rewarded.RewardedAd
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +33,8 @@ import kotlinx.coroutines.launch
 // 데이터 경로 분리:
 //   users/{uid}/devices/{id}/...      → ChildEventListener (태스크/스크린샷 변경)
 //   users/{uid}/deviceStatus/{id}     → ValueEventListener (접속 상태, 실시간)
-//   users/{uid}/heartbeat/{id}        → 5분 폴링 (크래시 감지 fallback)
+//   users/{uid}/heartbeat/{id}        → pull-to-refresh 시 읽기 (크래시 감지, 1분 threshold)
+//   users/{uid}/mobileHeartbeat       → 30초마다 모바일 하트비트 갱신
 // ═════════════════════════════════════════════════════════
 
 class DashboardViewModel : ViewModel() {
@@ -37,6 +45,12 @@ class DashboardViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
+    private val _userPlan = MutableStateFlow("free")
+    val userPlan: StateFlow<String> = _userPlan.asStateFlow()
+
+    private val _isRewardedAdReady = MutableStateFlow(false)
+    val isRewardedAdReady: StateFlow<Boolean> = _isRewardedAdReady.asStateFlow()
+
     // Listener A: devices (ChildEventListener — 태스크/스크린샷 변경)
     private var devicesRef: DatabaseReference? = null
     private var devicesChildListener: ChildEventListener? = null
@@ -45,8 +59,17 @@ class DashboardViewModel : ViewModel() {
     private var statusRef: DatabaseReference? = null
     private var statusListener: ValueEventListener? = null
 
-    // Heartbeat polling job (크래시 감지 fallback, 5분 폴링)
-    private var heartbeatPollingJob: Job? = null
+    // Listener C: user plan (ValueEventListener)
+    private var planRef: DatabaseReference? = null
+    private var planListener: ValueEventListener? = null
+
+    // Rewarded ad state
+    private var rewardedAd: RewardedAd? = null
+    private var isRewardedAdLoading = false
+    private var shouldPreloadRewardedAd = false
+
+    // Mobile heartbeat job (30초 간격 RTDB 갱신)
+    private var mobileHeartbeatJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
 
     // Local caches
@@ -70,6 +93,7 @@ class DashboardViewModel : ViewModel() {
         deviceCache.clear()
         statusCache.clear()
         heartbeatCache.clear()
+        shouldPreloadRewardedAd = true
 
         // ── Listener A: devices (ChildEventListener) — 태스크/스크린샷 ──
         devicesRef = db.reference.child("users").child(uid).child("devices")
@@ -127,26 +151,118 @@ class DashboardViewModel : ViewModel() {
         }
         statusRef?.addValueEventListener(statusListener!!)
 
-        // ── Heartbeat polling (5분 주기, 크래시 감지) ──
-        startHeartbeatPolling(uid)
+        // ── Listener C: user plan ──
+        planRef = db.reference.child("users").child(uid).child("plan")
+        planListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val plan = snapshot.getValue(String::class.java)?.lowercase() ?: "free"
+                _userPlan.value = if (plan == "pro") "pro" else "free"
+
+                if (_userPlan.value == "pro") {
+                    rewardedAd = null
+                    _isRewardedAdReady.value = false
+                    shouldPreloadRewardedAd = false
+                } else if (shouldPreloadRewardedAd && rewardedAd == null && !isRewardedAdLoading) {
+                    loadRewardedAd(db.app.applicationContext)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "plan:onCancelled", error.toException())
+            }
+        }
+        planRef?.addValueEventListener(planListener!!)
+
+        // ── Mobile heartbeat (30초 간격 RTDB 갱신) ──
+        startMobileHeartbeat(uid)
     }
 
-    // ── Heartbeat polling ───────────────────────────────────
+    fun loadRewardedAd(context: Context) {
+        if (_userPlan.value != "free") return
+        if (isRewardedAdLoading || rewardedAd != null) return
 
-    private fun startHeartbeatPolling(uid: String) {
-        heartbeatPollingJob?.cancel()
-        heartbeatPollingJob = viewModelScope.launch {
-            // 최초 1회는 즉시 실행, 이후 5분 간격
+        isRewardedAdLoading = true
+        RewardedAd.load(
+            context,
+            REWARDED_TEST_AD_UNIT_ID,
+            AdRequest.Builder().build(),
+            object : RewardedAdLoadCallback() {
+                override fun onAdLoaded(ad: RewardedAd) {
+                    rewardedAd = ad
+                    isRewardedAdLoading = false
+                    shouldPreloadRewardedAd = false
+                    _isRewardedAdReady.value = true
+                }
+
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    Log.w(TAG, "rewarded:onAdFailedToLoad: ${loadAdError.message}")
+                    rewardedAd = null
+                    isRewardedAdLoading = false
+                    _isRewardedAdReady.value = false
+                }
+            },
+        )
+    }
+
+    fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) {
+        if (_userPlan.value != "free") {
+            requestScreenshot(deviceId)
+            return
+        }
+
+        val ad = rewardedAd
+        if (ad == null) {
+            loadRewardedAd(activity.applicationContext)
+            requestScreenshot(deviceId)
+            return
+        }
+
+        rewardedAd = null
+        _isRewardedAdReady.value = false
+
+        var rewardEarned = false
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                if (rewardEarned) {
+                    requestScreenshot(deviceId)
+                }
+                loadRewardedAd(activity.applicationContext)
+            }
+
+            override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
+                Log.w(TAG, "rewarded:onAdFailedToShow: ${adError.message}")
+                requestScreenshot(deviceId)
+                loadRewardedAd(activity.applicationContext)
+            }
+        }
+
+        ad.show(activity) {
+            rewardEarned = true
+        }
+    }
+
+    // ── Mobile heartbeat (30초 간격) ─────────────────────────
+
+    private fun startMobileHeartbeat(uid: String) {
+        mobileHeartbeatJob?.cancel()
+        mobileHeartbeatJob = viewModelScope.launch {
             while (true) {
-                pollHeartbeat(uid)
-                delay(HEARTBEAT_POLL_INTERVAL_MS)
+                db.reference.child("users").child(uid)
+                    .child("mobileHeartbeat")
+                    .setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
+                delay(MOBILE_HEARTBEAT_INTERVAL_MS)
             }
         }
     }
 
-    private fun pollHeartbeat(uid: String) {
+    // ── Heartbeat check (pull-to-refresh 시만) ───────────────
+
+    private fun checkHeartbeat(uid: String) {
         val deviceIds = deviceCache.keys.toList()
-        if (deviceIds.isEmpty()) return
+        if (deviceIds.isEmpty()) {
+            _uiState.value = _uiState.value.copy(isRefreshing = false)
+            return
+        }
 
         val now = System.currentTimeMillis()
         for (deviceId in deviceIds) {
@@ -156,19 +272,19 @@ class DashboardViewModel : ViewModel() {
                     val ts = snapshot.getValue(Long::class.java) ?: 0L
                     heartbeatCache[deviceId] = ts
 
-                    // 크래시 감지: heartbeat 만료 + 아직 online 상태인 기기만 offline 처리
+                    // 크래시 감지: heartbeat 1분 이상 만료 + 아직 online 상태인 기기만 offline 처리
                     val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
                     val currentStatus = statusCache[deviceId]
                     if (isExpired && currentStatus != "offline") {
-                        db.reference
-                            .child("users").child(uid)
+            db.reference.child("users").child(uid)
                             .child("deviceStatus").child(deviceId)
                             .setValue("offline")
                     }
 
                     emitState()
                 }.addOnFailureListener { e ->
-                    Log.e(TAG, "heartbeat poll failed: $deviceId", e)
+                    Log.e(TAG, "heartbeat check failed: $deviceId", e)
+                    _uiState.value = _uiState.value.copy(isRefreshing = false)
                 }
         }
     }
@@ -228,6 +344,7 @@ class DashboardViewModel : ViewModel() {
         val statsSnap = snapshot.child("stats")
         val cpuUsage = statsSnap.child("cpu").getValue(Double::class.java)?.toFloat()
         val gpuUsage = statsSnap.child("gpu").getValue(Double::class.java)?.toFloat()
+        val ramUsage = statsSnap.child("ram").getValue(Double::class.java)?.toFloat()
 
         return DeviceData(
             id = id,
@@ -240,6 +357,7 @@ class DashboardViewModel : ViewModel() {
             screenshotTs = screenshotTs,
             cpuUsage = cpuUsage,
             gpuUsage = gpuUsage,
+            ramUsage = ramUsage,
         )
     }
 
@@ -307,8 +425,8 @@ class DashboardViewModel : ViewModel() {
     fun refresh() {
         val uid = auth.currentUser?.uid ?: return
         _uiState.value = _uiState.value.copy(isRefreshing = true)
-        // 즉시 heartbeat 폴링 + UI 재방출
-        pollHeartbeat(uid)
+        // pull-to-refresh 시에만 heartbeat 확인 → 크래시 감지
+        checkHeartbeat(uid)
     }
 
     // ── Lifecycle: pause / cleanup ──────────────────────
@@ -324,10 +442,20 @@ class DashboardViewModel : ViewModel() {
         }
         statusListener = null
 
-        heartbeatPollingJob?.cancel()
+        planListener?.let { listener ->
+            planRef?.removeEventListener(listener)
+        }
+        planListener = null
+
+        mobileHeartbeatJob?.cancel()
+        mobileHeartbeatJob = null
         screenshotTimeoutJob?.cancel()
         screenshotTimeoutJob = null
-        heartbeatPollingJob = null
+
+        rewardedAd = null
+        _isRewardedAdReady.value = false
+        isRewardedAdLoading = false
+        shouldPreloadRewardedAd = false
     }
 
     override fun onCleared() {
@@ -337,11 +465,12 @@ class DashboardViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "DashboardViewModel"
-        /** Heartbeat polling interval (5 minutes). */
-        private const val HEARTBEAT_POLL_INTERVAL_MS = 5 * 60 * 1000L
-        /** Consider device offline if heartbeat > 5 minutes ago. */
-        private const val OFFLINE_THRESHOLD_MS = 5 * 60 * 1000L
+        /** Mobile heartbeat interval (30 seconds). */
+        private const val MOBILE_HEARTBEAT_INTERVAL_MS = 30_000L
+        /** Consider device offline if heartbeat > 1 minute ago. */
+        private const val OFFLINE_THRESHOLD_MS = 60_000L
         /** Screenshot request timeout. */
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
+        private const val REWARDED_TEST_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
     }
 }

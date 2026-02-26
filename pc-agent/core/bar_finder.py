@@ -62,7 +62,7 @@ class BarFinder:
 
     # ── 공개 API ─────────────────────────────────────────
 
-    def find(self, image: Image.Image, downscale: float = 1.0) -> BarRegion | None:
+    def find(self, image: Image.Image) -> BarRegion | None:
         """이미지에서 진행바 영역을 탐지한다.
 
         탐지 실패 시에도 전체 영역을 fallback으로 반환.
@@ -70,18 +70,13 @@ class BarFinder:
 
         Args:
             image: PIL 이미지 (RGB).
-            downscale: 다운스케일 비율 (0.0~1.0, 1.0=원본). 성능 최적화용.
         """
         if image.mode != "RGB":
             image = image.convert("RGB")
 
         orig_w, orig_h = image.size
 
-        # 다운스케일 적용
-        if 0.0 < downscale < 1.0:
-            new_w = max(3, int(orig_w * downscale))
-            new_h = max(3, int(orig_h * downscale))
-            image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
 
         img = np.array(image)
         h, w = img.shape[:2]
@@ -91,17 +86,6 @@ class BarFinder:
 
         result = self._detect(img, h, w)
         if result is not None:
-            # 다운스케일된 좌표를 원본 크기로 복원
-            if 0.0 < downscale < 1.0:
-                scale = 1.0 / downscale
-                result = BarRegion(
-                    top=int(result.top * scale),
-                    left=int(result.left * scale),
-                    bottom=min(int(result.bottom * scale), orig_h),
-                    right=min(int(result.right * scale), orig_w),
-                    confidence=result.confidence,
-                    direction=result.direction,
-                )
             return result
 
         # fallback

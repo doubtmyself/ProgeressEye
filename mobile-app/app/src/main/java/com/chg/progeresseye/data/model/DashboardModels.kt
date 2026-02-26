@@ -33,6 +33,8 @@ data class DeviceData(
     val cpuUsage: Float? = null,
     /** GPU usage 0-100 (from PC agent). Null if unavailable. */
     val gpuUsage: Float? = null,
+    /** RAM usage 0-100 (from PC agent). Null if unavailable. */
+    val ramUsage: Float? = null,
 )
 
 /** Dashboard screen UI state. */
