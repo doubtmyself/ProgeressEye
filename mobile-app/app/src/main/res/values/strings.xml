@@ -71,4 +71,12 @@
     <string name="settings_logout_title">Log out?</string>
     <string name="settings_logout_message">You will need to sign in again.</string>
     <string name="settings_cancel">Cancel</string>
+
+    <!-- ── FCM Notifications ── -->
+    <string name="fcm_channel_name">Task Alerts</string>
+    <string name="fcm_channel_description">Notifications for task completion and stall events</string>
+    <string name="fcm_task_completed_title">Task Completed</string>
+    <string name="fcm_task_completed_body">%1$s has finished successfully.</string>
+    <string name="fcm_task_frozen_title">Task Stalled</string>
+    <string name="fcm_task_frozen_body">%1$s is not making progress.</string>
 </resources>
