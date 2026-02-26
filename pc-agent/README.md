@@ -69,6 +69,8 @@ winget install UB-Mannheim.TesseractOCR
 - `sseclient-py` — Firebase RTDB SSE 스트리밍 (명령 수신)
 - `keyring` — Windows 자격증명 관리자에 토큰 안전 저장
 - `PyQt6` — UI 프레임워크 (다크 테마)
+- `psutil` — CPU 사용량 모니터링
+- `nvidia-ml-py` — NVIDIA GPU 사용량·온도 모니터링
 
 ## 주요 기능
 
@@ -202,6 +204,7 @@ pc-agent/
 │   ├── ocr_reader.py        # pytesseract OCR 숫자 감지
 │   ├── freeze_detector.py   # 프리징 감지
 │   └── scheduler.py         # 모니터링 스케줄러
+│   └── system_monitor.py   # CPU/GPU 사용량·온도 수집 (psutil + nvidia-ml-py)
 ├── firebase/
 │   ├── realtime_db.py       # Firebase RTDB REST API 래퍼
 │   └── device_manager.py    # 기기 등록/충돌 관리
