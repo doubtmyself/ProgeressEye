@@ -65,12 +65,4 @@
     <string name="settings_logout_title">로그아웃 하시겠습니까?</string>
     <string name="settings_logout_message">다시 로그인해야 합니다.</string>
     <string name="settings_cancel">취소</string>
-
-    <!-- ── FCM Notifications ── -->
-    <string name="fcm_channel_name">작업 알림</string>
-    <string name="fcm_channel_description">작업 완료 및 멈춤 이벤트 알림</string>
-    <string name="fcm_task_completed_title">작업 완료</string>
-    <string name="fcm_task_completed_body">%1$s이(가) 완료되었습니다.</string>
-    <string name="fcm_task_frozen_title">작업 멈춤</string>
-    <string name="fcm_task_frozen_body">%1$s이(가) 진행되지 않고 있습니다.</string>
 </resources>

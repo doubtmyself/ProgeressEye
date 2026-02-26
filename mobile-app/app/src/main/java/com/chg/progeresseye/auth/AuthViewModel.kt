@@ -1,12 +1,9 @@
 package com.chg.progeresseye.auth
 
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.chg.progeresseye.fcm.ProgressEyeMessagingService
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,13 +36,6 @@ class AuthViewModel(
     val isSignedIn: Boolean
         get() = repository.getCurrentUser() != null
 
-    init {
-        // 이미 로그인 상태라면 FCM 토큰을 등록
-        if (isSignedIn) {
-            registerFcmToken()
-        }
-    }
-
     fun signInWithGoogle(context: Context, webClientId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
@@ -53,7 +43,6 @@ class AuthViewModel(
             when (val result = repository.signInWithGoogle(context, webClientId)) {
                 is GoogleSignInResult.Success -> {
                     _uiState.value = AuthUiState(user = result.user)
-                    registerFcmToken()
                 }
 
                 is GoogleSignInResult.Cancelled -> {
@@ -72,7 +61,6 @@ class AuthViewModel(
 
     fun signOut(context: Context) {
         viewModelScope.launch {
-            unregisterFcmToken()
             repository.signOut(context)
             _uiState.value = AuthUiState()
         }
@@ -80,25 +68,5 @@ class AuthViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
-    }
-
-    // ── FCM token management ───────────────────────────────
-
-    private fun registerFcmToken() {
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            ProgressEyeMessagingService.registerToken(token)
-        }.addOnFailureListener { e ->
-            Log.e(TAG, "Failed to get FCM token", e)
-        }
-    }
-
-    private fun unregisterFcmToken() {
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            ProgressEyeMessagingService.unregisterToken(token)
-        }
-    }
-
-    companion object {
-        private const val TAG = "AuthViewModel"
     }
 }
