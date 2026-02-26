@@ -51,6 +51,16 @@
               }
             }
           }
+        },
+        "alerts": {
+          "$alertId": {
+            ".validate": "newData.hasChildren(['type', 'body', 'ts'])"
+          }
+        },
+        "fcmTokens": {
+          "$tokenId": {
+            ".validate": "newData.hasChild('token')"
+          }
         }
       }
     }
