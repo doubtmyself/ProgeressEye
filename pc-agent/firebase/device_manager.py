@@ -41,6 +41,16 @@ class DeviceManager:
             f"users/{self._uid}/deviceStatus", {self._device_id: status},
         )
 
+    def set_monitoring(self, active: bool) -> None:
+        """모니터링 상태를 기록한다 (deviceStatus 경로 확장).
+
+        deviceStatus 값:
+          "monitoring" — 온라인 + 모니터링 중
+          "online"     — 온라인 + 대기
+          "offline"    — 오프라인
+        """
+        self.update_status("monitoring" if active else "online")
+
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""
         self.update_status("offline")

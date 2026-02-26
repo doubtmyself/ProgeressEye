@@ -647,6 +647,12 @@ class ProgressEyeApp:
             else:
                 # 비활성화 — 스케줄러에서 영역 제거
                 self._scheduler.remove_region(region_id)
+                # RTDB에 idle 상태 기록
+                if self._device_manager:
+                    self._device_manager.sync_tasks({region_id: {"s": "i"}})
+        elif not enabled and self._device_manager:
+            # 모니터링 미실행 중 비활성화 → RTDB에도 idle 기록
+            self._device_manager.sync_tasks({region_id: {"s": "i"}})
         log.info("영역 토글: %s → %s", region_id, "활성" if enabled else "비활성")
 
     def _update_region_area(self, region_id: str, area: dict) -> None:
@@ -988,6 +994,8 @@ class ProgressEyeApp:
             self._tray.update_tooltip("ProgressEye - 대기 중")
             self._set_display_required(False)
             log.info("모니터링 자동 정지 (활성 영역 없음)")
+            if self._device_manager:
+                self._device_manager.set_monitoring(False)
 
     def _set_display_required(self, required: bool) -> None:
         """모니터 절전 방지를 설정/해제한다.
@@ -1016,11 +1024,13 @@ class ProgressEyeApp:
             self._set_display_required(False)
             self._tray.update_tooltip("ProgressEye - 대기 중")
             log.info("모니터링 정지")
+            if self._device_manager:
+                self._device_manager.set_monitoring(False)
             # 모니터링 정지 시 템플릿 유지 (등록 시점 기준)
         else:
             regions = [r for r in self._config.regions if r.get("enabled", True)]
             if not regions:
-                log.warning("활성화된 영역 없음 — 영역을 추가하거나 체크하세요")
+                self._tray.show_notification("ProgressEye", t("no_checked_regions"))
                 return
             interval = self._config.get("capture.interval_seconds", 30)
             self._freeze_detector.reset_all()
@@ -1034,6 +1044,13 @@ class ProgressEyeApp:
             self._tray.update_tooltip("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
             self._set_display_required(True)
+            if self._device_manager:
+                self._device_manager.set_monitoring(True)
+                # 미체크(비활성) 작업을 idle 상태로 RTDB에 기록
+                disabled = [r for r in self._config.regions if not r.get("enabled", True)]
+                if disabled:
+                    idle_batch = {r["id"]: {"s": "i"} for r in disabled}
+                    self._device_manager.sync_tasks(idle_batch)
             # 템플릿 이미지가 없는 영역은 현재 화면으로 템플릿 생성 (앱 재시작 후 복원된 영역)
             for r in regions:
                 rid = r["id"]

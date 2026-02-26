@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -196,8 +197,10 @@ private fun DeviceCard(
         border = BorderStroke(1.dp, SurfaceContainerHighDark),
     ) {
         Column {
-            DeviceHeader(name = device.name, isOnline = device.isOnline)
+            DeviceHeader(name = device.name, isOnline = device.isOnline, isMonitoring = device.isMonitoring)
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
+
+            val isActive = device.isOnline && device.isMonitoring
 
             if (device.tasks.isEmpty()) {
                 Box(
@@ -217,7 +220,7 @@ private fun DeviceCard(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    device.tasks.forEach { task -> TaskItem(task = task) }
+                    device.tasks.forEach { task -> TaskItem(task = task, isActive = isActive) }
                 }
             }
 
@@ -394,7 +397,7 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun DeviceHeader(name: String, isOnline: Boolean) {
+private fun DeviceHeader(name: String, isOnline: Boolean, isMonitoring: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -435,17 +438,27 @@ private fun DeviceHeader(name: String, isOnline: Boolean) {
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(if (isOnline) StatusComplete else StatusOffline),
+                        .background(
+                            when {
+                                isOnline && isMonitoring -> StatusComplete
+                                isOnline -> Amber500
+                                else -> StatusOffline
+                            }
+                        ),
                 )
                 Text(
-                    text = if (isOnline) {
-                        stringResource(R.string.dashboard_status_online)
-                    } else {
-                        stringResource(R.string.dashboard_status_offline)
+                    text = when {
+                        isOnline && isMonitoring -> stringResource(R.string.dashboard_status_monitoring)
+                        isOnline -> stringResource(R.string.dashboard_status_standby)
+                        else -> stringResource(R.string.dashboard_status_offline)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    color = if (isOnline) StatusComplete else StatusOffline,
+                    color = when {
+                        isOnline && isMonitoring -> StatusComplete
+                        isOnline -> Amber500
+                        else -> StatusOffline
+                    },
                 )
             }
             // TODO: CPU usage, temperature metrics (MetricChip) — 추후 구현
@@ -462,8 +475,11 @@ private fun DeviceHeader(name: String, isOnline: Boolean) {
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun TaskItem(task: TaskData) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun TaskItem(task: TaskData, isActive: Boolean) {
+    Column(
+        modifier = Modifier.alpha(if (isActive) 1f else 0.45f),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -549,6 +565,7 @@ private fun StatusBadge(status: String) {
         TaskStatus.RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, stringResource(R.string.dashboard_task_running))
         TaskStatus.COMPLETED -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, stringResource(R.string.dashboard_task_done))
         TaskStatus.FROZEN -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, stringResource(R.string.dashboard_task_stalled))
+        TaskStatus.IDLE -> Triple(Slate400.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_idle))
         else -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_unknown))
     }
     Surface(shape = RoundedCornerShape(4.dp), color = bgColor) {

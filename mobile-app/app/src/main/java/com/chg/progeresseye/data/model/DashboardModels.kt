@@ -11,7 +11,7 @@ data class TaskData(
     val label: String,
     /** Progress fraction 0f..1f (RTDB stores 0-100, converted on parse). */
     val progress: Float,
-    /** Status code: "r" = running, "f" = frozen/stalled, "c" = completed. */
+    /** Status code: "r" = running, "f" = frozen/stalled, "c" = completed, "i" = idle (unchecked). */
     val status: String,
 )
 
@@ -22,6 +22,8 @@ data class DeviceData(
     val platform: String,
     val isOnline: Boolean,
     val lastSeen: Long,
+    /** True when PC is actively monitoring (deviceStatus == "monitoring"). */
+    val isMonitoring: Boolean = false,
     val tasks: List<TaskData>,
     /** Latest screenshot download URL from Firebase Storage. */
     val screenshotUrl: String? = null,
@@ -47,4 +49,5 @@ object TaskStatus {
     const val RUNNING = "r"
     const val FROZEN = "f"
     const val COMPLETED = "c"
+    const val IDLE = "i"
 }

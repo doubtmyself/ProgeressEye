@@ -159,7 +159,7 @@ class DashboardViewModel : ViewModel() {
                     // 크래시 감지: heartbeat 만료 + 아직 online 상태인 기기만 offline 처리
                     val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
                     val currentStatus = statusCache[deviceId]
-                    if (isExpired && currentStatus == "online") {
+                    if (isExpired && currentStatus != "offline") {
                         db.reference
                             .child("users").child(uid)
                             .child("deviceStatus").child(deviceId)
@@ -177,9 +177,11 @@ class DashboardViewModel : ViewModel() {
 
     private fun emitState() {
         val devices = deviceCache.values.map { device ->
-            val isOnline = statusCache[device.id] == "online"
+            val rawStatus = statusCache[device.id] ?: "offline"
+            val isOnline = rawStatus == "online" || rawStatus == "monitoring"
+            val isMonitoring = rawStatus == "monitoring"
             val heartbeatTs = heartbeatCache[device.id] ?: 0L
-            device.copy(isOnline = isOnline, lastSeen = heartbeatTs)
+            device.copy(isOnline = isOnline, isMonitoring = isMonitoring, lastSeen = heartbeatTs)
         }
 
         val currentLoading = _uiState.value.screenshotLoadingDeviceId

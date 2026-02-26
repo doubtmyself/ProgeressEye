@@ -12,10 +12,13 @@
     <string name="dashboard_no_tasks">No active tasks</string>
     <string name="dashboard_status_online">Online</string>
     <string name="dashboard_status_offline">Offline</string>
+    <string name="dashboard_status_monitoring">Monitoring</string>
+    <string name="dashboard_status_standby">Standby</string>
     <string name="dashboard_task_running">Running</string>
     <string name="dashboard_task_done">Done</string>
     <string name="dashboard_task_stalled">Stalled</string>
     <string name="dashboard_task_unknown">Unknown</string>
+    <string name="dashboard_task_idle">Idle</string>
     <string name="dashboard_frozen_warning">No change detected</string>
     <string name="dashboard_completed">Completed</string>
     <string name="dashboard_screenshot">Screenshot</string>
