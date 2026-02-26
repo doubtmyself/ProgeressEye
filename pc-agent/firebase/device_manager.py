@@ -24,7 +24,6 @@ class DeviceManager:
             "name": device_name or platform.node(),
             "platform": platform.platform(),
             "status": "online",
-            "lastSeen": now,
             "appVersion": "1.0.0",
             "createdAt": now,
         }
@@ -33,14 +32,8 @@ class DeviceManager:
         self._db.patch(f"users/{self._uid}/heartbeat", {self._device_id: now})
 
     def update_status(self, status: str = "online") -> None:
-        """상태와 마지막 접속 시각을 갱신한다."""
-        self._db.patch(
-            self._path,
-            {
-                "status": status,
-                "lastSeen": int(time.time() * 1000),
-            },
-        )
+        """상태를 갱신한다."""
+        self._db.patch(self._path, {"status": status})
 
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""
@@ -71,7 +64,7 @@ class DeviceManager:
         Args:
             task_updates: {region_id: {"p": progress, "s": status_code}} 형식.
         """
-        payload: dict[str, Any] = {"lastSeen": int(time.time() * 1000)}
+        payload: dict[str, Any] = {}
         for region_id, data in task_updates.items():
             for key, value in data.items():
                 payload[f"tasks/{region_id}/{key}"] = value
@@ -112,8 +105,8 @@ class DeviceManager:
         self._db.patch(self._user_path, {"activeDevice": None})
 
     def is_other_device_online(self, other_device_id: str) -> bool:
-        """다른 디바이스가 온라인인지 확인한다 (5분 이내 lastSeen)."""
-        data = self._db.get(f"users/{self._uid}/devices/{other_device_id}/lastSeen")
+        """다른 디바이스가 온라인인지 확인한다 (5분 이내 heartbeat)."""
+        data = self._db.get(f"users/{self._uid}/heartbeat/{other_device_id}")
         if not isinstance(data, (int, float)):
             return False
         elapsed = time.time() * 1000 - data

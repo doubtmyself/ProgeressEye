@@ -153,8 +153,6 @@ class DashboardViewModel : ViewModel() {
         val id = snapshot.key ?: return null
         val name = snapshot.child("name").getValue(String::class.java) ?: id
         val platform = snapshot.child("platform").getValue(String::class.java) ?: ""
-        val lastSeen = snapshot.child("lastSeen").getValue(Long::class.java) ?: 0L
-
         val tasks = snapshot.child("tasks").children.mapNotNull { taskSnap ->
             parseTask(taskSnap)
         }
@@ -169,7 +167,7 @@ class DashboardViewModel : ViewModel() {
             name = name,
             platform = platform,
             isOnline = false, // will be overridden by heartbeat in emitState()
-            lastSeen = lastSeen,
+            lastSeen = 0L, // heartbeat 경로에서 emitState()가 덮어씀
             tasks = tasks,
             screenshotUrl = screenshotUrl,
             screenshotTs = screenshotTs,
