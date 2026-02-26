@@ -224,15 +224,26 @@ class DashboardViewModel : ViewModel() {
         val screenshotUrl = screenshotLatest.child("url").getValue(String::class.java)
         val screenshotTs = screenshotLatest.child("ts").getValue(Long::class.java) ?: 0L
 
+        // Hardware stats
+        val statsSnap = snapshot.child("stats")
+        val cpuUsage = statsSnap.child("cpu").getValue(Double::class.java)?.toFloat()
+        val gpuUsage = statsSnap.child("gpu").getValue(Double::class.java)?.toFloat()
+        val gpuTemp = statsSnap.child("gpuTemp").getValue(Double::class.java)?.toFloat()
+        val gpuName = statsSnap.child("gpuName").getValue(String::class.java)
+
         return DeviceData(
             id = id,
             name = name,
             platform = platform,
-            isOnline = false, // statusCache에서 emitState()가 덮어씀
-            lastSeen = 0L, // heartbeatCache에서 emitState()가 덮어씀
+            isOnline = false, // statusCache에서 emitState()가 덮어씄
+            lastSeen = 0L, // heartbeatCache에서 emitState()가 덮어씄
             tasks = tasks,
             screenshotUrl = screenshotUrl,
             screenshotTs = screenshotTs,
+            cpuUsage = cpuUsage,
+            gpuUsage = gpuUsage,
+            gpuTemp = gpuTemp,
+            gpuName = gpuName,
         )
     }
 

@@ -29,6 +29,14 @@ data class DeviceData(
     val screenshotUrl: String? = null,
     /** Latest screenshot epoch seconds. */
     val screenshotTs: Long = 0L,
+    /** CPU usage 0-100 (from PC agent). Null if unavailable. */
+    val cpuUsage: Float? = null,
+    /** GPU usage 0-100 (from PC agent). Null if unavailable. */
+    val gpuUsage: Float? = null,
+    /** GPU temperature in Celsius. Null if unavailable. */
+    val gpuTemp: Float? = null,
+    /** GPU device name (e.g. "NVIDIA GeForce RTX 4070"). */
+    val gpuName: String? = null,
 )
 
 /** Dashboard screen UI state. */

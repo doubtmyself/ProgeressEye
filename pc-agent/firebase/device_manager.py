@@ -114,6 +114,15 @@ class DeviceManager:
                 payload[f"tasks/{region_id}/{key}"] = value
         self._db.patch(self._path, payload)
 
+    def sync_stats(self, stats: dict[str, object]) -> None:
+        """하드웨어 stats를 RTDB에 기록한다.
+
+        Args:
+            stats: {"cpu": float, "gpu": int, "gpuTemp": int, "gpuName": str}
+        """
+        if not stats:
+            return
+        self._db.patch(f"{self._path}/stats", stats)
     def delete_task(self, region_id: str) -> None:
         """특정 작업 데이터를 삭제한다."""
         self._db.delete(f"{self._path}/tasks/{region_id}")

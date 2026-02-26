@@ -34,6 +34,7 @@ from core.bar_finder import BarFinder, BarRegion  # pyright: ignore[reportImplic
 from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
 from core.freeze_detector import FreezeDetector  # pyright: ignore[reportImplicitRelativeImport]
 from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRelativeImport]
+from core.system_monitor import collect_stats, warmup_cpu_percent  # pyright: ignore[reportImplicitRelativeImport]
 from ui.area_selector import AreaSelector  # pyright: ignore[reportImplicitRelativeImport]
 from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from core.ocr_reader import OcrReader  # pyright: ignore[reportImplicitRelativeImport]
@@ -140,6 +141,8 @@ class ProgressEyeApp:
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
+        self._main_window.test_stall_requested.connect(self._on_test_stall)
+        self._main_window.test_complete_requested.connect(self._on_test_complete)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -338,6 +341,9 @@ class ProgressEyeApp:
         heartbeat_timer.start(90_000)
         self._heartbeat_timer = heartbeat_timer
 
+        # CPU 사용량 측정 워밍업 (첫 호출은 0.0 반환하므로 미리 호출)
+        warmup_cpu_percent()
+
         # Firebase Storage 초기화
         self._firebase_storage = FirebaseStorage(
             bucket="progresseye-49244.firebasestorage.app",
@@ -361,6 +367,9 @@ class ProgressEyeApp:
         if self._device_manager:
             try:
                 self._device_manager.heartbeat()
+                stats = collect_stats()
+                if stats:
+                    self._device_manager.sync_stats(stats)
             except Exception as exc:
                 log.debug("하트비트 전송 실패: %s", exc)
 
@@ -1338,11 +1347,15 @@ class ProgressEyeApp:
                     self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
 
     def _on_cycle_complete(self) -> None:
-        """캡처 사이클 완료 — 배치 Firebase 전송."""
-        if not self._pending_firebase_batch or not self._device_manager:
+        """캡처 사이클 완료 — 배치 Firebase 전송 + 하드웨어 stats."""
+        if not self._device_manager:
             return
         try:
-            self._device_manager.sync_tasks(dict(self._pending_firebase_batch))
+            if self._pending_firebase_batch:
+                self._device_manager.sync_tasks(dict(self._pending_firebase_batch))
+            stats = collect_stats()
+            if stats:
+                self._device_manager.sync_stats(stats)
         except Exception as exc:
             log.debug("Firebase 배치 전송 실패: %s", exc)
         self._pending_firebase_batch.clear()
@@ -1353,6 +1366,36 @@ class ProgressEyeApp:
         # 임계값 변경시 알람 상태 초기화 (재알람 가능)
         self._alerted_regions.pop(region_id, None)
         log.info("[완료 알람] %s 임계값 변경: %d%%", region_id, threshold)
+
+    def _on_test_stall(self, region_id: str) -> None:
+        """프리징 테스트 — RTDB에 stall 알림을 기록한다 (FCM 파이프라인 검증용)."""
+        if not self._device_manager:
+            self._tray.show_notification("ProgressEye", "Firebase not connected")
+            return
+        label = region_id
+        for r in self._config.regions:
+            if r["id"] == region_id:
+                label = r.get("label", region_id)
+                break
+        stall_msg = t("stall_detected").format(label=label, minutes=5)
+        self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
+        self._tray.show_notification("ProgressEye", f"[TEST] {stall_msg}")
+        log.info("[TEST] 프리징 알림 전송: %s", region_id)
+
+    def _on_test_complete(self, region_id: str) -> None:
+        """완료 테스트 — RTDB에 completion 알림을 기록한다 (FCM 파이프라인 검증용)."""
+        if not self._device_manager:
+            self._tray.show_notification("ProgressEye", "Firebase not connected")
+            return
+        label = region_id
+        for r in self._config.regions:
+            if r["id"] == region_id:
+                label = r.get("label", region_id)
+                break
+        alert_msg = t("alert_triggered").format(label=label, progress=100.0)
+        self._device_manager.push_alert("completion", "ProgressEye", alert_msg)
+        self._tray.show_notification("ProgressEye", f"[TEST] {alert_msg}")
+        log.info("[TEST] 완료 알림 전송: %s", region_id)
 
     def _show_main_window(self) -> None:
         """메인 창을 표시한다. pystray 스레드에서 호출됨."""
