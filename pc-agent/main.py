@@ -333,12 +333,12 @@ class ProgressEyeApp:
         except Exception as exc:
             log.debug("프로필 저장 실패: %s", exc)
 
-        # 하트비트 타이머 (90초 — 모바일 온라인 판정 2분 이내 충분)
+        # 하트비트 타이머 (30초 — 모바일 오프라인 판정 1분 threshold)
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         heartbeat_timer = QTimer()
         heartbeat_timer.timeout.connect(self._send_heartbeat)
-        heartbeat_timer.start(90_000)
+        heartbeat_timer.start(30_000)
         self._heartbeat_timer = heartbeat_timer
 
         # CPU 사용량 측정 워밍업 (첫 호출은 0.0 반환하므로 미리 호출)
@@ -1535,7 +1535,14 @@ class ProgressEyeApp:
 
 
 def main() -> None:
-    """메인 함수."""
+    """메인 함수. -d 옵션으로 디버그 로그 활성화."""
+    if "-d" in sys.argv or "--debug" in sys.argv:
+        import logging
+        from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
+        log.setLevel(logging.DEBUG)
+        for handler in log.handlers:
+            handler.setLevel(logging.DEBUG)
+        log.debug("디버그 모드 활성화")
     app = ProgressEyeApp()
     sys.exit(app.run())
 

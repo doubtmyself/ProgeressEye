@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -83,6 +89,7 @@ fun AlertsContent(modifier: Modifier = Modifier) {
         else -> AlertList(
             alerts = alerts,
             onAlertClick = { viewModel.markAsRead(it.id) },
+            onDelete = { viewModel.deleteAlert(it.id) },
             onClearAll = { viewModel.clearAll() },
             modifier = modifier,
         )
@@ -132,6 +139,7 @@ private fun EmptyAlertsState(modifier: Modifier = Modifier) {
 private fun AlertList(
     alerts: List<AlertItem>,
     onAlertClick: (AlertItem) -> Unit,
+    onDelete: (AlertItem) -> Unit,
     onClearAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -167,11 +175,55 @@ private fun AlertList(
 
         // ── Alert cards ──
         items(alerts, key = { it.id }) { alert ->
-            AlertCard(
+            SwipeToDismissAlertCard(
                 alert = alert,
                 onClick = { onAlertClick(alert) },
+                onDismiss = { onDelete(alert) },
             )
         }
+    }
+}
+
+// ═════════════════════════════════════════════════════════
+// Swipe-to-Dismiss wrapper
+// ═════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDismissAlertCard(
+    alert: AlertItem,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState()
+
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart ||
+            dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd
+        ) {
+            onDismiss()
+        }
+    }
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(StatusOffline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = null,
+                    tint = StatusOffline,
+                )
+            }
+        },
+    ) {
+        AlertCard(alert = alert, onClick = onClick)
     }
 }
 
@@ -341,6 +393,7 @@ private fun AlertsListPreview() {
         AlertList(
             alerts = previewAlerts,
             onAlertClick = {},
+            onDelete = {},
             onClearAll = {},
             modifier = Modifier.background(BackgroundDark),
         )

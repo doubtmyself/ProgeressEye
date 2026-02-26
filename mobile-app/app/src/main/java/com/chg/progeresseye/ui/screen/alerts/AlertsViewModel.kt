@@ -103,6 +103,13 @@ class AlertsViewModel : ViewModel() {
         }
     }
 
+    /** Delete a single alert from RTDB + local list. */
+    fun deleteAlert(alertId: String) {
+        alertsRef?.child(alertId)?.removeValue()
+        readAlertIds.remove(alertId)
+        _alerts.update { list -> list.filter { it.id != alertId } }
+    }
+
     /** Clear all alerts. */
     fun clearAll() {
         readAlertIds.clear()
