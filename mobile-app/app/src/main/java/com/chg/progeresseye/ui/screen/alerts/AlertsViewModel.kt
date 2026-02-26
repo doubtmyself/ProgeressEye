@@ -1,27 +1,97 @@
 package com.chg.progeresseye.ui.screen.alerts
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.chg.progeresseye.data.model.AlertItem
 import com.chg.progeresseye.data.model.AlertType
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 // ═════════════════════════════════════════════════════════
-// AlertsViewModel — in-memory alert list
-// TODO: Replace with FCM + local Room DB storage
+// AlertsViewModel — RTDB listener for user alerts
 // ═════════════════════════════════════════════════════════
 
 class AlertsViewModel : ViewModel() {
+    private val auth = FirebaseAuth.getInstance()
+    private val db = FirebaseDatabase.getInstance()
 
-    private val _alerts = MutableStateFlow(
-        if (USE_MOCK_DATA) mockAlerts() else emptyList()
-    )
+    private val _alerts = MutableStateFlow<List<AlertItem>>(emptyList())
     val alerts: StateFlow<List<AlertItem>> = _alerts.asStateFlow()
+
+    private var alertsRef: DatabaseReference? = null
+    private var alertsListener: ValueEventListener? = null
+    private val readAlertIds = mutableSetOf<String>()
+
+    init {
+        startListening()
+    }
+
+    private fun startListening() {
+        if (alertsListener != null) return
+
+        val uid = auth.currentUser?.uid
+        if (uid == null) {
+            _alerts.value = emptyList()
+            return
+        }
+
+        alertsRef = db.reference.child("users").child(uid).child("alerts")
+        alertsListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val parsedAlerts = snapshot.children
+                    .mapNotNull { parseAlert(it) }
+                    .sortedByDescending { it.timestamp }
+                    .map { alert ->
+                        if (readAlertIds.contains(alert.id)) alert.copy(isRead = true) else alert
+                    }
+
+                _alerts.value = parsedAlerts
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "alerts:onCancelled", error.toException())
+            }
+        }
+        alertsRef?.addValueEventListener(alertsListener!!)
+    }
+
+    private fun parseAlert(snapshot: DataSnapshot): AlertItem? {
+        val id = snapshot.key ?: return null
+        val type = when (snapshot.child("type").getValue(String::class.java)) {
+            "completion" -> AlertType.COMPLETION
+            "stall" -> AlertType.STALL
+            "image_change" -> AlertType.IMAGE_CHANGE
+            "offline" -> AlertType.OFFLINE
+            else -> return null
+        }
+
+        val title = snapshot.child("title").getValue(String::class.java) ?: "ProgressEye"
+        val body = snapshot.child("body").getValue(String::class.java) ?: return null
+        val deviceId = snapshot.child("deviceId").getValue(String::class.java) ?: ""
+        val timestamp = snapshot.child("ts").getValue(Long::class.java) ?: 0L
+
+        return AlertItem(
+            id = id,
+            type = type,
+            title = title,
+            body = body,
+            deviceName = deviceId,
+            timestamp = timestamp,
+            isRead = readAlertIds.contains(id),
+        )
+    }
 
     /** Mark a single alert as read. */
     fun markAsRead(alertId: String) {
+        readAlertIds.add(alertId)
         _alerts.update { list ->
             list.map { if (it.id == alertId) it.copy(isRead = true) else it }
         }
@@ -29,45 +99,20 @@ class AlertsViewModel : ViewModel() {
 
     /** Clear all alerts. */
     fun clearAll() {
-        _alerts.update { emptyList() }
+        readAlertIds.clear()
+        alertsRef?.removeValue()
+        _alerts.value = emptyList()
+    }
+
+    override fun onCleared() {
+        alertsListener?.let { listener ->
+            alertsRef?.removeEventListener(listener)
+        }
+        alertsListener = null
+        super.onCleared()
     }
 
     companion object {
-        /** Flip to `false` to start with an empty list. */
-        const val USE_MOCK_DATA = true
-
-        // TODO: Replace with FCM + local Room DB storage
-        private fun mockAlerts(): List<AlertItem> {
-            val now = System.currentTimeMillis()
-            return listOf(
-                AlertItem(
-                    id = "alert_1",
-                    type = AlertType.COMPLETION,
-                    title = "Rendering Complete",
-                    body = "Premiere Pro rendering finished — 100 %.",
-                    deviceName = "DESKTOP-ABC",
-                    timestamp = now - 12 * 60_000,  // 12 min ago
-                    isRead = false,
-                ),
-                AlertItem(
-                    id = "alert_2",
-                    type = AlertType.STALL,
-                    title = "Download Stalled",
-                    body = "File download on WORKSTATION-2 hasn't progressed in 15 min.",
-                    deviceName = "WORKSTATION-2",
-                    timestamp = now - 3 * 3_600_000, // 3 hours ago
-                    isRead = false,
-                ),
-                AlertItem(
-                    id = "alert_3",
-                    type = AlertType.OFFLINE,
-                    title = "Device Offline",
-                    body = "LAPTOP-HOME lost connection.",
-                    deviceName = "LAPTOP-HOME",
-                    timestamp = now - 26 * 3_600_000, // yesterday
-                    isRead = true,
-                ),
-            )
-        }
+        private const val TAG = "AlertsViewModel"
     }
 }

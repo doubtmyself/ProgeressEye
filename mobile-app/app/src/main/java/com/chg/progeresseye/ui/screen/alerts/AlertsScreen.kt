@@ -249,6 +249,7 @@ private fun AlertCard(alert: AlertItem, onClick: () -> Unit) {
 private fun alertVisuals(type: AlertType): Pair<ImageVector, Color> = when (type) {
     AlertType.COMPLETION -> Icons.Outlined.CheckCircle to StatusComplete
     AlertType.STALL      -> Icons.Outlined.Warning     to StatusStalled
+    AlertType.IMAGE_CHANGE -> Icons.Outlined.NotificationsNone to Primary
     AlertType.OFFLINE    -> Icons.Outlined.CloudOff     to StatusOffline
 }
 

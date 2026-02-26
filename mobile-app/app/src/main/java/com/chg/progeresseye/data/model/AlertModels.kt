@@ -6,7 +6,7 @@ package com.chg.progeresseye.data.model
 // ═════════════════════════════════════════════════════════
 
 /** Alert category — drives icon & color in the UI. */
-enum class AlertType { COMPLETION, STALL, OFFLINE }
+enum class AlertType { COMPLETION, STALL, IMAGE_CHANGE, OFFLINE }
 
 /** Single alert/notification entry. */
 data class AlertItem(
