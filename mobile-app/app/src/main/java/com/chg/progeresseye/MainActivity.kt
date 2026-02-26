@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.chg.progeresseye.auth.AuthViewModel
+import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
@@ -69,6 +70,9 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("main") {
+                        LaunchedEffect(Unit) {
+                            FCMService.registerToken()
+                        }
                         MainScreen(
                             onSignOut = {
                                 authViewModel.signOut(this@MainActivity)
