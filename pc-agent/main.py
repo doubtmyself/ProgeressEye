@@ -77,7 +77,9 @@ class ProgressEyeApp:
         self._heartbeat_timer: QTimer | None = None
         self._command_listener: CommandListener | None = None
         self._firebase_storage: FirebaseStorage | None = None
-        self._screenshot_cache: dict[str, tuple[str, str]] = {}  # device_id -> (jpeg_hash, download_url)
+        self._screenshot_cache: dict[
+            str, tuple[str, str]
+        ] = {}  # device_id -> (jpeg_hash, download_url)
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
         self._bar_downscale: float = 0.5  # 바 분석 다운스케일 비율 (성능 최적화)
@@ -122,7 +124,6 @@ class ProgressEyeApp:
         self._cmd_poll_timer = QTimer()
         self._cmd_poll_timer.timeout.connect(self._process_commands)
         self._cmd_poll_timer.start(200)
-
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
@@ -320,7 +321,6 @@ class ProgressEyeApp:
 
         # 프로필 저장
         try:
-
             profile_data = {
                 "email": self._config.get("auth.email", ""),
                 "displayName": self._token_manager.load_display_name() or "",
@@ -432,7 +432,9 @@ class ProgressEyeApp:
             else:
                 # 화면 변경됨 — 업로드
                 storage_path = f"screenshots/{uid}/{device_id}/latest.jpg"
-                download_url = self._firebase_storage.upload_jpeg(storage_path, jpeg_bytes)
+                download_url = self._firebase_storage.upload_jpeg(
+                    storage_path, jpeg_bytes
+                )
                 self._screenshot_cache[device_id] = (jpeg_hash, download_url)
                 log.info("[SCREENSHOT] 업로드 완료: %s", storage_path)
 
@@ -449,6 +451,7 @@ class ProgressEyeApp:
                     self._realtime_db.delete(f"users/{uid}/commands/screenshot")
             except Exception:
                 pass
+
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
@@ -1047,7 +1050,9 @@ class ProgressEyeApp:
             if self._device_manager:
                 self._device_manager.set_monitoring(True)
                 # 미체크(비활성) 작업을 idle 상태로 RTDB에 기록
-                disabled = [r for r in self._config.regions if not r.get("enabled", True)]
+                disabled = [
+                    r for r in self._config.regions if not r.get("enabled", True)
+                ]
                 if disabled:
                     idle_batch = {r["id"]: {"s": "i"} for r in disabled}
                     self._device_manager.sync_tasks(idle_batch)
@@ -1119,6 +1124,15 @@ class ProgressEyeApp:
                             title="ProgressEye", message=_msg
                         )
                     )
+                    if self._device_manager:
+                        self._device_manager.push_alert(
+                            "image_change", "ProgressEye", complete_msg
+                        )
+                    # 완료 처리된 작업은 모니터링 중지 (반복 알림 방지)
+                    self._scheduler.remove_region(region_id)
+                    if self._scheduler.region_count == 0:
+                        log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
+                        self._action_queue.put(self._auto_stop_monitoring)
                 else:
                     # 경고 + 해당 영역 모니터링 중지
                     log.warning(
@@ -1134,6 +1148,10 @@ class ProgressEyeApp:
                             title="ProgressEye", message=_msg
                         )
                     )
+                    if self._device_manager:
+                        self._device_manager.push_alert(
+                            "image_change", "ProgressEye", warn_msg
+                        )
                     # UI에 경고 표시 + 체크 해제
                     self._action_queue.put(
                         lambda _id=region_id, _m=stopped_msg: (
@@ -1176,6 +1194,10 @@ class ProgressEyeApp:
                                 title="ProgressEye", message=_msg
                             )
                         )
+                        if self._device_manager:
+                            self._device_manager.push_alert(
+                                "completion", "ProgressEye", closed_msg
+                            )
                 else:
                     log.warning("[%s] OCR 숫자 인식 실패", region_id)
                 return
@@ -1247,6 +1269,10 @@ class ProgressEyeApp:
                         title="ProgressEye", message=_msg
                     )
                 )
+                if self._device_manager:
+                    self._device_manager.push_alert(
+                        "completion", "ProgressEye", reset_msg
+                    )
             elif progress >= threshold:
                 # 시나리오 3: 완료 상태 유지
                 log.debug("[완료 시나리오] %s — 완료 유지 (%.1f%%)", label, progress)
@@ -1283,6 +1309,10 @@ class ProgressEyeApp:
                         title="ProgressEye", message=_msg
                     )
                 )
+                if self._device_manager:
+                    self._device_manager.push_alert(
+                        "completion", "ProgressEye", alert_msg
+                    )
         else:
             # threshold 미달 또는 이미 완료 → 카운터 리셋
             self._completion_confirm.pop(region_id, None)
@@ -1294,6 +1324,18 @@ class ProgressEyeApp:
                 progress,
                 freeze_state.frozen_minutes,
             )
+            if not prev_frozen:
+                # 프리징 시작 시점 — 트레이 알림 + RTDB 알림
+                stall_msg = t("stall_detected").format(
+                    label=label, minutes=freeze_state.frozen_minutes
+                )
+                self._action_queue.put(
+                    lambda _msg=stall_msg: self._tray.show_notification(
+                        title="ProgressEye", message=_msg
+                    )
+                )
+                if self._device_manager:
+                    self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
 
     def _on_cycle_complete(self) -> None:
         """캡처 사이클 완료 — 배치 Firebase 전송."""

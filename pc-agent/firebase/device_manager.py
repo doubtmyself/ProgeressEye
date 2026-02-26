@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import platform
 import time
+import uuid
 from typing import Any
 
 from .realtime_db import RealtimeDB
@@ -29,16 +30,19 @@ class DeviceManager:
         self._db.patch(self._path, payload)
         # 접속 상태 + 하트비트 별도 경로 초기화
         self._db.patch(
-            f"users/{self._uid}/deviceStatus", {self._device_id: "online"},
+            f"users/{self._uid}/deviceStatus",
+            {self._device_id: "online"},
         )
         self._db.patch(
-            f"users/{self._uid}/heartbeat", {self._device_id: now},
+            f"users/{self._uid}/heartbeat",
+            {self._device_id: now},
         )
 
     def update_status(self, status: str = "online") -> None:
         """접속 상태를 갱신한다 (deviceStatus 별도 경로)."""
         self._db.patch(
-            f"users/{self._uid}/deviceStatus", {self._device_id: status},
+            f"users/{self._uid}/deviceStatus",
+            {self._device_id: status},
         )
 
     def set_monitoring(self, active: bool) -> None:
@@ -50,6 +54,30 @@ class DeviceManager:
           "offline"    — 오프라인
         """
         self.update_status("monitoring" if active else "online")
+
+    def push_alert(self, alert_type: str, title: str, body: str) -> None:
+        """알림을 RTDB에 기록한다 (모바일 FCM 트리거용).
+
+        Args:
+            alert_type: "completion" | "stall" | "image_change"
+            title: 알림 제목
+            body: 알림 본문
+        """
+        alert_id = uuid.uuid4().hex[:12]
+        payload = {
+            "type": alert_type,
+            "title": title,
+            "body": body,
+            "deviceId": self._device_id,
+            "ts": int(time.time() * 1000),
+        }
+        try:
+            self._db.put(
+                f"users/{self._uid}/alerts/{alert_id}",
+                payload,
+            )
+        except Exception:
+            pass  # 알림 실패는 무시 (모니터링 중단 방지)
 
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""
