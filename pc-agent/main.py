@@ -97,7 +97,9 @@ class ProgressEyeApp:
         )
         self._template_dir.mkdir(exist_ok=True)
 
-        # UI
+        # 언어 설정 (MainWindow 생성 전에 적용해야 t() 번역이 올바름)
+        set_language(self._config.get("language", "en"))
+
         # UI
         self._main_window = MainWindow()
         self._tray = TrayIcon(
@@ -120,8 +122,6 @@ class ProgressEyeApp:
         self._cmd_poll_timer.timeout.connect(self._process_commands)
         self._cmd_poll_timer.start(200)
 
-        # 초기 언어 설정
-        set_language(self._config.get("language", "en"))
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
