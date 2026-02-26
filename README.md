@@ -1,0 +1,207 @@
+# ProgressEye
+
+PC 화면의 진행률을 실시간으로 추적하고, 모바일에서 모니터링하는 크로스플랫폼 시스템.
+
+```
+┌─────────────┐     Firebase RTDB      ┌─────────────┐
+│  PC Agent   │ ──── 진행률/알림 ────→ │  Mobile App │
+│  (Python)   │ ←─── 명령 SSE ──────── │  (Kotlin)   │
+└──────┬──────┘                        └──────┬──────┘
+       │       Firebase Cloud Functions       │
+       └── alerts RTDB write ──→ FCM push ──→ 시스템 알림
+```
+
+## 프로젝트 구조
+
+```
+ProgressEye/
+├── pc-agent/          # Windows 데스크톱 에이전트 (Python, PyQt6)
+├── mobile-app/        # Android 모바일 앱 (Kotlin, Jetpack Compose)
+├── functions/         # Firebase Cloud Functions (Node.js)
+├── database.rules.json
+└── firebase.json
+```
+
+## 사전 요구사항
+
+| 도구 | 버전 | 용도 |
+|---|---|---|
+| Python | 3.11+ | PC Agent |
+| Android Studio | 최신 | Mobile App 빌드 |
+| Node.js | 20+ | Cloud Functions |
+| Firebase CLI | 15+ | Firebase 배포 |
+| Google Cloud 프로젝트 | `progresseye-49244` | Firebase 백엔드 |
+
+### Firebase CLI 설치
+
+```bash
+npm install -g firebase-tools
+firebase login
+```
+
+---
+
+## PC Agent 빌드 & 실행
+
+```bash
+cd pc-agent
+
+# 최초 설정
+python -m venv venv
+venv\Scripts\pip.exe install -r requirements.txt
+
+# 실행
+venv\Scripts\python.exe main.py
+```
+
+OCR 모드 사용 시 Tesseract 설치 필요:
+
+```bash
+venv\Scripts\python.exe setup_tesseract.py
+```
+
+자세한 내용은 [pc-agent/README.md](pc-agent/README.md) 참고.
+
+---
+
+## Mobile App 빌드
+
+### Debug 빌드
+
+```bash
+cd mobile-app
+gradlew.bat assembleDebug
+```
+
+APK 출력 경로: `mobile-app/app/build/outputs/apk/debug/app-debug.apk`
+
+### Release 빌드
+
+```bash
+cd mobile-app
+gradlew.bat assembleRelease
+```
+
+> Release 빌드에는 서명 설정이 필요합니다. `app/build.gradle.kts`의 `signingConfigs` 참고.
+
+### Android Studio에서 빌드
+
+1. Android Studio에서 `mobile-app/` 디렉토리 열기
+2. Gradle sync 완료 대기
+3. Run (Shift+F10) 또는 Build > Make Project
+
+---
+
+## Cloud Functions 배포
+
+Cloud Functions는 RTDB에 새 알림이 기록되면 FCM으로 모바일에 푸시합니다.
+
+### 의존성 설치
+
+```bash
+cd functions
+npm install
+```
+
+### 배포
+
+```bash
+# 프로젝트 루트에서 실행
+firebase deploy --only functions --project progresseye-49244
+```
+
+또는 npx 사용:
+
+```bash
+npx firebase-tools deploy --only functions --project progresseye-49244
+```
+
+### 배포 확인
+
+```bash
+# 함수 로그 확인
+firebase functions:log --project progresseye-49244
+
+# Firebase Console에서 확인
+# https://console.firebase.google.com/project/progresseye-49244/functions
+```
+
+### 로컬 에뮬레이터 테스트
+
+```bash
+cd functions
+npm run serve
+```
+
+---
+
+## Firebase RTDB 규칙 배포
+
+`database.rules.json` 수정 후:
+
+```bash
+firebase deploy --only database --project progresseye-49244
+```
+
+---
+
+## 전체 배포 (한 번에)
+
+```bash
+# 프로젝트 루트에서
+firebase deploy --project progresseye-49244
+```
+
+이 명령으로 Cloud Functions + RTDB 규칙이 모두 배포됩니다.
+
+---
+
+## Firebase 데이터 구조
+
+```
+users/{uid}/
+  plan: "free" | "pro"
+  activeDevice: "pc_xxxx"
+  profile: { email, displayName, lastLoginAt }
+  deviceStatus/
+    {deviceId}: "monitoring" | "online" | "offline"
+  heartbeat/
+    {deviceId}: <timestamp_ms>
+  commands/
+    screenshot: { ts }
+    monitor: { action: "start" | "stop", ts }
+  devices/
+    {pcId}/
+      name, platform, appVersion, createdAt
+      screenshots/latest: { url, ts }
+      tasks/
+        {taskId}/
+          p: <progress>          # 진행률 (0~100)
+          s: "r"|"f"|"c"|"i"     # running/frozen/completed/idle
+          l: "작업이름"           # label
+  alerts/
+    {alertId}/
+      type: "completion" | "stall" | "image_change"
+      title: "ProgressEye"
+      body: "알림 메시지"
+      deviceId: "pc_xxxx"
+      ts: <timestamp_ms>
+  fcmTokens/
+    {tokenId}/
+      token: "FCM 토큰 문자열"
+      updatedAt: <server_timestamp>
+```
+
+## 알림 흐름
+
+```
+PC 이벤트 감지 (완료/프리징/화면변경)
+  → 트레이 알림 (Windows)
+  → RTDB /alerts/{id} 기록
+  → Cloud Function onAlertCreated 트리거
+  → /fcmTokens 조회 → FCM data message 전송
+  → Mobile FCMService.onMessageReceived()
+  → 사용자 설정 확인 (완료 알림 ON/OFF, 멈춤 경고 ON/OFF)
+  → Android 시스템 알림 표시
+  → AlertsViewModel RTDB 리스너로 앱 내 알림 목록 갱신
+```
