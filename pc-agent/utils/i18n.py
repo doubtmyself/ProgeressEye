@@ -77,6 +77,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "sleep_prevention_info": "ProgressEye는 화면 캡처 방식으로 진행률을 추적합니다.\n\n모니터가 절전모드로 전환되면 캡처가 불가능하므로,\n모니터링 중에는 자동으로 모니터 절전을 방지합니다.\n\n• 모니터링 중 → 모니터 절전 방지 (자동)\n• 모니터링 정지 → 정상 절전 복귀\n• 추가 전기세: 월 약 1,000원 수준",
         "no_checked_regions": "모니터링 항목을 하나 이상 체크하세요.",
         "stall_detected": "⏸ {label} 작업이 {minutes}분째 멈춰있습니다.",
+        "btn_test_stall": "🧪 프리징 테스트",
+        "btn_test_complete": "🧪 완료 테스트",
+        "tooltip_test_stall": "FCM 테스트: 프리징 알림을 모바일로 전송합니다",
+        "tooltip_test_complete": "FCM 테스트: 완료 알림을 모바일로 전송합니다",
     },
     "en": {
         "progress_monitoring": "Progress Monitoring",
@@ -149,6 +153,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "sleep_prevention_info": "ProgressEye tracks progress by capturing your screen.\n\nSince capture fails when the monitor enters sleep mode,\nthe app automatically prevents monitor sleep during monitoring.\n\n• Monitoring active → Monitor sleep prevented (auto)\n• Monitoring stopped → Normal sleep resumes\n• Extra power cost: ~$1/month",
         "no_checked_regions": "Please check at least one monitoring item.",
         "stall_detected": "⏸ {label} has been stalled for {minutes} minutes.",
+        "btn_test_stall": "🧪 Test Stall",
+        "btn_test_complete": "🧪 Test Complete",
+        "tooltip_test_stall": "FCM Test: Send stall alert to mobile",
+        "tooltip_test_complete": "FCM Test: Send completion alert to mobile",
     },
 }
 

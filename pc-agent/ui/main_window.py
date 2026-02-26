@@ -63,6 +63,8 @@ class RegionCard(QFrame):
     edit_requested = pyqtSignal(str)
     view_requested = pyqtSignal(str)
     threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
+    test_stall_requested = pyqtSignal(str)
+    test_complete_requested = pyqtSignal(str)
 
     def __init__(
         self,
@@ -245,13 +247,52 @@ class RegionCard(QFrame):
         btn_row.addWidget(self._btn_delete)
 
         btn_row.insertStretch(0)
+
+        # ── Test buttons: 프리징/완료 테스트 (FCM 파이프라인 검증용) ──
+        test_row = QHBoxLayout()
+        test_style = (
+            f"QPushButton {{"
+            f"  background: #1a1a35;"
+            f"  border: 1px solid #3b82f6;"
+            f"  border-radius: 4px;"
+            f"  padding: 0 10px;"
+            f"  font-size: 11px;"
+            f"  color: #3b82f6;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: #1e2a4a;"
+            f"}}"
+        )
+
+        self._btn_test_stall = QPushButton(t("btn_test_stall"))
+        self._btn_test_stall.setFixedHeight(24)
+        self._btn_test_stall.setStyleSheet(test_style)
+        self._btn_test_stall.clicked.connect(
+            lambda: self.test_stall_requested.emit(self.region_id)
+        )
+        self._btn_test_stall.setToolTip(t("tooltip_test_stall"))
+        test_row.addWidget(self._btn_test_stall)
+
+        self._btn_test_complete = QPushButton(t("btn_test_complete"))
+        self._btn_test_complete.setFixedHeight(24)
+        self._btn_test_complete.setStyleSheet(test_style)
+        self._btn_test_complete.clicked.connect(
+            lambda: self.test_complete_requested.emit(self.region_id)
+        )
+        self._btn_test_complete.setToolTip(t("tooltip_test_complete"))
+        test_row.addWidget(self._btn_test_complete)
+
+        test_row.insertStretch(0)
+        layout.addLayout(test_row)
         layout.addLayout(btn_row)
 
     def set_buttons_visible(self, visible: bool) -> None:
-        """카드 버튼(작업 수정/영역보기/삭제)의 표시 여부를 설정한다."""
+        """카드 버튼(작업 수정/영역보기/삭제/테스트)의 표시 여부를 설정한다."""
         self._btn_edit.setVisible(visible)
         self._btn_view.setVisible(visible)
         self._btn_delete.setVisible(visible)
+        self._btn_test_stall.setVisible(visible)
+        self._btn_test_complete.setVisible(visible)
 
 
 
@@ -295,6 +336,10 @@ class RegionCard(QFrame):
         self._btn_view.setToolTip(t("tooltip_view"))
         self._btn_delete.setToolTip(t("tooltip_delete"))
         self._threshold_spin.setToolTip(t("tooltip_threshold"))
+        self._btn_test_stall.setText(t("btn_test_stall"))
+        self._btn_test_stall.setToolTip(t("tooltip_test_stall"))
+        self._btn_test_complete.setText(t("btn_test_complete"))
+        self._btn_test_complete.setToolTip(t("tooltip_test_complete"))
     def set_warning(self, message: str) -> None:
         """카드에 경고 상태를 표시한다."""
         self._time_label.setText(message)
@@ -321,6 +366,8 @@ class MainWindow(QMainWindow):
     settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
+    test_stall_requested = pyqtSignal(str)  # (region_id)
+    test_complete_requested = pyqtSignal(str)  # (region_id)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -520,6 +567,8 @@ class MainWindow(QMainWindow):
         card.view_requested.connect(self.region_view_requested)
         card.edit_requested.connect(self.region_edit_requested)
         card.threshold_changed.connect(self.region_threshold_changed)
+        card.test_stall_requested.connect(self.test_stall_requested)
+        card.test_complete_requested.connect(self.test_complete_requested)
         self._region_cards[region_id] = card
         # addStretch 앞에 삽입
         self._region_layout.insertWidget(self._region_layout.count() - 1, card)

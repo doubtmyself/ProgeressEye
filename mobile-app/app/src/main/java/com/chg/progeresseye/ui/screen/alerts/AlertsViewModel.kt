@@ -26,6 +26,9 @@ class AlertsViewModel : ViewModel() {
     private val _alerts = MutableStateFlow<List<AlertItem>>(emptyList())
     val alerts: StateFlow<List<AlertItem>> = _alerts.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     private var alertsRef: DatabaseReference? = null
     private var alertsListener: ValueEventListener? = null
     private val readAlertIds = mutableSetOf<String>()
@@ -39,6 +42,7 @@ class AlertsViewModel : ViewModel() {
 
         val uid = auth.currentUser?.uid
         if (uid == null) {
+            _isLoading.value = false
             _alerts.value = emptyList()
             return
         }
@@ -54,10 +58,12 @@ class AlertsViewModel : ViewModel() {
                     }
 
                 _alerts.value = parsedAlerts
+                _isLoading.value = false
             }
 
             override fun onCancelled(error: DatabaseError) {
                 Log.e(TAG, "alerts:onCancelled", error.toException())
+                _isLoading.value = false
             }
         }
         alertsRef?.addValueEventListener(alertsListener!!)

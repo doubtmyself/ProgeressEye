@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,11 +68,19 @@ import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 fun AlertsContent(modifier: Modifier = Modifier) {
     val viewModel: AlertsViewModel = viewModel()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
-    if (alerts.isEmpty()) {
-        EmptyAlertsState(modifier = modifier)
-    } else {
-        AlertList(
+    when {
+        isLoading -> {
+            Box(
+                modifier = modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = Primary)
+            }
+        }
+        alerts.isEmpty() -> EmptyAlertsState(modifier = modifier)
+        else -> AlertList(
             alerts = alerts,
             onAlertClick = { viewModel.markAsRead(it.id) },
             onClearAll = { viewModel.clearAll() },
