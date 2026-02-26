@@ -203,7 +203,6 @@ private fun DeviceCard(
                 isMonitoring = device.isMonitoring,
                 cpuUsage = device.cpuUsage,
                 gpuUsage = device.gpuUsage,
-                gpuTemp = device.gpuTemp,
             )
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
@@ -410,7 +409,6 @@ private fun DeviceHeader(
     isMonitoring: Boolean,
     cpuUsage: Float? = null,
     gpuUsage: Float? = null,
-    gpuTemp: Float? = null,
 ) {
     Row(
         modifier = Modifier
@@ -479,33 +477,48 @@ private fun DeviceHeader(
             if (isOnline && (cpuUsage != null || gpuUsage != null)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 ) {
-                    cpuUsage?.let {
-                        Text(
-                            text = "CPU %.0f%%".format(it),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Slate400,
-                        )
-                    }
-                    gpuUsage?.let {
-                        val gpuText = if (gpuTemp != null) {
-                            "GPU %.0f%% \u00b7 %d\u00b0C".format(it, gpuTemp.toInt())
-                        } else {
-                            "GPU %.0f%%".format(it)
-                        }
-                        Text(
-                            text = gpuText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Slate400,
-                        )
-                    }
+                    cpuUsage?.let { MetricChip(label = "CPU", value = "%.0f%%".format(it)) }
+                    gpuUsage?.let { MetricChip(label = "GPU", value = "%.0f%%".format(it)) }
                 }
             }
         }
 
         IconButton(onClick = { /* TODO: device options menu */ }) {
             Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════
+// Metric Chip (CPU/GPU usage)
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun MetricChip(label: String, value: String) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = Slate800.copy(alpha = 0.6f),
+        border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.5f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = Slate400,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = OnSurfaceDark,
+            )
         }
     }
 }
@@ -707,10 +720,8 @@ private val previewDevices = listOf(
         isOnline = true,
         lastSeen = System.currentTimeMillis(),
         isMonitoring = true,
-        cpuUsage = 45.2f,
-        gpuUsage = 72.1f,
-        gpuTemp = 78f,
-        gpuName = "NVIDIA GeForce RTX 4070",
+        cpuUsage = 42f,
+        gpuUsage = 72f,
         tasks = listOf(
             TaskData("r1", "Premiere Rendering", 0.732f, TaskStatus.RUNNING),
             TaskData("r2", "File Download", 1.0f, TaskStatus.COMPLETED),
@@ -718,7 +729,6 @@ private val previewDevices = listOf(
         ),
     ),
 )
-
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun DashboardContentPreview() {

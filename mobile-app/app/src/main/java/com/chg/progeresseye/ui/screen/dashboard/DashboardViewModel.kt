@@ -228,8 +228,6 @@ class DashboardViewModel : ViewModel() {
         val statsSnap = snapshot.child("stats")
         val cpuUsage = statsSnap.child("cpu").getValue(Double::class.java)?.toFloat()
         val gpuUsage = statsSnap.child("gpu").getValue(Double::class.java)?.toFloat()
-        val gpuTemp = statsSnap.child("gpuTemp").getValue(Double::class.java)?.toFloat()
-        val gpuName = statsSnap.child("gpuName").getValue(String::class.java)
 
         return DeviceData(
             id = id,
@@ -242,8 +240,6 @@ class DashboardViewModel : ViewModel() {
             screenshotTs = screenshotTs,
             cpuUsage = cpuUsage,
             gpuUsage = gpuUsage,
-            gpuTemp = gpuTemp,
-            gpuName = gpuName,
         )
     }
 

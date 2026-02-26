@@ -176,9 +176,7 @@ users/{uid}/
       screenshots/latest: { url, ts }
       stats/                         # 하드웨어 모니터링 (PC 앱 켜져 있을 때만)
         cpu: <0-100>               # CPU 사용량 (%)
-        gpu: <0-100>               # GPU 사용량 (%, NVIDIA only)
-        gpuTemp: <celsius>          # GPU 온도 (°C, NVIDIA only)
-        gpuName: "NVIDIA GeForce ..."  # GPU 디바이스명
+        gpu: <0-100>               # GPU 사용량 (%, NVIDIA/AMD/Intel)
       tasks/
         {taskId}/
           p: <progress>          # 진행률 (0~100)
@@ -213,19 +211,20 @@ PC 이벤트 감지 (완료/프리징/화면변경)
 
 ## 하드웨어 모니터링
 
-PC Agent가 실행 중일 때 CPU/GPU 사용량과 온도를 모바일 대시보드에 실시간 표시합니다.
+PC Agent가 실행 중일 때 CPU/GPU 사용량을 모바일 대시보드에 실시간 표시합니다.
 
 ```
 PC Agent (모니터링 중 / 하트비트 시)
   → psutil: CPU 사용량 (%)
-  → nvidia-ml-py: GPU 사용량 (%) + GPU 온도 (°C) + GPU 이름
+  → nvidia-ml-py: NVIDIA GPU 사용량 (%) — 우선
+  → Windows PDH: AMD/Intel GPU 사용량 (%) — fallback
   → RTDB /devices/{id}/stats/ 에 기록
   → Mobile ChildEventListener가 자동 감지
-  → DeviceHeader에 인라인 표시 (PC 온라인일 때만)
+  → DeviceHeader에 칩 UI로 표시 (PC 온라인일 때만)
 ```
 
 | 항목 | 라이브러리 | 관리자 권한 | 비고 |
 |---|---|---|---|
-| CPU 사용량 | `psutil` | ❌ 불필요 | Windows/macOS/Linux |
-| GPU 사용량 + 온도 | `nvidia-ml-py` | ❌ 불필요 | NVIDIA GPU + 드라이버 필수 |
-| CPU 온도 | — | — | Windows에서 관리자 권한 없이 신뢰적 수집 불가 |
+| CPU 사용량 | `psutil` | ❌ 불필요 | 모든 플랫폼 |
+| GPU 사용량 (NVIDIA) | `nvidia-ml-py` | ❌ 불필요 | NVIDIA 드라이버 필수 |
+| GPU 사용량 (AMD/Intel) | Windows PDH | ❌ 불필요 | PowerShell 내장 기능 |

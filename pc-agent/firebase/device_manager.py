@@ -118,7 +118,7 @@ class DeviceManager:
         """하드웨어 stats를 RTDB에 기록한다.
 
         Args:
-            stats: {"cpu": float, "gpu": int, "gpuTemp": int, "gpuName": str}
+            stats: {"cpu": float, "gpu": float}
         """
         if not stats:
             return
