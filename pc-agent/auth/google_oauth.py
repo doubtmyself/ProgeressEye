@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
-import os
+import sys
 import sys
 import webbrowser
 from typing import Any
@@ -22,20 +22,16 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 SCOPES = ["openid", "email", "profile"]
 USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-DEFAULT_GOOGLE_CLIENT_ID = (
-    "989425742328-gf6rcqd68dualv7cp90ij005j1uefd4b.apps.googleusercontent.com"
-)
-DEFAULT_GOOGLE_CLIENT_SECRET = (
-    "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"
-)
+CLIENT_ID = "989425742328-gf6rcqd68dualv7cp90ij005j1uefd4b.apps.googleusercontent.com"
+CLIENT_SECRET = "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"
 
 
 class GoogleOAuth:
     """Google OAuth 2.0 auth client."""
 
-    def __init__(self, client_id: str | None = None) -> None:
-        self._client_id = self._resolve_client_id(client_id)
-        self._client_secret = self._resolve_client_secret()
+    def __init__(self) -> None:
+        self._client_id = CLIENT_ID
+        self._client_secret = CLIENT_SECRET
 
     def sign_in(self) -> dict[str, str]:
         """Run browser login and return id token + profile."""
@@ -48,7 +44,7 @@ class GoogleOAuth:
                 )
 
             flow = InstalledAppFlow.from_client_config(
-                self._build_pkce_client_config(self._client_id),
+                self._build_pkce_client_config(),
                 SCOPES,
                 autogenerate_code_verifier=True,
             )
@@ -131,32 +127,12 @@ class GoogleOAuth:
         except (json.JSONDecodeError, ValueError):
             return {}
 
-    def _resolve_client_id(self, explicit_client_id: str | None) -> str:
-        """Resolve OAuth client_id.
 
-        Priority:
-        1) explicit argument
-        2) env PROGRESSEYE_GOOGLE_CLIENT_ID
-        3) built-in default (for store distribution)
-        """
-        if explicit_client_id and explicit_client_id.strip():
-            return explicit_client_id.strip()
-
-        env_client_id = os.getenv("PROGRESSEYE_GOOGLE_CLIENT_ID", "").strip()
-        if env_client_id:
-            return env_client_id
-
-        if DEFAULT_GOOGLE_CLIENT_ID:
-            log.info("환경변수 미설정: 기본 Google OAuth client_id를 사용합니다.")
-            return DEFAULT_GOOGLE_CLIENT_ID
-
-        raise AuthError("Google OAuth client_id가 없습니다.")
-
-    def _build_pkce_client_config(self, client_id: str) -> dict[str, Any]:
+    def _build_pkce_client_config(self) -> dict[str, Any]:
         """Build PKCE client config for desktop flow."""
         return {
             "installed": {
-                "client_id": client_id,
+                "client_id": self._client_id,
                 "client_secret": self._client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
@@ -164,23 +140,3 @@ class GoogleOAuth:
             }
         }
 
-    def _resolve_client_secret(self) -> str:
-        """Resolve OAuth client_secret.
-
-        Google Desktop App type treats client_secret as public —
-        it provides no real security. PKCE handles auth code protection.
-        See: https://developers.google.com/identity/protocols/oauth2/native-app
-
-        Priority:
-        1) env PROGRESSEYE_GOOGLE_CLIENT_SECRET
-        2) built-in default (Google considers this public for desktop apps)
-        """
-        env_client_secret = os.getenv("PROGRESSEYE_GOOGLE_CLIENT_SECRET", "").strip()
-        if env_client_secret:
-            return env_client_secret
-
-        if DEFAULT_GOOGLE_CLIENT_SECRET:
-            log.info("환경변수 미설정: 기본 Google OAuth client_secret을 사용합니다.")
-            return DEFAULT_GOOGLE_CLIENT_SECRET
-
-        return ""
