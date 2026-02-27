@@ -40,11 +40,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chg.progeresseye.R
+import com.chg.progeresseye.ui.theme.BackgroundDark
+import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 
-private val StatusBarBlack = Color(0xFF000000)
-private val TopBarBlack = Color(0xFF000000)
-private val BottomBarBlack = Color(0xFF000000)
+private val StatusBarColor = BackgroundDark
+private val TopBarColor = BackgroundDark
+private val BottomBarColor = BackgroundDark
 private val Unselected = Color(0xFF94A3B8)
 
 enum class PreviewNavTab {
@@ -81,12 +83,12 @@ fun PreviewAppScaffold(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(StatusBarBlack),
+            .background(StatusBarColor),
         topBar = {
             Column(
                 modifier = Modifier
                     .statusBarsPadding()
-                    .background(StatusBarBlack),
+                    .background(StatusBarColor),
             ) {
                 TopAppBar(
                     title = {
@@ -117,8 +119,8 @@ fun PreviewAppScaffold(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = TopBarBlack,
-                        titleContentColor = Color.White,
+                        containerColor = TopBarColor,
+                        titleContentColor = OnSurfaceDark,
                     ),
                     windowInsets = WindowInsets(0, 0, 0, 0),
                 )
@@ -127,7 +129,7 @@ fun PreviewAppScaffold(
         },
         bottomBar = {
             NavigationBar(
-                containerColor = BottomBarBlack,
+                containerColor = BottomBarColor,
                 contentColor = Unselected,
                 tonalElevation = 0.dp,
             ) {
@@ -160,7 +162,7 @@ fun PreviewAppScaffold(
                 }
             }
         },
-        containerColor = Color.Black,
+        containerColor = BackgroundDark,
     ) { padding ->
         content(padding)
     }
