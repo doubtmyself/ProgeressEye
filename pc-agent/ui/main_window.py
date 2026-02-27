@@ -72,11 +72,13 @@ class RegionCard(QFrame):
         label: str,
         region_type: str = "bar",
         alert_threshold: int = 100,
+        show_test_buttons: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.region_id = region_id
         self._region_type = region_type
+        self._show_test_buttons = show_test_buttons
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setStyleSheet(
             f"RegionCard {{"
@@ -277,6 +279,9 @@ class RegionCard(QFrame):
         self._btn_test_complete.setToolTip(t("tooltip_test_complete"))
         test_row.addWidget(self._btn_test_complete)
 
+        self._btn_test_stall.setVisible(self._show_test_buttons)
+        self._btn_test_complete.setVisible(self._show_test_buttons)
+
         test_row.insertStretch(0)
         layout.addLayout(test_row)
         layout.addLayout(btn_row)
@@ -286,8 +291,8 @@ class RegionCard(QFrame):
         self._btn_edit.setVisible(visible)
         self._btn_view.setVisible(visible)
         self._btn_delete.setVisible(visible)
-        self._btn_test_stall.setVisible(visible)
-        self._btn_test_complete.setVisible(visible)
+        self._btn_test_stall.setVisible(visible and self._show_test_buttons)
+        self._btn_test_complete.setVisible(visible and self._show_test_buttons)
 
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
@@ -366,11 +371,16 @@ class MainWindow(QMainWindow):
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        show_test_buttons: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._monitoring = False
         self._monitoring_interval: int = 0
         self._region_cards: dict[str, RegionCard] = {}
+        self._show_test_buttons = show_test_buttons
 
         self.setWindowTitle("ProgressEye")
         self.setMinimumSize(400, 500)
@@ -554,7 +564,11 @@ class MainWindow(QMainWindow):
             return
         self._empty_label.hide()
         card = RegionCard(
-            region_id, label, region_type=region_type, alert_threshold=alert_threshold
+            region_id,
+            label,
+            region_type=region_type,
+            alert_threshold=alert_threshold,
+            show_test_buttons=self._show_test_buttons,
         )
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)

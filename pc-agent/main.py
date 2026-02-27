@@ -56,7 +56,7 @@ class ProgressEyeApp:
     모든 모듈을 연결하고 전체 파이프라인을 관리한다.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, debug_mode: bool = False) -> None:
         self._app = QApplication(sys.argv)
         self._config = Config()
         self._capturer = ScreenCapturer()
@@ -114,7 +114,7 @@ class ProgressEyeApp:
         set_language(self._config.get("language", "en"))
 
         # UI
-        self._main_window = MainWindow()
+        self._main_window = MainWindow(show_test_buttons=debug_mode)
         self._area_selector: AreaSelector | None = None
         self._region_viewer: RegionViewer | None = None
         self._task_counter = len(self._config.regions)
@@ -1627,7 +1627,14 @@ class ProgressEyeApp:
 
 def main() -> None:
     """메인 함수. -d 옵션으로 디버그 로그 활성화."""
-    if "-d" in sys.argv or "--debug" in sys.argv:
+    debug_cli = "-d" in sys.argv or "--debug" in sys.argv
+    is_packaged = bool(getattr(sys, "frozen", False))
+    debug_mode = debug_cli and not is_packaged
+    if debug_cli and is_packaged:
+        from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
+
+        log.info("패키징 빌드에서는 디버그 UI 옵션(-d/--debug)이 비활성화됩니다.")
+    if debug_mode:
         import logging
         from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -1635,7 +1642,7 @@ def main() -> None:
         for handler in log.handlers:
             handler.setLevel(logging.DEBUG)
         log.debug("디버그 모드 활성화")
-    app = ProgressEyeApp()
+    app = ProgressEyeApp(debug_mode=debug_mode)
     sys.exit(app.run())
 
 
