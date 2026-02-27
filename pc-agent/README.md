@@ -223,7 +223,7 @@ pc-agent/
 client_secret.json 파일은 더 이상 사용하지 않는다.
 
 1. [Google Cloud Console](https://console.cloud.google.com/)에서 OAuth 2.0 클라이언트 ID 생성 (데스크톱 앱 유형)
-2. 기본값(client_id/client_secret)은 앱에 내장되어 배포본에서 자동 사용됨
+2. 기본값(client_id/client_secret)은 앱에 내장되어 배포본에서 자동 사용됨 (Google Desktop App의 client_secret은 공개값 취급)
 3. (선택) 테스트/교체가 필요할 때만 환경변수 `PROGRESSEYE_GOOGLE_CLIENT_ID`, `PROGRESSEYE_GOOGLE_CLIENT_SECRET`로 덮어쓰기
-4. 앱 실행 시 OS 기본 브라우저가 열리며 Google 로그인 진행 → `localhost:8080`으로 리다이렉트되어 토큰 수신
-5. 이후 실행부터는 keyring에 저장된 토큰으로 자동 로그인
+5. 앱 실행 시 OS 기본 브라우저가 열리며 Google 로그인 진행 → `localhost:8080`으로 리다이렉트되어 토큰 수신
+6. 이후 실행부터는 keyring에 저장된 토큰으로 자동 로그인

@@ -1,4 +1,4 @@
-﻿"""Google OAuth 2.0 module.
+"""Google OAuth 2.0 module.
 
 Uses InstalledAppFlow(PKCE) for desktop browser login.
 """
@@ -25,7 +25,9 @@ USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 DEFAULT_GOOGLE_CLIENT_ID = (
     "989425742328-gf6rcqd68dualv7cp90ij005j1uefd4b.apps.googleusercontent.com"
 )
-DEFAULT_GOOGLE_CLIENT_SECRET = "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"
+DEFAULT_GOOGLE_CLIENT_SECRET = (
+    "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"
+)
 
 
 class GoogleOAuth:
@@ -70,7 +72,9 @@ class GoogleOAuth:
         id_token_raw = getattr(creds, "id_token", None)
         id_token = str(id_token_raw) if id_token_raw else ""
         if not id_token:
-            raise AuthError("Google id_token을 받지 못했습니다. openid scope를 확인하세요.")
+            raise AuthError(
+                "Google id_token을 받지 못했습니다. openid scope를 확인하세요."
+            )
 
         access_token_raw = getattr(creds, "token", None)
         access_token = str(access_token_raw) if access_token_raw else None
@@ -83,7 +87,9 @@ class GoogleOAuth:
             "name": str(userinfo.get("name", "")),
         }
 
-    def _fetch_userinfo(self, access_token: str | None, id_token: str) -> dict[str, Any]:
+    def _fetch_userinfo(
+        self, access_token: str | None, id_token: str
+    ) -> dict[str, Any]:
         """Fetch user profile from userinfo endpoint with JWT fallback."""
         if access_token:
             try:
@@ -97,9 +103,15 @@ class GoogleOAuth:
                 if isinstance(data, dict):
                     return data
             except requests.RequestException as exc:
-                log.warning("Google userinfo request failed, fallback to id_token payload: %s", exc)
+                log.warning(
+                    "Google userinfo request failed, fallback to id_token payload: %s",
+                    exc,
+                )
             except ValueError as exc:
-                log.warning("Google userinfo parse failed, fallback to id_token payload: %s", exc)
+                log.warning(
+                    "Google userinfo parse failed, fallback to id_token payload: %s",
+                    exc,
+                )
 
         payload = self._decode_jwt_payload(id_token)
         return payload if payload else {}
@@ -155,11 +167,20 @@ class GoogleOAuth:
     def _resolve_client_secret(self) -> str:
         """Resolve OAuth client_secret.
 
+        Google Desktop App type treats client_secret as public —
+        it provides no real security. PKCE handles auth code protection.
+        See: https://developers.google.com/identity/protocols/oauth2/native-app
+
         Priority:
         1) env PROGRESSEYE_GOOGLE_CLIENT_SECRET
-        2) built-in default (for store distribution)
+        2) built-in default (Google considers this public for desktop apps)
         """
         env_client_secret = os.getenv("PROGRESSEYE_GOOGLE_CLIENT_SECRET", "").strip()
         if env_client_secret:
             return env_client_secret
-        return DEFAULT_GOOGLE_CLIENT_SECRET
+
+        if DEFAULT_GOOGLE_CLIENT_SECRET:
+            log.info("환경변수 미설정: 기본 Google OAuth client_secret을 사용합니다.")
+            return DEFAULT_GOOGLE_CLIENT_SECRET
+
+        return ""
