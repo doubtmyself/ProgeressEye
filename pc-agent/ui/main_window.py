@@ -90,7 +90,6 @@ class RegionCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-
         type_text = t("type_ocr") if region_type == "ocr" else t("type_bar")
         self._label_text = label
         # ── Row 1: 작업 이름 (타입) 라벨 (큰 글씨, 볼드) ──
@@ -222,18 +221,14 @@ class RegionCard(QFrame):
         self._btn_edit = QPushButton(t("btn_edit"))
         self._btn_edit.setFixedHeight(24)
         self._btn_edit.setStyleSheet(btn_style)
-        self._btn_edit.clicked.connect(
-            lambda: self.edit_requested.emit(self.region_id)
-        )
+        self._btn_edit.clicked.connect(lambda: self.edit_requested.emit(self.region_id))
         self._btn_edit.setToolTip(t("tooltip_edit"))
         btn_row.addWidget(self._btn_edit)
 
         self._btn_view = QPushButton(t("btn_view"))
         self._btn_view.setFixedHeight(24)
         self._btn_view.setStyleSheet(btn_style)
-        self._btn_view.clicked.connect(
-            lambda: self.view_requested.emit(self.region_id)
-        )
+        self._btn_view.clicked.connect(lambda: self.view_requested.emit(self.region_id))
         self._btn_view.setToolTip(t("tooltip_view"))
         btn_row.addWidget(self._btn_view)
 
@@ -294,8 +289,6 @@ class RegionCard(QFrame):
         self._btn_test_stall.setVisible(visible)
         self._btn_test_complete.setVisible(visible)
 
-
-
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
         enabled = state == Qt.CheckState.Checked.value
@@ -309,7 +302,9 @@ class RegionCard(QFrame):
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
         self._progress_bar.setFormat(f"{progress:.1f}%")
-        self._time_label.setText(t("card_update").format(time=datetime.now().strftime('%H:%M:%S')))
+        self._time_label.setText(
+            t("card_update").format(time=datetime.now().strftime("%H:%M:%S"))
+        )
 
     def set_label(self, label: str) -> None:
         """라벨을 변경한다."""
@@ -340,6 +335,7 @@ class RegionCard(QFrame):
         self._btn_test_stall.setToolTip(t("tooltip_test_stall"))
         self._btn_test_complete.setText(t("btn_test_complete"))
         self._btn_test_complete.setToolTip(t("tooltip_test_complete"))
+
     def set_warning(self, message: str) -> None:
         """카드에 경고 상태를 표시한다."""
         self._time_label.setText(message)
@@ -348,6 +344,7 @@ class RegionCard(QFrame):
             f"background: transparent; border: none; font-weight: bold;"
         )
         self._checkbox.setChecked(False)
+
 
 class MainWindow(QMainWindow):
     """ProgressEye 메인 윈도우.
@@ -422,9 +419,7 @@ class MainWindow(QMainWindow):
             f"  border-color: {CHECKBOX_BLUE};"
             f"}}"
         )
-        self._btn_settings.clicked.connect(
-            lambda: self.settings_requested.emit()
-        )
+        self._btn_settings.clicked.connect(lambda: self.settings_requested.emit())
         self._btn_settings.setToolTip(t("tooltip_settings"))
         header_row.addWidget(self._btn_settings)
         layout.addLayout(header_row)
@@ -481,9 +476,7 @@ class MainWindow(QMainWindow):
         self._region_layout.setContentsMargins(0, 0, 0, 0)
 
         # ── Empty state label ──
-        self._empty_label = QLabel(
-            t("empty_state")
-        )
+        self._empty_label = QLabel(t("empty_state"))
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet(
             f"color: {EMPTY_TEXT}; padding: 40px;"
@@ -560,7 +553,9 @@ class MainWindow(QMainWindow):
         if region_id in self._region_cards:
             return
         self._empty_label.hide()
-        card = RegionCard(region_id, label, region_type=region_type, alert_threshold=alert_threshold)
+        card = RegionCard(
+            region_id, label, region_type=region_type, alert_threshold=alert_threshold
+        )
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
         card.delete_requested.connect(self.region_delete_requested)
@@ -602,6 +597,7 @@ class MainWindow(QMainWindow):
         card = self._region_cards.get(region_id)
         if card is not None:
             card.set_warning(message)
+
     def set_monitoring_state(self, active: bool, interval: int = 0) -> None:
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active
@@ -667,7 +663,9 @@ class MainWindow(QMainWindow):
         """언어 변경 시 UI 텍스트를 갱신한다."""
         if self._monitoring and self._monitoring_interval > 0:
             self._subtitle.setText(
-                t("progress_monitoring_interval").format(interval=self._monitoring_interval)
+                t("progress_monitoring_interval").format(
+                    interval=self._monitoring_interval
+                )
             )
         else:
             self._subtitle.setText(t("progress_monitoring"))
@@ -691,27 +689,30 @@ class MainWindow(QMainWindow):
             self._btn_toggle.setToolTip(t("tooltip_start"))
 
     def show_settings(
-        self, interval: int, language: str, email: str,
-        freeze_minutes: int = 5, welcome_mode: bool = False,
+        self,
+        interval: int,
+        language: str,
+        email: str,
+        freeze_minutes: int = 5,
+        welcome_mode: bool = False,
     ) -> None:
         """설정 오버레이를 표시한다."""
         self._settings_overlay.setGeometry(self.centralWidget().geometry())
         self._settings_overlay.show_settings(
-            interval, language, email, freeze_minutes, welcome_mode,
+            interval,
+            language,
+            email,
+            freeze_minutes,
+            welcome_mode,
         )
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         """오버레이가 창 크기에 맞게 조정된다."""
         super().resizeEvent(event)
-        if hasattr(self, '_settings_overlay'):
+        if hasattr(self, "_settings_overlay"):
             self._settings_overlay.setGeometry(self.centralWidget().geometry())
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """닫기 버튼 → 트레이 최소화. request_quit 호출 시 실제 종료."""
-        if getattr(self, "_really_quit", False):
-            event.accept()
-            log.info("메인 창 종료")
-            return
-        event.ignore()
-        self.hide()
-        log.info("메인 창 트레이로 최소화")
+        """닫기 버튼을 누르면 앱을 종료한다."""
+        event.accept()
+        log.info("메인 창 종료")

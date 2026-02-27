@@ -1,8 +1,8 @@
 """시스템 하드웨어 모니터링 모듈 (CPU/GPU/RAM 사용량).
 
 플랫폼별 CPU 측정:
-  Windows — PDH 카운터 (% Processor Utility) → 작업 관리자와 동일 수치
-  Linux   — psutil.cpu_percent(interval=None) → /proc/stat 기반 정확 측정
+  기본      — psutil.cpu_percent(interval=None) (모든 플랫폼 공통, in-process 저오버헤드)
+  Windows  — psutil 불가 시 PDH 카운터 fallback
 
 공통:
   psutil      — RAM 사용량 (모든 플랫폼)
@@ -26,6 +26,7 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 _SAMPLE_SIZE = 5
 _IS_WINDOWS = sys.platform == "win32"
+_CPU_WARMUP_SKIP_SAMPLES = 2
 
 # ── 샘플 저장소 (모듈 레벨 싱글턴) ──
 _cpu_samples: deque[float] = deque(maxlen=_SAMPLE_SIZE)
@@ -44,20 +45,20 @@ def _sampler_loop() -> None:
     """백그라운드에서 CPU/GPU/RAM을 5초 주기로 샘플링한다."""
     global _ram_value
 
-    # ── psutil 초기화 (RAM + Linux CPU) ──
+    # ── psutil 초기화 (RAM + CPU) ──
     has_psutil = False
     psutil_mod = None
     try:
         import psutil as psutil_mod
 
         has_psutil = True
-        if not _IS_WINDOWS:
-            psutil_mod.cpu_percent(interval=None)  # Linux 워밍업 (기준점 설정)
+        psutil_mod.cpu_percent(interval=None)  # 워밍업 (첫 샘플 기준점 설정)
     except ImportError:
         pass
 
     # ── NVIDIA GPU 핸들 (앱 수명동안 유지) ──
     nvidia_handle = None
+    cpu_sample_count = 0
     try:
         from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex
 
@@ -74,19 +75,28 @@ def _sampler_loop() -> None:
         if _stop.is_set():
             break
 
-        # ── CPU (플랫폼별) ──
+        # ── CPU (psutil 우선, Windows는 PDH fallback) ──
         cpu_val: float | None = None
-        if _IS_WINDOWS:
-            cpu_val = _get_pdh_cpu_usage()
-        elif has_psutil and psutil_mod is not None:
+        if has_psutil and psutil_mod is not None:
             try:
                 cpu_val = psutil_mod.cpu_percent(interval=None)
             except Exception:
                 pass
+        elif _IS_WINDOWS:
+            cpu_val = _get_pdh_cpu_usage()
 
         if cpu_val is not None:
-            with _lock:
-                _cpu_samples.append(cpu_val)
+            cpu_sample_count += 1
+            if cpu_sample_count <= _CPU_WARMUP_SKIP_SAMPLES:
+                log.debug(
+                    "[hw-sampler] CPU warmup sample skipped: %.1f%% (%d/%d)",
+                    cpu_val,
+                    cpu_sample_count,
+                    _CPU_WARMUP_SKIP_SAMPLES,
+                )
+            else:
+                with _lock:
+                    _cpu_samples.append(cpu_val)
 
         # ── GPU ──
         gpu_val: float | None = None
@@ -187,51 +197,42 @@ def _get_pdh_cpu_usage() -> float | None:
     """Windows CPU 사용량을 수집한다.
 
     우선순위:
-    1) PDH `\\Processor Information(_Total)\\% Processor Utility` (Task Manager 정렬)
-    2) PDH `\\Processor(_Total)\\% Processor Time` (호환 fallback)
-    3) Win32_Processor.LoadPercentage (최후 fallback, 정수/coarse)
+    1) PDH `% Idle Time` 기반 busy 계산 (`100 - idle`, Task Manager 정렬)
+    2) PDH `\\Processor Information(_Total)\\% Processor Utility` (호환 fallback)
+    3) PDH `\\Processor(_Total)\\% Processor Time` (호환 fallback)
+    4) Win32_Processor.LoadPercentage (최후 fallback, 정수/coarse)
 
     샘플링 주기(5초) 대비 호출 비용은 허용 가능하다.
     """
-    try:
-        cmd = (
-            'Get-Counter "\\Processor Information(_Total)\\% Processor Utility" '
-            "-ErrorAction SilentlyContinue | "
-            "Select-Object -ExpandProperty CounterSamples | "
-            "Select-Object -ExpandProperty CookedValue"
-        )
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", cmd],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
-        )
-        val = result.stdout.strip()
-        if val:
-            return min(round(float(val), 1), 100.0)
-    except Exception:
-        pass
+    idle = _read_windows_counter("\\Processor Information(_Total)\\% Idle Time")
+    if idle is None:
+        idle = _read_windows_counter("\\Processor(_Total)\\% Idle Time")
+    if idle is not None:
+        return round(max(0.0, 100.0 - idle), 1)
 
-    try:
-        cmd = (
-            'Get-Counter "\\Processor(_Total)\\% Processor Time" '
-            "-ErrorAction SilentlyContinue | "
-            "Select-Object -ExpandProperty CounterSamples | "
-            "Select-Object -ExpandProperty CookedValue"
-        )
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", cmd],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
-        )
-        val = result.stdout.strip()
-        if val:
-            return min(round(float(val), 1), 100.0)
-    except Exception:
-        pass
+    utility = _read_windows_counter(
+        "\\Processor Information(_Total)\\% Processor Utility"
+    )
+    processor_time = _read_windows_counter("\\Processor(_Total)\\% Processor Time")
+
+    if utility is not None and processor_time is not None:
+        # 두 카운터 괴리가 클 때는 보수적으로 낮은 값을 채택해 과대 스파이크를 억제한다.
+        if abs(utility - processor_time) >= 25.0:
+            selected = min(utility, processor_time)
+            log.debug(
+                "[cpu-counter] utility/time mismatch: utility=%.1f, time=%.1f -> selected=%.1f",
+                utility,
+                processor_time,
+                selected,
+            )
+            return selected
+        return round((utility + processor_time) / 2.0, 1)
+
+    if utility is not None:
+        return utility
+
+    if processor_time is not None:
+        return processor_time
 
     try:
         cmd = (
@@ -252,6 +253,33 @@ def _get_pdh_cpu_usage() -> float | None:
     except Exception:
         pass
     return None
+
+
+def _read_windows_counter(counter_path: str) -> float | None:
+    """PowerShell Get-Counter 값을 float로 읽는다."""
+    try:
+        cmd = (
+            f'Get-Counter "{counter_path}" '
+            "-ErrorAction SilentlyContinue | "
+            "Select-Object -ExpandProperty CounterSamples | "
+            "Select-Object -ExpandProperty CookedValue"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", cmd],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        text = result.stdout.strip()
+        if not text:
+            return None
+
+        # locale에 따라 소수점이 ',' 로 내려오는 경우를 흡수한다.
+        normalized = text.replace(",", ".")
+        return min(round(float(normalized), 1), 100.0)
+    except Exception:
+        return None
 
 
 def _get_pdh_gpu_usage() -> float | None:

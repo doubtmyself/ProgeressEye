@@ -41,13 +41,13 @@ from core.ocr_reader import OcrReader  # pyright: ignore[reportImplicitRelativeI
 from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
-from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImport]
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
 
 _HEARTBEAT_INTERVAL_MS = 60_000
 _STATS_SYNC_INTERVAL_MS = 60_000
+_SAMPLER_START_DELAY_MS = 20_000
 
 
 class ProgressEyeApp:
@@ -113,10 +113,6 @@ class ProgressEyeApp:
 
         # UI
         self._main_window = MainWindow()
-        self._tray = TrayIcon(
-            on_show_window=self._show_main_window,
-            on_quit=self._quit,
-        )
         self._area_selector: AreaSelector | None = None
         self._region_viewer: RegionViewer | None = None
         self._task_counter = len(self._config.regions)
@@ -161,7 +157,6 @@ class ProgressEyeApp:
             self._ensure_login()
         if is_first and self._config.get("auth.uid", ""):
             self._show_welcome()
-        self._tray.start()
         self._main_window.show()
         return self._app.exec()
 
@@ -348,8 +343,8 @@ class ProgressEyeApp:
         heartbeat_timer.start(_HEARTBEAT_INTERVAL_MS)
         self._heartbeat_timer = heartbeat_timer
 
-        # CPU 사용량 측정 워밍업 (첫 호출은 0.0 반환하므로 미리 호출)
-        warmup_cpu_percent()
+        # 시작 직후 로그인/Firebase 초기화 부하가 크므로 샘플러 시작을 지연한다.
+        QTimer.singleShot(_SAMPLER_START_DELAY_MS, warmup_cpu_percent)
 
         # Firebase Storage 초기화
         self._firebase_storage = FirebaseStorage(
@@ -389,6 +384,14 @@ class ProgressEyeApp:
         if stats:
             self._device_manager.sync_stats(stats)
             self._last_stats_synced_at_ms = now_ms
+
+    def _notify(self, message: str) -> None:
+        """트레이 제거 버전: 알림은 로그로 대체한다."""
+        log.info("[알림] %s", message)
+
+    def _set_runtime_hint(self, text: str) -> None:
+        """트레이 툴팁 제거 버전: 상태 힌트를 로그로 남긴다."""
+        log.debug("[상태] %s", text)
 
     def _process_queued_actions(self) -> None:
         """큐에 쌍인 액션을 메인 스레드에서 실행한다.
@@ -1021,7 +1024,7 @@ class ProgressEyeApp:
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
-            self._tray.update_tooltip("ProgressEye - 대기 중")
+            self._set_runtime_hint("ProgressEye - 대기 중")
             self._set_display_required(False)
             log.info("모니터링 자동 정지 (활성 영역 없음)")
             if self._device_manager:
@@ -1052,7 +1055,7 @@ class ProgressEyeApp:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
             self._set_display_required(False)
-            self._tray.update_tooltip("ProgressEye - 대기 중")
+            self._set_runtime_hint("ProgressEye - 대기 중")
             log.info("모니터링 정지")
             if self._device_manager:
                 self._device_manager.set_monitoring(False)
@@ -1060,7 +1063,7 @@ class ProgressEyeApp:
         else:
             regions = [r for r in self._config.regions if r.get("enabled", True)]
             if not regions:
-                self._tray.show_notification("ProgressEye", t("no_checked_regions"))
+                self._notify(t("no_checked_regions"))
                 return
             interval = self._config.get("capture.interval_seconds", 30)
             self._freeze_detector.reset_all()
@@ -1072,7 +1075,7 @@ class ProgressEyeApp:
             self._pending_firebase_batch.clear()
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True, interval)
-            self._tray.update_tooltip("ProgressEye - 모니터링 중")
+            self._set_runtime_hint("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
             self._set_display_required(True)
             if self._device_manager:
@@ -1147,11 +1150,7 @@ class ProgressEyeApp:
                     complete_msg = t("image_changed_completed").format(
                         label=label, progress=last_progress
                     )
-                    self._action_queue.put(
-                        lambda _msg=complete_msg: self._tray.show_notification(
-                            title="ProgressEye", message=_msg
-                        )
-                    )
+                    self._action_queue.put(lambda _msg=complete_msg: self._notify(_msg))
                     if self._device_manager:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", complete_msg
@@ -1171,11 +1170,7 @@ class ProgressEyeApp:
                     )
                     warn_msg = t("image_changed_warning").format(label=label)
                     stopped_msg = t("image_changed_stopped")
-                    self._action_queue.put(
-                        lambda _msg=warn_msg: self._tray.show_notification(
-                            title="ProgressEye", message=_msg
-                        )
-                    )
+                    self._action_queue.put(lambda _msg=warn_msg: self._notify(_msg))
                     if self._device_manager:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", warn_msg
@@ -1218,9 +1213,7 @@ class ProgressEyeApp:
                         self._post_completion_fails[region_id] = -1  # 중복 알림 방지
                         closed_msg = t("completion_closed").format(label=label)
                         self._action_queue.put(
-                            lambda _msg=closed_msg: self._tray.show_notification(
-                                title="ProgressEye", message=_msg
-                            )
+                            lambda _msg=closed_msg: self._notify(_msg)
                         )
                         if self._device_manager:
                             self._device_manager.push_alert(
@@ -1266,7 +1259,7 @@ class ProgressEyeApp:
         if self._should_sync_firebase_state(new_state, prev_synced, prev_analyzed):
             self._pending_firebase_batch[region_id] = new_state
             self._last_synced_firebase_state[region_id] = new_state
-        self._tray.update_tooltip(f"ProgressEye - {label}: {progress:.1f}%")
+        self._set_runtime_hint(f"ProgressEye - {label}: {progress:.1f}%")
         # UI 업데이트 — 큐로 메인 스레드 전달
         self._action_queue.put(
             lambda _id=region_id, _p=progress, _l=label: (
@@ -1295,11 +1288,7 @@ class ProgressEyeApp:
                     old=alert_progress,
                     new=progress,
                 )
-                self._action_queue.put(
-                    lambda _msg=reset_msg: self._tray.show_notification(
-                        title="ProgressEye", message=_msg
-                    )
-                )
+                self._action_queue.put(lambda _msg=reset_msg: self._notify(_msg))
                 if self._device_manager:
                     self._device_manager.push_alert(
                         "completion", "ProgressEye", reset_msg
@@ -1336,9 +1325,7 @@ class ProgressEyeApp:
                 alert_msg = t("alert_triggered").format(label=label, progress=progress)
                 log.info("[완료 알람] %s", alert_msg)
                 self._action_queue.put(
-                    lambda _msg=alert_msg, _l=label: self._tray.show_notification(
-                        title="ProgressEye", message=_msg
-                    )
+                    lambda _msg=alert_msg, _l=label: self._notify(_msg)
                 )
                 if self._device_manager:
                     self._device_manager.push_alert(
@@ -1360,11 +1347,7 @@ class ProgressEyeApp:
                 stall_msg = t("stall_detected").format(
                     label=label, minutes=freeze_state.frozen_minutes
                 )
-                self._action_queue.put(
-                    lambda _msg=stall_msg: self._tray.show_notification(
-                        title="ProgressEye", message=_msg
-                    )
-                )
+                self._action_queue.put(lambda _msg=stall_msg: self._notify(_msg))
                 if self._device_manager:
                     self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
 
@@ -1425,7 +1408,7 @@ class ProgressEyeApp:
     def _on_test_stall(self, region_id: str) -> None:
         """프리징 테스트 — RTDB에 stall 알림을 기록한다 (FCM 파이프라인 검증용)."""
         if not self._device_manager:
-            self._tray.show_notification("ProgressEye", "Firebase not connected")
+            self._notify("Firebase not connected")
             return
         label = region_id
         for r in self._config.regions:
@@ -1434,13 +1417,13 @@ class ProgressEyeApp:
                 break
         stall_msg = t("stall_detected").format(label=label, minutes=5)
         self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
-        self._tray.show_notification("ProgressEye", f"[TEST] {stall_msg}")
+        self._notify(f"[TEST] {stall_msg}")
         log.info("[TEST] 프리징 알림 전송: %s", region_id)
 
     def _on_test_complete(self, region_id: str) -> None:
         """완료 테스트 — RTDB에 completion 알림을 기록한다 (FCM 파이프라인 검증용)."""
         if not self._device_manager:
-            self._tray.show_notification("ProgressEye", "Firebase not connected")
+            self._notify("Firebase not connected")
             return
         label = region_id
         for r in self._config.regions:
@@ -1449,21 +1432,11 @@ class ProgressEyeApp:
                 break
         alert_msg = t("alert_triggered").format(label=label, progress=100.0)
         self._device_manager.push_alert("completion", "ProgressEye", alert_msg)
-        self._tray.show_notification("ProgressEye", f"[TEST] {alert_msg}")
+        self._notify(f"[TEST] {alert_msg}")
         log.info("[TEST] 완료 알림 전송: %s", region_id)
 
-    def _show_main_window(self) -> None:
-        """메인 창을 표시한다. pystray 스레드에서 호출됨."""
-        self._action_queue.put(self._do_show_main_window)
-
-    def _do_show_main_window(self) -> None:
-        """메인 창 표시 (메인 스레드)."""
-        self._main_window.show()
-        self._main_window.activateWindow()
-        self._main_window.raise_()
-
     def _quit(self) -> None:
-        """애플리케이션을 종료한다. pystray 스레드에서 호출됨."""
+        """애플리케이션을 종료한다."""
         log.info("ProgressEye 종료")
         self._scheduler.stop()
         self._set_display_required(False)
