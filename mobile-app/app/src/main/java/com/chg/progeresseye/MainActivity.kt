@@ -54,12 +54,19 @@ class MainActivity : ComponentActivity() {
                     false // Firebase currentUser is synchronous — no async wait needed
                 }
 
-                // Skip login if user already has a valid Firebase session
-                val startDestination = if (authViewModel.isSignedIn) "main" else "login"
+                // Start destination is driven by AuthUiState, not raw FirebaseAuth state.
+                // This prevents auto-navigation to main while takeover confirmation is pending.
+                val startDestination = if (
+                    authState.user != null && !authState.requiresSessionTakeover
+                ) {
+                    "main"
+                } else {
+                    "login"
+                }
 
-                LaunchedEffect(authState.user) {
+                LaunchedEffect(authState.user, authState.requiresSessionTakeover) {
                     val currentRoute = navController.currentDestination?.route
-                    if (authState.user != null && currentRoute != "main") {
+                    if (authState.user != null && !authState.requiresSessionTakeover && currentRoute != "main") {
                         navController.navigate("main") {
                             popUpTo("login") { inclusive = true }
                         }
