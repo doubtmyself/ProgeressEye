@@ -80,4 +80,14 @@
     <string name="settings_logout_title">Log out?</string>
     <string name="settings_logout_message">You will need to sign in again.</string>
     <string name="settings_cancel">Cancel</string>
+
+    <!-- ── Mobile Session ── -->
+    <string name="session_takeover_title">Another mobile is already logged in</string>
+    <string name="session_takeover_message">A signed-in mobile device exists (%1$s). Do you want to log out the existing device and continue here?</string>
+    <string name="session_takeover_unknown_device">Unknown device</string>
+    <string name="session_takeover_confirm">Log out existing device</string>
+    <string name="session_takeover_cancel">Cancel</string>
+    <string name="auth_session_takeover_failed">Failed to switch active mobile session.</string>
+    <string name="auth_session_takeover_cancelled">Sign-in cancelled.</string>
+    <string name="auth_logged_out_by_other_device">You were logged out because this account signed in on another mobile device.</string>
 </resources>

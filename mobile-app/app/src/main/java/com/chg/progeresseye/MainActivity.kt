@@ -1,6 +1,7 @@
 package com.chg.progeresseye
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,16 +14,26 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.chg.progeresseye.auth.AuthViewModel
+import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DataSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var mobileSessionRef: DatabaseReference? = null
+    private var mobileSessionListener: ValueEventListener? = null
+    private var isHandlingSessionConflict: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // installSplashScreen() MUST be called BEFORE super.onCreate()
         val splashScreen = installSplashScreen()
@@ -46,21 +57,34 @@ class MainActivity : ComponentActivity() {
                 // Skip login if user already has a valid Firebase session
                 val startDestination = if (authViewModel.isSignedIn) "main" else "login"
 
+                LaunchedEffect(authState.user) {
+                    val currentRoute = navController.currentDestination?.route
+                    if (authState.user != null && currentRoute != "main") {
+                        navController.navigate("main") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    } else if (authState.user == null && currentRoute == "main") {
+                        navController.navigate("login") {
+                            popUpTo("main") { inclusive = true }
+                        }
+                    }
+                }
+
+                LaunchedEffect(authState.user?.uid) {
+                    val uid = authState.user?.uid
+                    if (uid != null) {
+                        startSessionConflictListener(uid, authViewModel)
+                    } else {
+                        stopSessionConflictListener()
+                    }
+                }
+
                 NavHost(
                     navController = navController,
                     startDestination = startDestination,
                 ) {
                     composable("login") {
                         val webClientId = getString(R.string.default_web_client_id)
-
-                        // Navigate to main when sign-in succeeds
-                        LaunchedEffect(authState.user) {
-                            if (authState.user != null) {
-                                navController.navigate("main") {
-                                    popUpTo("login") { inclusive = true }
-                                }
-                            }
-                        }
 
                         LoginScreen(
                             onSignInClick = {
@@ -69,8 +93,16 @@ class MainActivity : ComponentActivity() {
                                     webClientId = webClientId,
                                 )
                             },
+                            onConfirmSessionTakeover = {
+                                authViewModel.confirmSessionTakeover(this@MainActivity)
+                            },
+                            onCancelSessionTakeover = {
+                                authViewModel.cancelSessionTakeover(this@MainActivity)
+                            },
                             isLoading = authState.isLoading,
                             error = authState.error,
+                            requiresSessionTakeover = authState.requiresSessionTakeover,
+                            existingDeviceName = authState.existingDeviceName,
                         )
                     }
                     composable("main") {
@@ -91,5 +123,49 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             MobileAds.initialize(this@MainActivity) {}
         }
+    }
+
+    override fun onDestroy() {
+        stopSessionConflictListener()
+        super.onDestroy()
+    }
+
+    private fun startSessionConflictListener(uid: String, authViewModel: AuthViewModel) {
+        stopSessionConflictListener()
+        isHandlingSessionConflict = false
+
+        val localSessionId = MobileSessionManager.getSessionId(this) ?: return
+        val ref = FirebaseDatabase.getInstance()
+            .getReference("users")
+            .child(uid)
+            .child("mobileSession")
+            .child("sessionId")
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val remoteSessionId = snapshot.getValue(String::class.java) ?: return
+                if (!isHandlingSessionConflict && remoteSessionId != localSessionId) {
+                    isHandlingSessionConflict = true
+                    authViewModel.forceSignOutBySessionConflict(this@MainActivity)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.w("MainActivity", "mobileSession listener cancelled", error.toException())
+            }
+        }
+
+        ref.addValueEventListener(listener)
+        mobileSessionRef = ref
+        mobileSessionListener = listener
+    }
+
+    private fun stopSessionConflictListener() {
+        mobileSessionListener?.let { listener ->
+            mobileSessionRef?.removeEventListener(listener)
+        }
+        mobileSessionListener = null
+        mobileSessionRef = null
+        isHandlingSessionConflict = false
     }
 }

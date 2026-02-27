@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -417,85 +419,89 @@ private fun DeviceHeader(
     gpuUsage: Float? = null,
     ramUsage: Float? = null,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(20.dp),
-        verticalAlignment = Alignment.Top,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Slate800),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.DesktopWindows,
-                contentDescription = null,
-                tint = Slate400,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Slate800),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isOnline && isMonitoring -> StatusComplete
-                                isOnline -> Amber500
-                                else -> StatusOffline
-                            }
-                        ),
-                )
-                Text(
-                    text = when {
-                        isOnline && isMonitoring -> stringResource(R.string.dashboard_status_monitoring)
-                        isOnline -> stringResource(R.string.dashboard_status_online)
-                        else -> stringResource(R.string.dashboard_status_offline)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = when {
-                        isOnline && isMonitoring -> StatusComplete
-                        isOnline -> Amber500
-                        else -> StatusOffline
-                    },
+                Icon(
+                    imageVector = Icons.Outlined.DesktopWindows,
+                    contentDescription = null,
+                    tint = Slate400,
+                    modifier = Modifier.size(24.dp),
                 )
             }
-            // Hardware stats (online 상태에서만 표시)
-            if (isOnline && (cpuUsage != null || gpuUsage != null || ramUsage != null)) {
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    cpuUsage?.let { MetricChip(label = "CPU", value = "%.0f%%".format(it)) }
-                    gpuUsage?.let { MetricChip(label = "GPU", value = "%.0f%%".format(it)) }
-                    ramUsage?.let { MetricChip(label = "RAM", value = "%.0f%%".format(it)) }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isOnline && isMonitoring -> StatusComplete
+                                    isOnline -> Amber500
+                                    else -> StatusOffline
+                                }
+                            ),
+                    )
+                    Text(
+                        text = when {
+                            isOnline && isMonitoring -> stringResource(R.string.dashboard_status_monitoring)
+                            isOnline -> stringResource(R.string.dashboard_status_online)
+                            else -> stringResource(R.string.dashboard_status_offline)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = when {
+                            isOnline && isMonitoring -> StatusComplete
+                            isOnline -> Amber500
+                            else -> StatusOffline
+                        },
+                    )
                 }
+            }
+
+            IconButton(onClick = { /* TODO: device options menu */ }) {
+                Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
             }
         }
 
-        IconButton(onClick = { /* TODO: device options menu */ }) {
-            Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
+        if (isOnline && (cpuUsage != null || gpuUsage != null || ramUsage != null)) {
+            Row(
+                modifier = Modifier
+                    .padding(start = 64.dp, top = 2.dp)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                cpuUsage?.let { MetricChip(label = "CPU", value = "%.0f%%".format(it)) }
+                gpuUsage?.let { MetricChip(label = "GPU", value = "%.0f%%".format(it)) }
+                ramUsage?.let { MetricChip(label = "RAM", value = "%.0f%%".format(it)) }
+            }
         }
     }
 }

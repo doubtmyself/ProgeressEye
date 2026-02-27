@@ -29,8 +29,10 @@ import androidx.compose.material.icons.outlined.RemoveRedEye
 import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -59,6 +62,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chg.progeresseye.R
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.Indigo400
 import com.chg.progeresseye.ui.theme.Indigo500
@@ -87,8 +91,12 @@ private val GoogleGreen = Color(0xFF34A853)
 @Composable
 fun LoginScreen(
     onSignInClick: () -> Unit = {},
+    onConfirmSessionTakeover: () -> Unit = {},
+    onCancelSessionTakeover: () -> Unit = {},
     isLoading: Boolean = false,
     error: String? = null,
+    requiresSessionTakeover: Boolean = false,
+    existingDeviceName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Track the logo circle's center in root coordinates
@@ -120,6 +128,31 @@ fun LoginScreen(
                 )
             },
     ) {
+        if (requiresSessionTakeover) {
+            AlertDialog(
+                onDismissRequest = onCancelSessionTakeover,
+                title = { Text(text = stringResource(R.string.session_takeover_title)) },
+                text = {
+                    Text(
+                        text = stringResource(
+                            R.string.session_takeover_message,
+                            existingDeviceName ?: stringResource(R.string.session_takeover_unknown_device),
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = onConfirmSessionTakeover) {
+                        Text(text = stringResource(R.string.session_takeover_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancelSessionTakeover) {
+                        Text(text = stringResource(R.string.session_takeover_cancel))
+                    }
+                },
+            )
+        }
+
         // ── Main vertical layout ──
         Column(
             modifier = Modifier.fillMaxSize(),
