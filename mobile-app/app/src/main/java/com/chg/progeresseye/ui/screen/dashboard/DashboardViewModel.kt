@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 // ═════════════════════════════════════════════════════════
 // DashboardViewModel — RTDB listener for devices + tasks
@@ -419,7 +420,12 @@ class DashboardViewModel : ViewModel() {
         val commandRef = db.reference
             .child("users").child(uid)
             .child("commands").child("screenshot")
-        commandRef.setValue(mapOf("ts" to System.currentTimeMillis() / 1000))
+        commandRef.setValue(
+            mapOf(
+                "ts" to System.currentTimeMillis() / 1000,
+                "cmdId" to UUID.randomUUID().toString(),
+            )
+        )
             .addOnSuccessListener {
                 Log.d(TAG, "[SCREENSHOT] command written to RTDB successfully")
             }

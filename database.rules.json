@@ -11,6 +11,9 @@
         "plan": {
           ".validate": "newData.isString()"
         },
+        "mobileSession": {
+          ".validate": "newData.hasChildren(['sessionId', 'deviceId', 'deviceName', 'updatedAt']) && newData.child('sessionId').isString() && newData.child('sessionId').val().length <= 128 && newData.child('deviceId').isString() && newData.child('deviceId').val().length <= 128 && newData.child('deviceName').isString() && newData.child('deviceName').val().length <= 128 && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() <= now + 60000 && newData.child('updatedAt').val() >= now - 86400000"
+        },
         "activeDevice": {
           ".validate": "newData.isString()"
         },
@@ -26,10 +29,10 @@
         },
         "commands": {
           "screenshot": {
-            ".validate": "newData.hasChild('ts')"
+            ".validate": "newData.hasChildren(['ts', 'cmdId']) && newData.child('ts').isNumber() && newData.child('ts').val() >= (now / 1000) - 3600 && newData.child('ts').val() <= (now / 1000) + 120 && newData.child('cmdId').isString() && newData.child('cmdId').val().length >= 8 && newData.child('cmdId').val().length <= 128"
           },
           "monitor": {
-            ".validate": "newData.hasChild('ts')"
+            ".validate": "newData.hasChildren(['action', 'ts', 'cmdId']) && newData.child('action').isString() && (newData.child('action').val() == 'start' || newData.child('action').val() == 'stop') && newData.child('ts').isNumber() && newData.child('ts').val() >= (now / 1000) - 3600 && newData.child('ts').val() <= (now / 1000) + 120 && newData.child('cmdId').isString() && newData.child('cmdId').val().length >= 8 && newData.child('cmdId').val().length <= 128"
           }
         },
         "devices": {

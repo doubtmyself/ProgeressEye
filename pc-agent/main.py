@@ -85,6 +85,8 @@ class ProgressEyeApp:
             str, tuple[str, str]
         ] = {}  # device_id -> (jpeg_hash, download_url)
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
+        self._processed_command_ids: dict[str, float] = {}
+        self._last_command_ts_by_type: dict[str, int] = {}
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
 
         self._alerted_regions: dict[str, float] = {}  # region_id -> alert progress
@@ -414,6 +416,10 @@ class ProgressEyeApp:
             except queue.Empty:
                 break
             cmd_type = cmd.get("type")
+            if not isinstance(cmd_type, str):
+                continue
+            if not self._is_fresh_command(cmd_type, cmd.get("data")):
+                continue
             log.info("[CMD] mobile command received: type=%s", cmd_type)
             if cmd_type == "screenshot":
                 self._handle_screenshot_command()
@@ -426,6 +432,63 @@ class ProgressEyeApp:
                         self._toggle_monitoring()
                     elif action == "stop" and self._scheduler.is_running:
                         self._toggle_monitoring()
+
+    def _is_fresh_command(self, cmd_type: str, data_obj: object) -> bool:
+        """재전송/재연결 중복 명령과 오래된 명령을 필터링한다."""
+        if not isinstance(data_obj, dict):
+            log.warning("[CMD] invalid payload type, dropped: %s", cmd_type)
+            return False
+
+        ts_raw = data_obj.get("ts")
+        cmd_id_raw = data_obj.get("cmdId")
+
+        cmd_ts: int | None = None
+        if isinstance(ts_raw, (int, float)):
+            cmd_ts = int(ts_raw)
+        elif isinstance(ts_raw, str) and ts_raw.isdigit():
+            cmd_ts = int(ts_raw)
+
+        if cmd_ts is not None and cmd_ts > 1_000_000_000_000:
+            cmd_ts //= 1000
+
+        now_sec = int(time.time())
+        if cmd_ts is not None:
+            if cmd_ts < now_sec - 3600 or cmd_ts > now_sec + 120:
+                log.warning(
+                    "[CMD] stale command dropped: type=%s ts=%s", cmd_type, cmd_ts
+                )
+                return False
+
+        cmd_id = cmd_id_raw.strip() if isinstance(cmd_id_raw, str) else ""
+        if cmd_id:
+            seen_at = self._processed_command_ids.get(cmd_id)
+            if seen_at is not None and (time.time() - seen_at) < 3600:
+                log.info(
+                    "[CMD] duplicate cmdId dropped: type=%s cmdId=%s", cmd_type, cmd_id
+                )
+                return False
+            self._processed_command_ids[cmd_id] = time.time()
+
+            if len(self._processed_command_ids) > 512:
+                cutoff = time.time() - 3600
+                self._processed_command_ids = {
+                    key: seen
+                    for key, seen in self._processed_command_ids.items()
+                    if seen >= cutoff
+                }
+            return True
+
+        if cmd_ts is None:
+            log.warning("[CMD] missing ts/cmdId dropped: type=%s", cmd_type)
+            return False
+
+        last_ts = self._last_command_ts_by_type.get(cmd_type)
+        if last_ts is not None and cmd_ts <= last_ts:
+            log.info("[CMD] replayed ts dropped: type=%s ts=%s", cmd_type, cmd_ts)
+            return False
+
+        self._last_command_ts_by_type[cmd_type] = cmd_ts
+        return True
 
     def _handle_screenshot_command(self) -> None:
         """모바일 스크린샷 요청: 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록."""
