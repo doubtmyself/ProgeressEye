@@ -28,7 +28,7 @@
 | 1.8 | 화면 캡처 모듈 | mss 기반 지정 영역 캡처, 주기적 실행 (스케줄러) | P0 | ✅ 완료 |
 | 1.9 | OpenCV 바 탐지 + pytesseract OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + pytesseract OCR 숫자 감지 | P0 | ✅ 완료 |
 | 1.10 | Firebase 데이터 전송 | `users/{uid}/tasks/{pcId}/{taskId}` 에 진행률 쓰기 | P0 | ✅ 완료 |
-| 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 | ✅ 완료 |
+| 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 | ⚠️ 제거됨 (현재 트레이 미사용) |
 
 ### Firebase (Cloud)
 
@@ -79,7 +79,7 @@
 |---|------|------|----------|
 | 2.7 | onTaskComplete 함수 | 완료 감지 → `settings/fcmTokens` 조회 → FCM 발송 | P0 |
 | 2.8 | onTaskFreeze 함수 | 멈춤 감지 → FCM 발송 | P0 |
-| 2.9 | onDeviceOffline 함수 | PC 오프라인 → 30초 유예 후 FCM 발송 | P1 |
+| 2.9 | onDeviceOffline 함수 | PC 오프라인 → 2분 유예 후 FCM 발송 | P1 |
 
 ### Mobile App
 

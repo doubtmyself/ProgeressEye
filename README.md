@@ -2,6 +2,14 @@
 
 PC 화면의 진행률을 실시간으로 추적하고, 모바일에서 모니터링하는 크로스플랫폼 시스템.
 
+## 최근 업데이트 (2026-02)
+
+- 모바일 인증: **계정당 1개 모바일 세션**만 허용. 다른 기기 로그인 시 기존 기기 로그아웃 확인 후 세션 교체
+- 모바일 광고: Top 영역 배너 레이아웃/인셋 정리 (`TopAppBar`와 겹침 이슈 수정)
+- 모바일 데이터 최적화: `alerts` 증분 구독, `heartbeat` 배치 조회로 RTDB 다운로드 절감
+- 주기 변경: PC `heartbeat/stats` 60초, 모바일 `heartbeat` 60초, PC 오프라인 판정 2분
+- PC 샘플러: 시스템 트레이 제거, CPU 샘플러 안정화(워밍업 스킵 + 초기 N/A 게이트 + APPCPU 디버그 로그)
+
 ```
 ┌─────────────┐     Firebase RTDB      ┌─────────────┐
 │  PC Agent   │ ──── 진행률/알림 ────→ │  Mobile App │
@@ -161,6 +169,11 @@ firebase deploy --project progresseye-49244
 ```
 users/{uid}/
   plan: "free" | "pro"
+  mobileSession/
+    sessionId: "uuid"
+    deviceId: "android_xxx"
+    deviceName: "Samsung SM-S9xx"
+    updatedAt: <server_timestamp>
   activeDevice: "pc_xxxx"
   profile: { email, displayName, lastLoginAt }
   deviceStatus/
@@ -169,7 +182,6 @@ users/{uid}/
     {deviceId}: <timestamp_ms>
   commands/
     screenshot: { ts }
-    monitor: { action: "start" | "stop", ts }
   devices/
     {pcId}/
       name, platform, appVersion, createdAt
@@ -199,7 +211,7 @@ users/{uid}/
 
 ```
 PC 이벤트 감지 (완료/프리징/화면변경)
-  → 트레이 알림 (Windows)
+  → PC 로컬 로그 기록
   → RTDB /alerts/{id} 기록
   → Cloud Function onAlertCreated 트리거
   → /fcmTokens 조회 → FCM data message 전송
@@ -215,9 +227,11 @@ PC Agent가 실행 중일 때 CPU/GPU 사용량을 모바일 대시보드에 실
 
 ```
 PC Agent (모니터링 중 / 하트비트 시)
-  → psutil: CPU 사용량 (%)
+  → Windows: GetSystemTimes 기반 CPU busy 계산(우선), psutil/PDH fallback
+  → Linux: psutil CPU 사용량 (%)
   → nvidia-ml-py: NVIDIA GPU 사용량 (%) — 우선
   → Windows PDH: AMD/Intel GPU 사용량 (%) — fallback
+  → RAM: psutil 최신값
   → RTDB /devices/{id}/stats/ 에 기록
   → Mobile ChildEventListener가 자동 감지
   → DeviceHeader에 칩 UI로 표시 (PC 온라인일 때만)
@@ -225,6 +239,13 @@ PC Agent (모니터링 중 / 하트비트 시)
 
 | 항목 | 라이브러리 | 관리자 권한 | 비고 |
 |---|---|---|---|
-| CPU 사용량 | `psutil` | ❌ 불필요 | 모든 플랫폼 |
+| CPU 사용량 | Windows `GetSystemTimes` + `psutil` fallback | ❌ 불필요 | 플랫폼별 분기 |
 | GPU 사용량 (NVIDIA) | `nvidia-ml-py` | ❌ 불필요 | NVIDIA 드라이버 필수 |
 | GPU 사용량 (AMD/Intel) | Windows PDH | ❌ 불필요 | PowerShell 내장 기능 |
+
+### 하트비트/오프라인 기준
+
+- PC heartbeat: 60초
+- PC stats 전송: 60초
+- Mobile heartbeat: 60초
+- 모바일에서 PC offline 판정: heartbeat 2분 초과

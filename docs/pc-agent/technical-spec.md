@@ -13,7 +13,7 @@
 | OCR 감지 | pytesseract + Tesseract OCR | 숫자가 보이는 진행바에서 % 수치 직접 인식 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
 | Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`{DB_URL}/{path}.json?auth={idToken}`), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
-| 시스템 트레이 | pystray | 크로스플랫폼 트레이 아이콘 (queue.Queue + QTimer 폴링) |
+| 하드웨어 샘플러 | psutil + nvidia-ml-py + Windows PDH | CPU/GPU/RAM 수집, 이동평균 산출 |
 | 패키징 | PyInstaller | 단일 .exe 생성 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
 | 토큰 저장 | keyring | OS 자격증명 저장소에 안전하게 토큰 보관 |
@@ -49,7 +49,7 @@ pc-agent/
 │   ├── color_picker.py      # InteractiveBarPreview + BarPreviewDialog
 │   ├── ocr_preview.py       # OCR 탐지 미리보기 (빨간+시안 사각형)
 │   ├── region_viewer.py     # 전체 화면 탐지 결과 오버레이
-│   └── tray_icon.py         # 시스템 트레이 (간소화)
+│   └── tray_icon.py         # (레거시) 트레이 모듈
 ├── tesseract/               # Tesseract OCR 번들 (바이너리, .gitignore)
 │   ├── tesseract.exe
 │   ├── *.dll
@@ -71,7 +71,7 @@ pc-agent/
   │
   ├─ keyring에 저장된 토큰 있음 ──→ refresh_token으로 Firebase 자동 로그인 (_try_auto_login)
   │                          │
-  │                          ├─ 성공 ──→ Firebase 초기화 (기기 등록 + 프로필 저장 + 30초 하트비트)
+  │                          ├─ 성공 ──→ Firebase 초기화 (기기 등록 + 프로필 저장 + 60초 하트비트)
   │                          └─ 실패 ──→ 수동 로그인 다이얼로그 (_ensure_login)
   │
   └─ 토큰 없음 ──→ 수동 로그인 다이얼로그 (Retry/Cancel)

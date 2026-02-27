@@ -221,7 +221,7 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 ```
 트리거: users/{uid}/devices/{pcId}/status 가 "offline"으로 변경 시
 동작:
-  1. 마지막 온라인 시간 확인 (30초 유예)
+  1. 마지막 온라인 시간 확인 (2분 유예)
   2. users/{uid}/settings/notifications/offline 확인
   3. true이면 FCM 발송
 ```

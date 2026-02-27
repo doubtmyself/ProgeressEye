@@ -521,15 +521,13 @@ data class Screenshot(
 - 스크린샷 요청/표시: Coil 3 AsyncImage + 풀스크린 다이얼로그(핀치 줌)
 
 **TODO:**
-- CPU 사용량, 온도 메트릭 표시 (MetricChip) — 추후 구현
-- Pull-to-Refresh 지원
 - FCM 푸시 알림 구현 (완료/프리징 백그라운드 알림)
 ### 4.3 리스너 경로
 
 | 데이터 | RTDB 경로 | 갱신 주기 |
 |---|---|---|
 | 기기 목록 | `users/{uid}/devices` | 기기 등록/해제 시 |
-| 작업 진행률 | `users/{uid}/devices/{id}/tasks` | 모니터링 사이클 (기본 30초) |
+| 작업 진행률 | `users/{uid}/devices/{id}/tasks` | 모니터링 사이클 (기본 60초) |
 | 스크린샷 | `users/{uid}/devices/{id}/screenshots/latest` | 요청 시 |
 | 사용자 플랜 | `users/{uid}/plan` | 로그인 시 1회 |
 

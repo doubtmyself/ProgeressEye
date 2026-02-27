@@ -9,7 +9,7 @@ Firebase Realtime Database를 통해 모바일 앱과 실시간 양방향 동기
 ```
 ┌─────────────┐     Firebase RTDB      ┌─────────────┐
 │  PC Agent   │ ──── 진행률 push ────→ │  Mobile App │
-│  (Python)   │ ←─── 명령 SSE ──────── │  (Flutter)  │
+│  (Python)   │ ←─── 명령 SSE ──────── │  (Kotlin)   │
 └──────┬──────┘                        └──────┬──────┘
        │          Firebase Storage            │
        └──── 스크린샷 업로드 ──────────────────┘
@@ -63,7 +63,6 @@ winget install UB-Mannheim.TesseractOCR
 - `mss` — 화면 캡처
 - `opencv-python-headless` — 진행바 탐지 (OpenCV 4전략)
 - `pytesseract` — OCR 숫자 감지
-- `pystray` — 시스템 트레이
 - `google-auth` / `google-auth-oauthlib` — Google OAuth 2.0 로그인
 - `requests` — Firebase REST API 호출
 - `sseclient-py` — Firebase RTDB SSE 스트리밍 (명령 수신)
@@ -85,11 +84,10 @@ winget install UB-Mannheim.TesseractOCR
 - **템플릿 이미지 영구 저장**: `templates/{region_id}.png`에 영역 등록 시점의 스크린샷을 저장, 작업 삭제 시에만 파일 삭제
 - **모니터 절전 방지**: 모니터링 중 `SetThreadExecutionState`로 모니터 절전을 자동 방지, 정지 시 복귀
 
-### 모바일 연동 (예정)
+### 모바일 연동
 
 - **SSE 리스너**: Firebase RTDB `users/{uid}/commands/` 경로를 실시간 감시, 모바일 명령 즉시 수신
 - **스크린샷 요청**: 모바일에서 명령 → PC 전체 화면 캡처 → JPEG 압축 → Firebase Storage 업로드 → RTDB에 URL 기록
-- **모니터링 제어**: 모바일에서 시작/정지 명령
 
 ### 완료 시나리오 (3가지)
 
@@ -140,19 +138,10 @@ users/{uid}/
 
 ## 성능 최적화
 
-### 바 모드 — Smart 다운스케일
+### 바 모드 — 정확도 우선 분석
 
-진행바 픽셀 분석 시 50% 다운스케일을 적용하여 OpenCV 연산량을 ~75% 감소시킨다.
-신뢰도가 낮을 때(얇은 바, 복잡한 오버레이) 원본 해상도로 자동 fallback한다.
-
-| 단계 | 설명 |
-|---|---|
-| 1. 다운스케일 시도 | 50% 축소 후 bar_finder + bar_analyzer 실행 |
-| 2. 신뢰도 검증 | confidence < 0.5 또는 uniform bar 의심(0%/100% + conf ≤ 0.7) |
-| 3. Fallback | 조건 충족 시 원본 해상도로 재분석 |
-
-- 샘플 테스트 결과: 최대 오차 1.0% (Smart) vs 66.0% (단순 50%)
-- 속도: 1.5~2.5배 빠름 (일반 이미지), fallback 시 원본과 동등
+진행바 픽셀 분석은 현재 정확도 우선으로 동작하며, 다운스케일 경로는 제거되었다.
+Windows/Linux 환경별 하드웨어 샘플러를 사용하며, 초기 워밍업 구간은 CPU 값을 전송하지 않고 `N/A`로 처리한다.
 
 ### OCR 모드 — 변화 감지 + LSTM-only
 
@@ -173,8 +162,8 @@ OCR 모드에서는 두 가지 최적화를 적용한다:
 | 시나리오 | CPU 평균 | 메모리 |
 |---|---|---|
 | 유휴 (대기) | ~0.5% | ~80~100MB |
-| 바 모드 30초 주기 | ~2~4% | ~120~150MB |
-| OCR 모드 30초 주기 (변화 없으면 skip) | ~0.5~1% | ~130~170MB |
+| 바 모드 60초 주기 | ~2~4% | ~120~150MB |
+| OCR 모드 60초 주기 (변화 없으면 skip) | ~0.5~1% | ~130~170MB |
 | 바 모드 1초 주기 | ~10~15% | ~130MB |
 
 ## UI/설정
@@ -185,7 +174,7 @@ OCR 모드에서는 두 가지 최적화를 적용한다:
 - **버튼 Tooltip**: 모든 버튼에 기능 설명 Tooltip 표시
 - **다국어**: 한국어 / 영어 (i18n 모듈, 기본 언어: English)
 - **로그아웃**: 토큰 삭제 → 앱 종료
-- **시스템 트레이**: 최소화 시 트레이 상주, 완료 알림 표시
+- **시스템 트레이 제거**: 닫기 버튼 클릭 시 즉시 종료
 
 ## 프로젝트 구조
 
@@ -204,7 +193,7 @@ pc-agent/
 │   ├── ocr_reader.py        # pytesseract OCR 숫자 감지
 │   ├── freeze_detector.py   # 프리징 감지
 │   └── scheduler.py         # 모니터링 스케줄러
-│   └── system_monitor.py   # CPU/GPU 사용량·온도 수집 (psutil + nvidia-ml-py)
+│   └── system_monitor.py   # CPU/GPU/RAM 샘플러 (Windows/Linux 분기)
 ├── firebase/
 │   ├── realtime_db.py       # Firebase RTDB REST API 래퍼
 │   └── device_manager.py    # 기기 등록/충돌 관리
@@ -215,7 +204,7 @@ pc-agent/
 │   ├── color_picker.py      # 바 색상 선택
 │   ├── ocr_preview.py       # OCR 미리보기 다이얼로그
 │   ├── region_viewer.py     # 선택 영역 하이라이트
-│   └── tray_icon.py         # 시스템 트레이 아이콘
+│   └── tray_icon.py         # (레거시) 트레이 아이콘 모듈
 ├── utils/
 │   ├── i18n.py              # 한/영 번역 모듈
 │   └── logger.py            # 로깅 설정
