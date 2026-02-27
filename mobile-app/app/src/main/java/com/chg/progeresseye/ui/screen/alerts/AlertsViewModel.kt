@@ -9,6 +9,8 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ChildEventListener
+import com.google.firebase.database.Query
 import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +32,8 @@ class AlertsViewModel : ViewModel() {
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private var alertsRef: DatabaseReference? = null
-    private var alertsListener: ValueEventListener? = null
+    private var alertsQuery: Query? = null
+    private var alertsListener: ChildEventListener? = null
     private val readAlertIds = mutableSetOf<String>()
 
     init {
@@ -48,17 +51,25 @@ class AlertsViewModel : ViewModel() {
         }
 
         alertsRef = db.reference.child("users").child(uid).child("alerts")
-        alertsListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val parsedAlerts = snapshot.children
-                    .mapNotNull { parseAlert(it) }
-                    .sortedByDescending { it.timestamp }
-                    .map { alert ->
-                        if (readAlertIds.contains(alert.id)) alert.copy(isRead = true) else alert
-                    }
+        alertsQuery = alertsRef?.limitToLast(MAX_ALERTS)
 
-                _alerts.value = parsedAlerts
-                _isLoading.value = false
+        alertsListener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                parseAlert(snapshot)?.let { upsertAlert(it) }
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                parseAlert(snapshot)?.let { upsertAlert(it) }
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                val alertId = snapshot.key ?: return
+                readAlertIds.remove(alertId)
+                _alerts.update { list -> list.filter { it.id != alertId } }
+            }
+
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
+                // No-op: UI sorting is timestamp-based.
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -66,7 +77,32 @@ class AlertsViewModel : ViewModel() {
                 _isLoading.value = false
             }
         }
-        alertsRef?.addValueEventListener(alertsListener!!)
+        alertsQuery?.addChildEventListener(alertsListener!!)
+        alertsQuery?.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                _isLoading.value = false
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "alerts:initialLoad:onCancelled", error.toException())
+                _isLoading.value = false
+            }
+        })
+    }
+
+    private fun upsertAlert(alert: AlertItem) {
+        _alerts.update { list ->
+            val updated = list.toMutableList()
+            val index = updated.indexOfFirst { it.id == alert.id }
+            val patchedAlert =
+                if (readAlertIds.contains(alert.id)) alert.copy(isRead = true) else alert
+            if (index >= 0) {
+                updated[index] = patchedAlert
+            } else {
+                updated.add(patchedAlert)
+            }
+            updated.sortedByDescending { it.timestamp }
+        }
     }
 
     private fun parseAlert(snapshot: DataSnapshot): AlertItem? {
@@ -119,13 +155,15 @@ class AlertsViewModel : ViewModel() {
 
     override fun onCleared() {
         alertsListener?.let { listener ->
-            alertsRef?.removeEventListener(listener)
+            alertsQuery?.removeEventListener(listener)
         }
         alertsListener = null
+        alertsQuery = null
         super.onCleared()
     }
 
     companion object {
         private const val TAG = "AlertsViewModel"
+        private const val MAX_ALERTS = 50
     }
 }

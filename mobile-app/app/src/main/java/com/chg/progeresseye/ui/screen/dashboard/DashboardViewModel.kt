@@ -17,7 +17,6 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
@@ -33,7 +32,7 @@ import kotlinx.coroutines.launch
 // 데이터 경로 분리:
 //   users/{uid}/devices/{id}/...      → ChildEventListener (태스크/스크린샷 변경)
 //   users/{uid}/deviceStatus/{id}     → ValueEventListener (접속 상태, 실시간)
-//   users/{uid}/heartbeat/{id}        → pull-to-refresh 시 읽기 (크래시 감지, 1분 threshold)
+//   users/{uid}/heartbeat/{id}        → pull-to-refresh 시 읽기 (크래시 감지, 2분 threshold)
 //   users/{uid}/mobileHeartbeat       → 30초마다 모바일 하트비트 갱신
 // ═════════════════════════════════════════════════════════
 
@@ -57,18 +56,14 @@ class DashboardViewModel : ViewModel() {
 
     // Listener B: deviceStatus (ValueEventListener — 접속 상태 실시간)
     private var statusRef: DatabaseReference? = null
-    private var statusListener: ValueEventListener? = null
-
-    // Listener C: user plan (ValueEventListener)
-    private var planRef: DatabaseReference? = null
-    private var planListener: ValueEventListener? = null
+    private var statusChildListener: ChildEventListener? = null
 
     // Rewarded ad state
     private var rewardedAd: RewardedAd? = null
     private var isRewardedAdLoading = false
     private var shouldPreloadRewardedAd = false
 
-    // Mobile heartbeat job (30초 간격 RTDB 갱신)
+    // Mobile heartbeat job (60초 간격 RTDB 갱신)
     private var mobileHeartbeatJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
 
@@ -131,49 +126,53 @@ class DashboardViewModel : ViewModel() {
         }
         devicesRef?.addChildEventListener(devicesChildListener!!)
 
-        // ── Listener B: deviceStatus (ValueEventListener) — 접속 상태 실시간 ──
+        // ── Listener B: deviceStatus (ChildEventListener) — 증분 업데이트 ──
         statusRef = db.reference.child("users").child(uid).child("deviceStatus")
 
-        statusListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                statusCache.clear()
-                for (child in snapshot.children) {
-                    val deviceId = child.key ?: continue
-                    val status = child.getValue(String::class.java) ?: "offline"
-                    statusCache[deviceId] = status
-                }
+        statusChildListener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                val deviceId = snapshot.key ?: return
+                val status = snapshot.getValue(String::class.java) ?: "offline"
+                statusCache[deviceId] = status
                 emitState()
             }
 
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                val deviceId = snapshot.key ?: return
+                val status = snapshot.getValue(String::class.java) ?: "offline"
+                statusCache[deviceId] = status
+                emitState()
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                val deviceId = snapshot.key ?: return
+                statusCache.remove(deviceId)
+                emitState()
+            }
+
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
+                // No-op
+            }
+
             override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "deviceStatus:onCancelled", error.toException())
+                Log.e(TAG, "deviceStatus:child:onCancelled", error.toException())
             }
         }
-        statusRef?.addValueEventListener(statusListener!!)
+        statusRef?.addChildEventListener(statusChildListener!!)
 
-        // ── Listener C: user plan ──
-        planRef = db.reference.child("users").child(uid).child("plan")
-        planListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
+        // ── Listener C 최적화: user plan 1회 조회 ──
+        db.reference.child("users").child(uid).child("plan")
+            .get()
+            .addOnSuccessListener { snapshot ->
                 val plan = snapshot.getValue(String::class.java)?.lowercase() ?: "free"
-                _userPlan.value = if (plan == "pro") "pro" else "free"
-
-                if (_userPlan.value == "pro") {
-                    rewardedAd = null
-                    _isRewardedAdReady.value = false
-                    shouldPreloadRewardedAd = false
-                } else if (shouldPreloadRewardedAd && rewardedAd == null && !isRewardedAdLoading) {
-                    loadRewardedAd(db.app.applicationContext)
-                }
+                applyUserPlan(plan)
+            }
+            .addOnFailureListener { error ->
+                Log.e(TAG, "plan:get:onFailure", error)
+                applyUserPlan("free")
             }
 
-            override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "plan:onCancelled", error.toException())
-            }
-        }
-        planRef?.addValueEventListener(planListener!!)
-
-        // ── Mobile heartbeat (30초 간격 RTDB 갱신) ──
+        // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
         startMobileHeartbeat(uid)
     }
 
@@ -202,6 +201,18 @@ class DashboardViewModel : ViewModel() {
                 }
             },
         )
+    }
+
+    private fun applyUserPlan(planRaw: String) {
+        _userPlan.value = if (planRaw == "pro") "pro" else "free"
+
+        if (_userPlan.value == "pro") {
+            rewardedAd = null
+            _isRewardedAdReady.value = false
+            shouldPreloadRewardedAd = false
+        } else if (shouldPreloadRewardedAd && rewardedAd == null && !isRewardedAdLoading) {
+            loadRewardedAd(db.app.applicationContext)
+        }
     }
 
     fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) {
@@ -241,7 +252,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    // ── Mobile heartbeat (30초 간격) ─────────────────────────
+        // ── Mobile heartbeat (60초 간격) ─────────────────────────
 
     private fun startMobileHeartbeat(uid: String) {
         mobileHeartbeatJob?.cancel()
@@ -265,28 +276,34 @@ class DashboardViewModel : ViewModel() {
         }
 
         val now = System.currentTimeMillis()
-        for (deviceId in deviceIds) {
-            db.reference.child("users").child(uid)
-                .child("heartbeat").child(deviceId)
-                .get().addOnSuccessListener { snapshot ->
-                    val ts = snapshot.getValue(Long::class.java) ?: 0L
+        db.reference.child("users").child(uid)
+            .child("heartbeat")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val offlineUpdates = mutableMapOf<String, Any>()
+                for (deviceId in deviceIds) {
+                    val ts = snapshot.child(deviceId).getValue(Long::class.java) ?: 0L
                     heartbeatCache[deviceId] = ts
 
-                    // 크래시 감지: heartbeat 1분 이상 만료 + 아직 online 상태인 기기만 offline 처리
+                    // 크래시 감지: heartbeat 2분 이상 만료 + 아직 online 상태인 기기만 offline 처리
                     val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
                     val currentStatus = statusCache[deviceId]
                     if (isExpired && currentStatus != "offline") {
-            db.reference.child("users").child(uid)
-                            .child("deviceStatus").child(deviceId)
-                            .setValue("offline")
+                        offlineUpdates[deviceId] = "offline"
                     }
-
-                    emitState()
-                }.addOnFailureListener { e ->
-                    Log.e(TAG, "heartbeat check failed: $deviceId", e)
-                    _uiState.value = _uiState.value.copy(isRefreshing = false)
                 }
-        }
+
+                if (offlineUpdates.isNotEmpty()) {
+                    db.reference.child("users").child(uid)
+                        .child("deviceStatus")
+                        .updateChildren(offlineUpdates)
+                }
+                emitState()
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "heartbeat batch check failed", e)
+                _uiState.value = _uiState.value.copy(isRefreshing = false)
+            }
     }
 
     // ── State emission ─────────────────────────────────────
@@ -437,15 +454,10 @@ class DashboardViewModel : ViewModel() {
         }
         devicesChildListener = null
 
-        statusListener?.let { listener ->
+        statusChildListener?.let { listener ->
             statusRef?.removeEventListener(listener)
         }
-        statusListener = null
-
-        planListener?.let { listener ->
-            planRef?.removeEventListener(listener)
-        }
-        planListener = null
+        statusChildListener = null
 
         mobileHeartbeatJob?.cancel()
         mobileHeartbeatJob = null
@@ -465,10 +477,10 @@ class DashboardViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "DashboardViewModel"
-        /** Mobile heartbeat interval (30 seconds). */
-        private const val MOBILE_HEARTBEAT_INTERVAL_MS = 30_000L
-        /** Consider device offline if heartbeat > 1 minute ago. */
-        private const val OFFLINE_THRESHOLD_MS = 60_000L
+        /** Mobile heartbeat interval (60 seconds). */
+        private const val MOBILE_HEARTBEAT_INTERVAL_MS = 60_000L
+        /** Consider device offline if heartbeat > 2 minutes ago. */
+        private const val OFFLINE_THRESHOLD_MS = 120_000L
         /** Screenshot request timeout. */
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
         private const val REWARDED_TEST_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
