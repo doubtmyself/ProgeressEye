@@ -1,0 +1,6 @@
+$IdentityName = "REPLACE_WITH_PARTNER_CENTER_IDENTITY_NAME"
+$Publisher = "REPLACE_WITH_PARTNER_CENTER_PUBLISHER_SUBJECT"
+$PublisherDisplayName = "REPLACE_WITH_PUBLISHER_DISPLAY_NAME"
+$DisplayName = "ProgressEye"
+$Version = "1.0.0.0"
+$Architecture = "x64"

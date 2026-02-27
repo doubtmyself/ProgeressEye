@@ -283,7 +283,7 @@ pyinstaller build.spec
 - opencv-python-headless (바 탐지)
 - pytesseract (OCR 인터페이스)
 - Google Auth + requests 라이브러리 (google-auth, google-auth-oauthlib, requests, keyring)
-- Google OAuth 클라이언트 설정 (client_secret.json)
+- Google OAuth 클라이언트 ID 환경변수 (`PROGRESSEYE_GOOGLE_CLIENT_ID`)
 - 앱 아이콘 및 리소스
 - tesseract/ 폴더 (Tesseract 바이너리 + tessdata, 번들 포함 시)
 

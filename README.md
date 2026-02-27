@@ -70,6 +70,21 @@ venv\Scripts\python.exe setup_tesseract.py
 
 자세한 내용은 [pc-agent/README.md](pc-agent/README.md) 참고.
 
+### Microsoft Store용 MSIX 패키징
+
+```powershell
+cd pc-agent
+
+# 1) Partner Center 값 파일 생성 후 값 입력
+copy .\packaging\msix\partner-center.identity.ps1.example .\packaging\msix\partner-center.identity.ps1
+
+# 2) EXE + MSIX 빌드 (스토어 업로드용 기본)
+powershell -ExecutionPolicy Bypass -File .\packaging\msix\build_store_msix.ps1 -BuildExe -CleanExe -SkipSign
+```
+
+Partner Center 값(`IdentityName`, `Publisher`)은 반드시 실제 값과 정확히 일치해야 한다.
+상세 절차는 [pc-agent/packaging/README.md](pc-agent/packaging/README.md) 참고.
+
 ---
 
 ## Mobile App 빌드

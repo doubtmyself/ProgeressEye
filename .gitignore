@@ -24,21 +24,24 @@ nul
 # Claude config
 .claude/
 
-# Tesseract OCR 번들 (바이너리 — git에 포함하지 않음)
+# Tesseract OCR bundle binaries
 pc-agent/tesseract/
 
-# OAuth credentials (보안 — 절대 커밋하지 않음)
+# OAuth credential and token files
 pc-agent/client_secret.json
 pc-agent/token.json
 
-# 런타임 생성 파일
+
+# Runtime-generated files
 pc-agent/templates/
 pc-agent/temp/
 
-# 테스트 결과물 (생성 이미지)
+# Test output images
 pc-agent/sampleBar/result/
 pc-agent/sampleBar/result1/
 pc-agent/samplePersent/result/
+pc-agent/packaging/msix/_staging/
+pc-agent/packaging/msix/partner-center.identity.ps1
 
 # Stray files
 C
