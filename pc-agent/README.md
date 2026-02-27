@@ -31,6 +31,10 @@ cd C:\ProgressEye\pc-agent
 venv\Scripts\python.exe main.py
 ```
 
+## 배포 패키징 (EXE/MSIX)
+
+Microsoft Store 배포용 EXE/MSIX 빌드 스크립트는 `packaging/README.md`를 참고.
+
 ## 최초 설정 (venv가 없는 경우)
 
 ```bash
@@ -210,16 +214,16 @@ pc-agent/
 │   └── logger.py            # 로깅 설정
 ├── templates/               # 영역 등록 시점 스크린샷 (런타임 생성)
 ├── tesseract/               # Tesseract 바이너리 (setup_tesseract.py로 설치)
-├── client_secret.json       # Google OAuth 클라이언트 설정 (gitignore)
 ├── setup_tesseract.py       # Tesseract 자동 설치 스크립트
 └── requirements.txt         # Python 의존성
 ```
 
 ## Google OAuth 설정
 
-최초 실행 전 Google Cloud Console에서 발급한 OAuth 클라이언트 설정 파일이 필요하다.
+client_secret.json 파일은 더 이상 사용하지 않는다.
 
 1. [Google Cloud Console](https://console.cloud.google.com/)에서 OAuth 2.0 클라이언트 ID 생성 (데스크톱 앱 유형)
-2. 다운로드한 JSON 파일을 `pc-agent/client_secret.json`으로 저장
-3. 앱 실행 시 OS 기본 브라우저가 열리며 Google 로그인 진행 → `localhost:8080`으로 리다이렉트되어 토큰 수신
-4. 이후 실행부터는 keyring에 저장된 토큰으로 자동 로그인
+2. 기본값(client_id/client_secret)은 앱에 내장되어 배포본에서 자동 사용됨
+3. (선택) 테스트/교체가 필요할 때만 환경변수 `PROGRESSEYE_GOOGLE_CLIENT_ID`, `PROGRESSEYE_GOOGLE_CLIENT_SECRET`로 덮어쓰기
+4. 앱 실행 시 OS 기본 브라우저가 열리며 Google 로그인 진행 → `localhost:8080`으로 리다이렉트되어 토큰 수신
+5. 이후 실행부터는 keyring에 저장된 토큰으로 자동 로그인
