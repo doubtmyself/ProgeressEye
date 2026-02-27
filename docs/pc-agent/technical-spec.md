@@ -13,7 +13,7 @@
 | OCR 감지 | pytesseract + Tesseract OCR | 숫자가 보이는 진행바에서 % 수치 직접 인식 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
 | Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`{DB_URL}/{path}.json?auth={idToken}`), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
-| 하드웨어 샘플러 | psutil + nvidia-ml-py + Windows PDH | CPU/GPU/RAM 수집, 이동평균 산출 |
+| 하드웨어 샘플러 | Windows PDH (% Processor Utility) + GetSystemTimes + psutil + nvidia-ml-py | CPU(주파수 보정)/GPU/RAM 수집, 이동평균 산출 |
 | 패키징 | PyInstaller | 단일 .exe 생성 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
 | 토큰 저장 | keyring | OS 자격증명 저장소에 안전하게 토큰 보관 |
