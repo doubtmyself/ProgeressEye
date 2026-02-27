@@ -7,7 +7,7 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QCloseEvent, QFont, QMouseEvent
+from PyQt6.QtGui import QCloseEvent, QFont, QIcon, QMouseEvent
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -383,6 +383,17 @@ class MainWindow(QMainWindow):
         self._show_test_buttons = show_test_buttons
 
         self.setWindowTitle("ProgressEye")
+
+        # ── Window icon ──
+        import sys
+        from pathlib import Path
+        if getattr(sys, 'frozen', False) or '__compiled__' in globals():
+            _icon_base = Path(sys.executable).parent
+        else:
+            _icon_base = Path(__file__).resolve().parent.parent
+        _icon_path = _icon_base / 'resources' / 'app-icon.png'
+        if _icon_path.exists():
+            self.setWindowIcon(QIcon(str(_icon_path)))
         self.setMinimumSize(400, 500)
         self.resize(420, 700)
 
