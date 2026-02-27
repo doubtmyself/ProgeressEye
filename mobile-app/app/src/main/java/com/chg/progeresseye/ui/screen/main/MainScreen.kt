@@ -5,9 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -123,11 +125,8 @@ fun MainScreen(
         onStopOrDispose { dashboardViewModel.stopListening() }
     }
 
-    Column(modifier = modifier.fillMaxSize().statusBarsPadding()) {
-        if (userPlan == "free") {
-            BannerAd(modifier = Modifier.fillMaxWidth())
-        }
-        Scaffold(
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
             snackbarHost = {
                 SnackbarHost(hostState = snackbarHostState) { data ->
                     Snackbar(
@@ -139,7 +138,16 @@ fun MainScreen(
                 }
             },
             topBar = {
-                Column {
+                Column(modifier = Modifier.statusBarsPadding()) {
+                    if (userPlan != "pro") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SurfaceDark),
+                        ) {
+                            BannerAd(modifier = Modifier.fillMaxWidth())
+                        }
+                    }
                     val currentNav = navItems[selectedTab]
                     CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
                     HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
@@ -152,7 +160,6 @@ fun MainScreen(
                 )
             },
             containerColor = BackgroundDark,
-            modifier = Modifier.weight(1f),
         ) { padding ->
             when (selectedTab) {
                 0 -> DashboardContent(
@@ -172,7 +179,6 @@ fun MainScreen(
                 2 -> SettingsContent(onSignOut = onSignOut, modifier = Modifier.padding(padding))
             }
         }
-    }
 }
 
 // ═════════════════════════════════════════════════════════
@@ -214,6 +220,7 @@ private fun CommonTopBar(title: String, icon: ImageVector) {
             containerColor = BackgroundDark,
             titleContentColor = OnSurfaceDark,
         ),
+        windowInsets = WindowInsets(0, 0, 0, 0),
     )
 }
 

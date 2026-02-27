@@ -5,6 +5,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -43,7 +45,7 @@ fun BannerAd(modifier: Modifier = Modifier) {
 
     AndroidView(
         factory = { adView },
-        modifier = modifier,
+        modifier = modifier.height(50.dp),
     )
 }
 

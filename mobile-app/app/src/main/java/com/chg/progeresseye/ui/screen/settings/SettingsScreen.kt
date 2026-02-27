@@ -47,6 +47,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -61,6 +62,7 @@ import com.chg.progeresseye.ui.theme.OnSurfaceVariantDark
 import com.chg.progeresseye.ui.theme.OutlineDark
 import com.chg.progeresseye.ui.theme.OutlineVariantDark
 import com.chg.progeresseye.ui.theme.Primary
+import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 import com.google.firebase.auth.FirebaseAuth
 
@@ -454,4 +456,12 @@ private fun LogoutConfirmDialog(
             }
         },
     )
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun SettingsContentPreview() {
+    ProgressEyeTheme {
+        SettingsContent()
+    }
 }
