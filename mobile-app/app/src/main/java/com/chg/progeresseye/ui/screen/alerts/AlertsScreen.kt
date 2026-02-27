@@ -54,6 +54,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chg.progeresseye.R
 import com.chg.progeresseye.data.model.AlertItem
 import com.chg.progeresseye.data.model.AlertType
+import com.chg.progeresseye.ui.component.PreviewAppScaffold
+import com.chg.progeresseye.ui.component.PreviewNavTab
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.OnSurfaceVariantDark
@@ -354,31 +356,31 @@ private val previewAlerts = listOf(
     AlertItem(
         id = "p1",
         type = AlertType.COMPLETION,
-        title = "Rendering Complete",
-        body = "Premiere Pro rendering finished — 100 %.",
+        title = "렌더링 완료",
+        body = "Premiere Pro 렌더링이 100% 완료되었습니다.",
         deviceName = "DESKTOP-ABC",
         timestamp = System.currentTimeMillis() - 12 * 60_000,
     ),
     AlertItem(
         id = "p2",
         type = AlertType.STALL,
-        title = "Download Stalled",
-        body = "File download hasn't progressed in 15 min.",
+        title = "다운로드 정체",
+        body = "15분 동안 파일 다운로드 진행이 없습니다.",
         deviceName = "WORKSTATION-2",
         timestamp = System.currentTimeMillis() - 3 * 3_600_000,
     ),
     AlertItem(
         id = "p3",
         type = AlertType.OFFLINE,
-        title = "Device Offline",
-        body = "LAPTOP-HOME lost connection.",
+        title = "기기 오프라인",
+        body = "LAPTOP-HOME 연결이 끊어졌습니다.",
         deviceName = "LAPTOP-HOME",
         timestamp = System.currentTimeMillis() - 26 * 3_600_000,
         isRead = true,
     ),
 )
 
-@Preview(showBackground = true, showSystemUi = true)
+@Preview(showBackground = true, showSystemUi = true, locale = "ko")
 @Composable
 private fun AlertsEmptyPreview() {
     ProgressEyeTheme {
@@ -386,7 +388,7 @@ private fun AlertsEmptyPreview() {
     }
 }
 
-@Preview(showBackground = true, showSystemUi = true)
+@Preview(showBackground = true, showSystemUi = true, locale = "ko")
 @Composable
 private fun AlertsListPreview() {
     ProgressEyeTheme {
@@ -397,5 +399,23 @@ private fun AlertsListPreview() {
             onClearAll = {},
             modifier = Modifier.background(BackgroundDark),
         )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, locale = "ko")
+@Composable
+private fun AlertsScreenAppPreview() {
+    ProgressEyeTheme {
+        PreviewAppScaffold(selectedTab = PreviewNavTab.ALERTS) { padding ->
+            AlertList(
+                alerts = previewAlerts,
+                onAlertClick = {},
+                onDelete = {},
+                onClearAll = {},
+                modifier = Modifier
+                    .padding(padding)
+                    .background(BackgroundDark),
+            )
+        }
     }
 }

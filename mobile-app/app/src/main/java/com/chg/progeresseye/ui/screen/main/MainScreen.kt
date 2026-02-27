@@ -241,7 +241,7 @@ private fun MainBottomBar(
     onIndexSelected: (Int) -> Unit,
 ) {
     NavigationBar(
-        containerColor = SurfaceDark,
+        containerColor = BackgroundDark,
         contentColor = Slate400,
         tonalElevation = 0.dp,
     ) {

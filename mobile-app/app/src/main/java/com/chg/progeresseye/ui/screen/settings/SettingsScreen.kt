@@ -55,6 +55,8 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.chg.progeresseye.R
+import com.chg.progeresseye.ui.component.PreviewAppScaffold
+import com.chg.progeresseye.ui.component.PreviewNavTab
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.ErrorRed
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
@@ -458,10 +460,54 @@ private fun LogoutConfirmDialog(
     )
 }
 
-@Preview(showBackground = true, showSystemUi = true)
+@Preview(showBackground = true, showSystemUi = true, locale = "ko")
 @Composable
 private fun SettingsContentPreview() {
     ProgressEyeTheme {
-        SettingsContent()
+        PreviewAppScaffold(selectedTab = PreviewNavTab.SETTINGS) { padding ->
+            SettingsPreviewBody(modifier = Modifier.padding(padding))
+        }
+    }
+}
+
+@Composable
+private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(BackgroundDark),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+    ) {
+        item { SectionHeader(stringResource(R.string.settings_section_account)) }
+        item { Spacer(Modifier.height(8.dp)) }
+        item {
+            AccountCard(
+                email = "reg13@example.com",
+                photoUrl = null,
+                onLogout = {},
+            )
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
+        item { SectionHeader(stringResource(R.string.settings_section_notifications)) }
+        item { Spacer(Modifier.height(8.dp)) }
+        item {
+            NotificationsCard(
+                completionAlerts = true,
+                stallWarnings = true,
+                onToggleCompletion = {},
+                onToggleStall = {},
+            )
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
+        item { SectionHeader(stringResource(R.string.settings_section_appearance)) }
+        item { Spacer(Modifier.height(8.dp)) }
+        item { AppearanceCard() }
+
+        item { Spacer(Modifier.height(24.dp)) }
+        item { SectionHeader(stringResource(R.string.settings_section_about)) }
+        item { Spacer(Modifier.height(8.dp)) }
+        item { AboutCard() }
     }
 }
