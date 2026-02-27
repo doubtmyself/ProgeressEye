@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,11 +31,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,8 +50,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -744,6 +757,7 @@ private val previewDevices = listOf(
         ),
     ),
 )
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun DashboardContentPreview() {
@@ -752,5 +766,103 @@ private fun DashboardContentPreview() {
             uiState = DashboardUiState(isLoading = false, devices = previewDevices),
             modifier = Modifier.background(BackgroundDark),
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun DashboardScreenAppPreview() {
+    ProgressEyeTheme {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                Column(modifier = Modifier.statusBarsPadding()) {
+                    TopAppBar(
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Primary.copy(alpha = 0.20f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Dashboard,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(R.string.nav_dashboard),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    letterSpacing = (-0.3).sp,
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = BackgroundDark,
+                            titleContentColor = OnSurfaceDark,
+                        ),
+                    )
+                    HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+                }
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = SurfaceDark,
+                    contentColor = Slate400,
+                    tonalElevation = 0.dp,
+                ) {
+                    val items = listOf(
+                        Triple(R.string.nav_dashboard, Icons.Outlined.Dashboard, Icons.Filled.Dashboard),
+                        Triple(R.string.nav_alerts, Icons.Outlined.Notifications, Icons.Filled.Notifications),
+                        Triple(R.string.nav_settings, Icons.Outlined.Settings, Icons.Filled.Settings),
+                    )
+                    items.forEachIndexed { index, item ->
+                        val selected = index == 0
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {},
+                            icon = {
+                                Icon(
+                                    imageVector = if (selected) item.third else item.second,
+                                    contentDescription = stringResource(item.first),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(item.first),
+                                    fontSize = 10.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Primary,
+                                selectedTextColor = Primary,
+                                indicatorColor = Primary.copy(alpha = 0.10f),
+                                unselectedIconColor = Slate400,
+                                unselectedTextColor = Slate400,
+                            ),
+                        )
+                    }
+                }
+            },
+            containerColor = BackgroundDark,
+        ) { padding ->
+            DashboardContent(
+                uiState = DashboardUiState(isLoading = false, devices = previewDevices),
+                userPlan = "pro",
+                modifier = Modifier
+                    .padding(padding)
+                    .background(BackgroundDark),
+            )
+        }
     }
 }

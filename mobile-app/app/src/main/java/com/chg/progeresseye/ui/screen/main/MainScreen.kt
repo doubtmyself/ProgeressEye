@@ -44,6 +44,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +108,7 @@ fun MainScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val safeSelectedTab = selectedTab.coerceIn(0, navItems.lastIndex)
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(userPlan) {
@@ -152,20 +155,20 @@ fun MainScreen(
                             BannerAd(modifier = Modifier.fillMaxWidth())
                         }
                     }
-                    val currentNav = navItems[selectedTab]
+                    val currentNav = navItems[safeSelectedTab]
                     CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
                     HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
                 }
             },
             bottomBar = {
                 MainBottomBar(
-                    selectedIndex = selectedTab,
+                    selectedIndex = safeSelectedTab,
                     onIndexSelected = { selectedTab = it },
                 )
             },
             containerColor = BackgroundDark,
         ) { padding ->
-            when (selectedTab) {
+            when (safeSelectedTab) {
                 0 -> DashboardContent(
                     uiState = dashboardState,
                     userPlan = userPlan,
@@ -180,7 +183,7 @@ fun MainScreen(
                     modifier = Modifier.padding(padding),
                 )
                 1 -> AlertsContent(modifier = Modifier.padding(padding))
-                2 -> SettingsContent(onSignOut = onSignOut, modifier = Modifier.padding(padding))
+                else -> SettingsContent(onSignOut = onSignOut, modifier = Modifier.padding(padding))
             }
         }
 }
@@ -303,37 +306,154 @@ private fun MainScreenSettingsPreview() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreenPreviewContent(selectedTab: Int) {
+    val safeSelectedTab = selectedTab.coerceIn(0, navItems.lastIndex)
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             Column(modifier = Modifier.statusBarsPadding()) {
-                val currentNav = navItems[selectedTab]
+                val currentNav = navItems[safeSelectedTab]
                 CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
                 HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
             }
         },
         bottomBar = {
             MainBottomBar(
-                selectedIndex = selectedTab,
+                selectedIndex = safeSelectedTab,
                 onIndexSelected = {},
             )
         },
         containerColor = BackgroundDark,
     ) { padding ->
-        when (selectedTab) {
+        when (safeSelectedTab) {
             0 -> DashboardContent(
                 uiState = previewDashboardState,
                 userPlan = "pro",
                 modifier = Modifier.padding(padding),
             )
-            1 -> AlertsContent(modifier = Modifier.padding(padding))
-            else -> SettingsContent(
-                onSignOut = {},
+            1 -> PreviewTabPlaceholder(
+                rows = previewAlerts,
+                modifier = Modifier.padding(padding),
+            )
+            else -> PreviewSettingsSample(
+                rows = previewSettings,
                 modifier = Modifier.padding(padding),
             )
         }
     }
 }
+
+@Composable
+private fun PreviewTabPlaceholder(
+    rows: List<PreviewAlertRow>,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(rows) { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceDark)
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = row.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = OnSurfaceDark,
+                    )
+                    Text(
+                        text = row.body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Slate400,
+                    )
+                }
+                Text(
+                    text = row.time,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Slate400,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewSettingsSample(
+    rows: List<PreviewSettingRow>,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(rows) { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceDark)
+                    .padding(horizontal = 14.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = row.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = OnSurfaceDark,
+                    )
+                    row.subtitle?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Slate400,
+                        )
+                    }
+                }
+                Text(
+                    text = row.value,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+private data class PreviewAlertRow(
+    val title: String,
+    val body: String,
+    val time: String,
+)
+
+private data class PreviewSettingRow(
+    val title: String,
+    val subtitle: String?,
+    val value: String,
+)
+
+private val previewAlerts = listOf(
+    PreviewAlertRow("Main Quest 완료", "DESKTOP-Preview - Main Quest가 완료되었습니다.", "방금 전"),
+    PreviewAlertRow("사이드 작업 정체", "DESKTOP-Preview - 10분 동안 진행률 변화가 없습니다.", "10분 전"),
+    PreviewAlertRow("PC 오프라인", "DESKTOP-Preview 연결이 끊어졌습니다.", "1시간 전"),
+)
+
+private val previewSettings = listOf(
+    PreviewSettingRow("계정", "reg13@example.com", "연결됨"),
+    PreviewSettingRow("완료 알림", "작업 완료 시 푸시 알림", "ON"),
+    PreviewSettingRow("정체 경고", "진행률이 멈추면 경고", "ON"),
+    PreviewSettingRow("테마", "현재 다크 모드", "Dark"),
+)
 
 private val previewDashboardState = DashboardUiState(
     isLoading = false,
