@@ -56,6 +56,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chg.progeresseye.R
+import com.chg.progeresseye.data.model.DashboardUiState
+import com.chg.progeresseye.data.model.DeviceData
+import com.chg.progeresseye.data.model.TaskData
+import com.chg.progeresseye.data.model.TaskStatus
 import com.chg.progeresseye.ui.screen.alerts.AlertsContent
 import com.chg.progeresseye.ui.screen.dashboard.DashboardContent
 import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
@@ -274,8 +278,90 @@ private fun MainBottomBar(
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
-private fun MainScreenPreview() {
+private fun MainScreenDashboardPreview() {
     ProgressEyeTheme {
-        MainScreen()
+        MainScreenPreviewContent(selectedTab = 0)
     }
 }
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun MainScreenAlertsPreview() {
+    ProgressEyeTheme {
+        MainScreenPreviewContent(selectedTab = 1)
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun MainScreenSettingsPreview() {
+    ProgressEyeTheme {
+        MainScreenPreviewContent(selectedTab = 2)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainScreenPreviewContent(selectedTab: Int) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            Column(modifier = Modifier.statusBarsPadding()) {
+                val currentNav = navItems[selectedTab]
+                CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
+                HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+            }
+        },
+        bottomBar = {
+            MainBottomBar(
+                selectedIndex = selectedTab,
+                onIndexSelected = {},
+            )
+        },
+        containerColor = BackgroundDark,
+    ) { padding ->
+        when (selectedTab) {
+            0 -> DashboardContent(
+                uiState = previewDashboardState,
+                userPlan = "pro",
+                modifier = Modifier.padding(padding),
+            )
+            1 -> AlertsContent(modifier = Modifier.padding(padding))
+            else -> SettingsContent(
+                onSignOut = {},
+                modifier = Modifier.padding(padding),
+            )
+        }
+    }
+}
+
+private val previewDashboardState = DashboardUiState(
+    isLoading = false,
+    devices = listOf(
+        DeviceData(
+            id = "pc_preview",
+            name = "DESKTOP-Preview",
+            platform = "windows",
+            isOnline = true,
+            lastSeen = 0L,
+            isMonitoring = true,
+            tasks = listOf(
+                TaskData(
+                    id = "task-1",
+                    label = "Main Quest",
+                    progress = 0.63f,
+                    status = TaskStatus.RUNNING,
+                ),
+                TaskData(
+                    id = "task-2",
+                    label = "Side Job",
+                    progress = 1f,
+                    status = TaskStatus.COMPLETED,
+                ),
+            ),
+            cpuUsage = 34f,
+            gpuUsage = 48f,
+            ramUsage = 72f,
+        ),
+    ),
+)
