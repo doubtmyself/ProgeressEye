@@ -39,17 +39,20 @@ _stop = threading.Event()
 # Background sampler thread
 # ═════════════════════════════════════════════════════════
 
+
 def _sampler_loop() -> None:
     """백그라운드에서 CPU/GPU/RAM을 5초 주기로 샘플링한다."""
     global _ram_value
 
     # ── psutil 초기화 (RAM + Linux CPU) ──
     has_psutil = False
+    psutil_mod = None
     try:
-        import psutil
+        import psutil as psutil_mod
+
         has_psutil = True
         if not _IS_WINDOWS:
-            psutil.cpu_percent(interval=None)  # Linux 워밍업 (기준점 설정)
+            psutil_mod.cpu_percent(interval=None)  # Linux 워밍업 (기준점 설정)
     except ImportError:
         pass
 
@@ -57,6 +60,7 @@ def _sampler_loop() -> None:
     nvidia_handle = None
     try:
         from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex
+
         nvmlInit()
         if nvmlDeviceGetCount() > 0:
             nvidia_handle = nvmlDeviceGetHandleByIndex(0)
@@ -74,9 +78,9 @@ def _sampler_loop() -> None:
         cpu_val: float | None = None
         if _IS_WINDOWS:
             cpu_val = _get_pdh_cpu_usage()
-        elif has_psutil:
+        elif has_psutil and psutil_mod is not None:
             try:
-                cpu_val = psutil.cpu_percent(interval=None)
+                cpu_val = psutil_mod.cpu_percent(interval=None)
             except Exception:
                 pass
 
@@ -86,21 +90,24 @@ def _sampler_loop() -> None:
 
         # ── GPU ──
         gpu_val: float | None = None
-        if nvidia_handle is not None:
+        if _IS_WINDOWS:
+            # Windows는 작업 관리자(PDH) 기준을 우선 사용
+            gpu_val = _get_pdh_gpu_usage()
+
+        if gpu_val is None and nvidia_handle is not None:
             try:
                 from pynvml import nvmlDeviceGetUtilizationRates
+
                 util = nvmlDeviceGetUtilizationRates(nvidia_handle)
                 gpu_val = float(util.gpu)
             except Exception:
                 pass
-        if gpu_val is None and _IS_WINDOWS:
-            gpu_val = _get_pdh_gpu_usage()
 
         # ── RAM (psutil, 모든 플랫폼) ──
         ram_val: float | None = None
-        if has_psutil:
+        if has_psutil and psutil_mod is not None:
             try:
-                ram_val = psutil.virtual_memory().percent
+                ram_val = psutil_mod.virtual_memory().percent
             except Exception:
                 pass
 
@@ -120,6 +127,7 @@ def _sampler_loop() -> None:
     if nvidia_handle is not None:
         try:
             from pynvml import nvmlShutdown
+
             nvmlShutdown()
         except Exception:
             pass
@@ -128,6 +136,7 @@ def _sampler_loop() -> None:
 # ═════════════════════════════════════════════════════════
 # Public API
 # ═════════════════════════════════════════════════════════
+
 
 def start_sampler() -> None:
     """하드웨어 샘플러 데몬 스레드를 시작한다 (앱 시작 시 1회 호출)."""
@@ -175,10 +184,14 @@ def collect_stats() -> dict[str, object]:
 
 
 def _get_pdh_cpu_usage() -> float | None:
-    """Windows PDH 카운터로 CPU 사용량을 수집한다 (작업 관리자와 동일 수치).
+    """Windows CPU 사용량을 수집한다.
 
-    % Processor Utility 카운터는 Windows 10+ 에서 사용 가능.
-    약 200ms 소요되나 샘플링 주기(5초) 대비 허용 가능.
+    우선순위:
+    1) PDH `\\Processor Information(_Total)\\% Processor Utility` (Task Manager 정렬)
+    2) PDH `\\Processor(_Total)\\% Processor Time` (호환 fallback)
+    3) Win32_Processor.LoadPercentage (최후 fallback, 정수/coarse)
+
+    샘플링 주기(5초) 대비 호출 비용은 허용 가능하다.
     """
     try:
         cmd = (
@@ -199,22 +212,13 @@ def _get_pdh_cpu_usage() -> float | None:
             return min(round(float(val), 1), 100.0)
     except Exception:
         pass
-    return None
 
-
-def _get_pdh_gpu_usage() -> float | None:
-    """Windows PDH 카운터로 GPU 사용량을 수집한다 (AMD/Intel/NVIDIA 공통).
-
-    PowerShell 내장 기능만 사용하므로 추가 설치 불필요.
-    약 200ms 소요되나 샘플링 주기(5초) 대비 허용 가능.
-    """
     try:
         cmd = (
-            'Get-Counter "\\GPU Engine(*engtype_3D)\\Utilization Percentage" '
+            'Get-Counter "\\Processor(_Total)\\% Processor Time" '
             "-ErrorAction SilentlyContinue | "
             "Select-Object -ExpandProperty CounterSamples | "
-            "Measure-Object -Property CookedValue -Sum | "
-            "Select-Object -ExpandProperty Sum"
+            "Select-Object -ExpandProperty CookedValue"
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", cmd],
@@ -225,7 +229,56 @@ def _get_pdh_gpu_usage() -> float | None:
         )
         val = result.stdout.strip()
         if val:
-            return round(float(val), 1)
+            return min(round(float(val), 1), 100.0)
+    except Exception:
+        pass
+
+    try:
+        cmd = (
+            "Get-CimInstance Win32_Processor | "
+            "Measure-Object -Property LoadPercentage -Average | "
+            "Select-Object -ExpandProperty Average"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", cmd],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        val = result.stdout.strip()
+        if val:
+            return min(round(float(val), 1), 100.0)
+    except Exception:
+        pass
+    return None
+
+
+def _get_pdh_gpu_usage() -> float | None:
+    """Windows PDH 카운터로 GPU 사용량을 수집한다 (AMD/Intel/NVIDIA 공통).
+
+    PowerShell 내장 기능만 사용하므로 추가 설치 불필요.
+    엔진별 합계(sum)는 100%를 초과할 수 있으므로 최대값(max)으로 집계한다.
+    약 200ms 소요되나 샘플링 주기(5초) 대비 허용 가능.
+    """
+    try:
+        cmd = (
+            'Get-Counter "\\GPU Engine(*engtype_3D)\\Utilization Percentage" '
+            "-ErrorAction SilentlyContinue | "
+            "Select-Object -ExpandProperty CounterSamples | "
+            "Measure-Object -Property CookedValue -Maximum | "
+            "Select-Object -ExpandProperty Maximum"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", cmd],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,  # type: ignore[attr-defined]
+        )
+        val = result.stdout.strip()
+        if val:
+            return min(round(float(val), 1), 100.0)
     except Exception:
         pass
     return None

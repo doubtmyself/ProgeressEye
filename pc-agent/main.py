@@ -46,6 +46,9 @@ from ui.tray_icon import TrayIcon  # pyright: ignore[reportImplicitRelativeImpor
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
 
+_HEARTBEAT_INTERVAL_MS = 60_000
+_STATS_SYNC_INTERVAL_MS = 60_000
+
 
 class ProgressEyeApp:
     """ProgressEye 메인 애플리케이션.
@@ -89,7 +92,11 @@ class ProgressEyeApp:
         self._pending_firebase_batch: dict[str, dict] = {}  # 사이클별 Firebase 배치
         self._last_firebase_state: dict[
             str, dict
+        ] = {}  # region_id -> {p, s} 마지막 분석값
+        self._last_synced_firebase_state: dict[
+            str, dict
         ] = {}  # region_id -> {p, s} 마지막 전송값
+        self._last_stats_synced_at_ms: int = 0
         self._completion_confirm: dict[
             str, int
         ] = {}  # region_id -> 연속 threshold 도달 횟수
@@ -333,12 +340,12 @@ class ProgressEyeApp:
         except Exception as exc:
             log.debug("프로필 저장 실패: %s", exc)
 
-        # 하트비트 타이머 (30초 — 모바일 오프라인 판정 1분 threshold)
+        # 하트비트 타이머 (60초)
         if self._heartbeat_timer:
             self._heartbeat_timer.stop()
         heartbeat_timer = QTimer()
         heartbeat_timer.timeout.connect(self._send_heartbeat)
-        heartbeat_timer.start(30_000)
+        heartbeat_timer.start(_HEARTBEAT_INTERVAL_MS)
         self._heartbeat_timer = heartbeat_timer
 
         # CPU 사용량 측정 워밍업 (첫 호출은 0.0 반환하므로 미리 호출)
@@ -367,11 +374,21 @@ class ProgressEyeApp:
         if self._device_manager:
             try:
                 self._device_manager.heartbeat()
-                stats = collect_stats()
-                if stats:
-                    self._device_manager.sync_stats(stats)
+                self._sync_stats_if_due()
             except Exception as exc:
                 log.debug("하트비트 전송 실패: %s", exc)
+
+    def _sync_stats_if_due(self) -> None:
+        """하드웨어 stats를 최소 1분 간격으로만 RTDB에 전송한다."""
+        if not self._device_manager:
+            return
+        now_ms = int(time.time() * 1000)
+        if now_ms - self._last_stats_synced_at_ms < _STATS_SYNC_INTERVAL_MS:
+            return
+        stats = collect_stats()
+        if stats:
+            self._device_manager.sync_stats(stats)
+            self._last_stats_synced_at_ms = now_ms
 
     def _process_queued_actions(self) -> None:
         """큐에 쌍인 액션을 메인 스레드에서 실행한다.
@@ -713,6 +730,7 @@ class ProgressEyeApp:
         # 배치에서도 제거
         self._pending_firebase_batch.pop(region_id, None)
         self._last_firebase_state.pop(region_id, None)
+        self._last_synced_firebase_state.pop(region_id, None)
         self._completion_confirm.pop(region_id, None)
         self._delete_template(region_id)
         log.info("영역 삭제: %s", region_id)
@@ -1050,6 +1068,7 @@ class ProgressEyeApp:
             self._post_completion_fails.clear()
             self._completion_confirm.clear()
             self._last_firebase_state.clear()
+            self._last_synced_firebase_state.clear()
             self._pending_firebase_batch.clear()
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True, interval)
@@ -1241,9 +1260,12 @@ class ProgressEyeApp:
             else ("f" if freeze_state.is_frozen else "r")
         )
         new_state = {"p": round(progress, 1), "s": status_code}
-        if new_state != self._last_firebase_state.get(region_id):
+        prev_analyzed = self._last_firebase_state.get(region_id)
+        self._last_firebase_state[region_id] = new_state
+        prev_synced = self._last_synced_firebase_state.get(region_id)
+        if self._should_sync_firebase_state(new_state, prev_synced, prev_analyzed):
             self._pending_firebase_batch[region_id] = new_state
-            self._last_firebase_state[region_id] = new_state
+            self._last_synced_firebase_state[region_id] = new_state
         self._tray.update_tooltip(f"ProgressEye - {label}: {progress:.1f}%")
         # UI 업데이트 — 큐로 메인 스레드 전달
         self._action_queue.put(
@@ -1353,12 +1375,45 @@ class ProgressEyeApp:
         try:
             if self._pending_firebase_batch:
                 self._device_manager.sync_tasks(dict(self._pending_firebase_batch))
-            stats = collect_stats()
-            if stats:
-                self._device_manager.sync_stats(stats)
+            self._sync_stats_if_due()
         except Exception as exc:
             log.debug("Firebase 배치 전송 실패: %s", exc)
         self._pending_firebase_batch.clear()
+
+    def _should_sync_firebase_state(
+        self,
+        new_state: dict,
+        prev_synced: dict | None,
+        prev_analyzed: dict | None,
+    ) -> bool:
+        """RTDB 전송량 절감을 위해 작은 진행률 흔들림은 배치 전송에서 제외한다.
+
+        - 상태 코드(s) 변화는 항상 전송
+        - 진행률(p)은 0.5% 이상 변할 때만 전송
+        - 첫 샘플은 항상 전송
+        """
+        if prev_synced is None:
+            return True
+
+        new_status = str(new_state.get("s", "r"))
+        prev_status = str(prev_synced.get("s", "r"))
+        if new_status != prev_status:
+            return True
+
+        try:
+            new_progress = float(new_state.get("p", 0.0))
+            prev_progress = float(prev_synced.get("p", 0.0))
+        except (TypeError, ValueError):
+            return True
+
+        if abs(new_progress - prev_progress) >= 0.5:
+            return True
+
+        # 분석값이 처음 생기는 시점에서는 전송 보장
+        if prev_analyzed is None:
+            return True
+
+        return False
 
     def _on_threshold_changed(self, region_id: str, threshold: int) -> None:
         """완료 알람 임계값 변경 — config에 저장한다."""
@@ -1539,6 +1594,7 @@ def main() -> None:
     if "-d" in sys.argv or "--debug" in sys.argv:
         import logging
         from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
+
         log.setLevel(logging.DEBUG)
         for handler in log.handlers:
             handler.setLevel(logging.DEBUG)
