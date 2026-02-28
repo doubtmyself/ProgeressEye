@@ -10,6 +10,7 @@ from typing import Any
 from .realtime_db import RealtimeDB
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
+APP_VERSION = "1.0.0"
 
 class DeviceManager:
     """PC 기기 등록/상태 갱신을 담당한다."""
@@ -25,7 +26,7 @@ class DeviceManager:
         payload = {
             "name": device_name or platform.node(),
             "platform": platform.platform(),
-            "appVersion": "1.0.0",
+            "appVersion": APP_VERSION,
             "createdAt": now,
         }
         self._db.patch(self._path, payload)
@@ -140,10 +141,33 @@ class DeviceManager:
     def _user_path(self) -> str:
         return f"users/{self._uid}"
 
-    def get_user_plan(self) -> str:
-        """유저 플랜을 조회한다. (기본값: free)"""
-        data = self._db.get(f"{self._user_path}/plan")
-        return data if isinstance(data, str) else "free"
+    def get_user_plan(self, project_id: str = "progresseye-49244") -> str:
+        """Firestore에서 유저 플랜을 조회한다. (기본값: free)
+
+        Firestore document: users/{uid} → field: plan
+        인증 필요 (owner만 읽기 가능).
+        """
+        import requests as _requests
+
+        token = self._db._get_id_token()
+        if not token:
+            return "free"
+        url = (
+            f"https://firestore.googleapis.com/v1/"
+            f"projects/{project_id}/databases/(default)/documents/users/{self._uid}"
+        )
+        try:
+            resp = _requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                return "free"
+            fields = resp.json().get("fields", {})
+            return fields.get("plan", {}).get("stringValue", "free")
+        except Exception:
+            return "free"
 
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""
@@ -165,3 +189,22 @@ class DeviceManager:
             return False
         elapsed = time.time() * 1000 - data
         return elapsed < 5 * 60 * 1000  # 5분
+
+def get_min_pc_version(project_id: str = "progresseye-49244") -> str | None:
+    """Firestore에서 최소 PC 버전을 조회한다 (인증 불필요).
+
+    Firestore document: appConfig/pc  → field: minVersion
+    """
+    import requests as _requests
+    url = (
+        f"https://firestore.googleapis.com/v1/"
+        f"projects/{project_id}/databases/(default)/documents/appConfig/pc"
+    )
+    try:
+        resp = _requests.get(url, timeout=5)
+        if resp.status_code != 200:
+            return None
+        fields = resp.json().get("fields", {})
+        return fields.get("minVersion", {}).get("stringValue")
+    except Exception:
+        return None

@@ -27,6 +27,7 @@ from auth.google_oauth import GoogleOAuth  # pyright: ignore[reportImplicitRelat
 from auth.token_manager import TokenManager  # pyright: ignore[reportImplicitRelativeImport]
 from config import Config  # pyright: ignore[reportImplicitRelativeImport]
 from firebase import RealtimeDB, DeviceManager  # pyright: ignore[reportImplicitRelativeImport]
+from firebase.device_manager import APP_VERSION, get_min_pc_version  # pyright: ignore[reportImplicitRelativeImport]
 from firebase.storage import FirebaseStorage  # pyright: ignore[reportImplicitRelativeImport]
 from firebase.command_listener import CommandListener  # pyright: ignore[reportImplicitRelativeImport]
 from core.bar_analyzer import AnalysisResult, BarAnalyzer  # pyright: ignore[reportImplicitRelativeImport]
@@ -156,6 +157,14 @@ class ProgressEyeApp:
     def run(self) -> int:
         """애플리케이션을 실행한다."""
         log.info("ProgressEye 시작")
+
+        # 최소 버전 체크 (Firestore — 인증 불필요)
+        min_ver = get_min_pc_version()
+        if min_ver and self._is_outdated(APP_VERSION, min_ver):
+            log.warning("업데이트 필요: 현재=%s 최소=%s", APP_VERSION, min_ver)
+            self._show_update_required(min_ver)
+            return 0
+
         is_first = not self._config.get("auth.uid", "")
         if not self._try_auto_login():
             self._ensure_login()
@@ -223,6 +232,28 @@ class ProgressEyeApp:
         )
         dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
         return dialog.exec() == QMessageBox.StandardButton.Retry
+
+    @staticmethod
+    def _is_outdated(current: str, minimum: str) -> bool:
+        """버전 문자열을 비교하여 현재 버전이 최소 버전 미만인지 확인한다."""
+        def parse(v: str) -> tuple[int, ...]:
+            return tuple(int(x) for x in v.split(".") if x.isdigit())
+        return parse(current) < parse(minimum)
+
+    def _show_update_required(self, min_version: str) -> None:
+        """업데이트 필요 다이얼로그를 표시하고 앱을 종료한다."""
+        dialog = QMessageBox(self._main_window)
+        dialog.setWindowTitle(t("update_required_title"))
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(t("update_required_message"))
+        dialog.setInformativeText(
+            t("update_required_detail").format(
+                current=APP_VERSION, minimum=min_version
+            )
+        )
+        dialog.addButton(t("update_required_quit"), QMessageBox.ButtonRole.AcceptRole)
+        dialog.exec()
+        self._do_quit()
 
     def _show_device_conflict(self, other_device_id: str) -> None:
         """다른 PC에서 사용 중인 경우 안내 다이얼로그를 표시한다."""

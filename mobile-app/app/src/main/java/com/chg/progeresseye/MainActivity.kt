@@ -129,7 +129,6 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             onSignOut = {
                                 authViewModel.signOut(this@MainActivity)
-                                this@MainActivity.finishAffinity()
                             },
                             onDeleteAccount = {
                                 authViewModel.deleteAccount(this@MainActivity)

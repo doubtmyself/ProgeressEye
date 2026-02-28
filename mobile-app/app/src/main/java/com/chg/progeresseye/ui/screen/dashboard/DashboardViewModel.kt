@@ -17,6 +17,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
@@ -161,15 +162,15 @@ class DashboardViewModel : ViewModel() {
         }
         statusRef?.addChildEventListener(statusChildListener!!)
 
-        // ── Listener C 최적화: user plan 1회 조회 ──
-        db.reference.child("users").child(uid).child("plan")
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val plan = snapshot.getValue(String::class.java)?.lowercase() ?: "free"
+        // ── Listener C 최적화: user plan 1회 조회 (Firestore) ──
+        FirebaseFirestore.getInstance()
+            .collection("users").document(uid).get()
+            .addOnSuccessListener { document ->
+                val plan = document.getString("plan")?.lowercase() ?: "free"
                 applyUserPlan(plan)
             }
             .addOnFailureListener { error ->
-                Log.e(TAG, "plan:get:onFailure", error)
+                Log.e(TAG, "firestore:plan:get:onFailure", error)
                 applyUserPlan("free")
             }
 

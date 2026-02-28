@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // appConfig: public read, admin-only write (Firebase Console)
+    match /appConfig/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // users: owner can read, admin-only write (Firebase Console)
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Block everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

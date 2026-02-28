@@ -1,5 +1,26 @@
 ﻿# ProgressEye (PC Agent) - Store Description (EN)
 
+## Additional Fields (Microsoft Store)
+- Short title: `ProgressEye PC Agent`
+- Voice title: `Progress Eye`
+- Brief description: `ProgressEye PC Agent links your Windows PC to the mobile app for real-time progress tracking. Monitor screen-based tasks, request remote screenshots, and receive alerts when tasks complete or stall.`
+
+## Additional Info (Microsoft Store)
+- Keywords (max 7):
+  - `progress tracker`
+  - `pc monitor`
+  - `remote screenshot`
+  - `productivity`
+  - `task tracking`
+  - `ocr progress`
+  - `firebase sync`
+- Copyright and trademark info:
+  - `ProgressEye and related marks are trademarks of CHG Labs. All other trademarks are the property of their respective owners.`
+- Additional license terms:
+  - `By using this app, you agree to the End User License Terms and Privacy Policy available at https://progresseye-49244.web.app.`
+- Developer:
+  - `CHG Labs`
+
 ## Short Description
 Monitor your PC task progress from mobile in real time.
 

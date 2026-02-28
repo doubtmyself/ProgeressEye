@@ -121,6 +121,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "token_store_failed": "토큰 저장소 접근 실패: {error}",
         "token_delete_failed": "토큰 삭제 실패: {error}",
         "token_read_failed": "토큰 조회 실패: {error}",
+        # Update required
+        "update_required_title": "업데이트 필요",
+        "update_required_message": "새 버전이 필요합니다. 앱을 업데이트해 주세요.",
+        "update_required_detail": "현재 버전: {current}\n최소 버전: {minimum}",
+        "update_required_quit": "종료",
     },
     "en": {
         "progress_monitoring": "Progress Monitoring",
@@ -237,6 +242,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "token_store_failed": "Failed to access token store: {error}",
         "token_delete_failed": "Failed to delete tokens: {error}",
         "token_read_failed": "Failed to read token: {error}",
+        # Update required
+        "update_required_title": "Update Required",
+        "update_required_message": "A newer version is required. Please update the app.",
+        "update_required_detail": "Current: {current}\nMinimum: {minimum}",
+        "update_required_quit": "Quit",
     },
 }
 
