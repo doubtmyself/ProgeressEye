@@ -13,6 +13,7 @@ import com.google.firebase.database.ServerValue
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import java.security.MessageDigest
 
 class FCMService : FirebaseMessagingService() {
 
@@ -71,7 +72,7 @@ class FCMService : FirebaseMessagingService() {
 
     private fun saveTokenToRtdb(token: String) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        val tokenId = token.takeLast(8)
+        val tokenId = sha256Short(token)
         FirebaseDatabase.getInstance()
             .getReference("users/$uid/fcmTokens/$tokenId")
             .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
@@ -88,13 +89,19 @@ class FCMService : FirebaseMessagingService() {
             FirebaseMessaging.getInstance().token
                 .addOnSuccessListener { token ->
                     val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@addOnSuccessListener
-                    val tokenId = token.takeLast(8)
+                    val tokenId = sha256Short(token)
                     FirebaseDatabase.getInstance()
                         .getReference("users/$uid/fcmTokens/$tokenId")
                         .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
                         .addOnFailureListener { error -> Timber.e(error, "Failed to register FCM token") }
                 }
                 .addOnFailureListener { error -> Timber.e(error, "Failed to fetch FCM token") }
+        }
+
+        private fun sha256Short(input: String): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val hash = digest.digest(input.toByteArray())
+            return hash.take(8).joinToString("") { "%02x".format(it) }
         }
     }
 }

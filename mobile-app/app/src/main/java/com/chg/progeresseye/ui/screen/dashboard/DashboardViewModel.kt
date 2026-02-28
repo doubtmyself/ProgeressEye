@@ -425,6 +425,7 @@ class DashboardViewModel : ViewModel() {
             mapOf(
                 "ts" to System.currentTimeMillis() / 1000,
                 "cmdId" to UUID.randomUUID().toString(),
+                "targetDeviceId" to deviceId,
             )
         )
             .addOnSuccessListener {

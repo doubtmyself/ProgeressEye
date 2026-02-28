@@ -68,9 +68,9 @@ class ProgressEyeApp:
             timeout_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
         )
         self._scheduler = CaptureScheduler(
-            on_capture=self._on_capture,
+            on_capture=self._on_capture_from_worker,
             capturer=self._capturer,
-            on_cycle_complete=self._on_cycle_complete,
+            on_cycle_complete=self._on_cycle_complete_from_worker,
         )
         self._google_oauth = GoogleOAuth()
         self._firebase_auth = FirebaseAuth()
@@ -453,6 +453,22 @@ class ProgressEyeApp:
             cmd_type = cmd.get("type")
             if not isinstance(cmd_type, str):
                 continue
+            # 디바이스 대상 명령 필터링 (forceLogout은 전체 브로드캠스트)
+            if cmd_type in ("screenshot", "monitor"):
+                cmd_data = cmd.get("data")
+                target = (
+                    cmd_data.get("targetDeviceId")
+                    if isinstance(cmd_data, dict)
+                    else None
+                )
+                my_device = str(self._config.get("auth.device_id", ""))
+                if isinstance(target, str) and target and target != my_device:
+                    log.debug(
+                        "[CMD] 다른 기기 대상 명령 무시: type=%s target=%s",
+                        cmd_type,
+                        target,
+                    )
+                    continue
             if not self._is_fresh_command(cmd_type, cmd.get("data")):
                 continue
             log.info("[CMD] mobile command received: type=%s", cmd_type)
@@ -529,13 +545,24 @@ class ProgressEyeApp:
         return True
 
     def _handle_screenshot_command(self) -> None:
-        """모바일 스크린샷 요청: 전체 화면 캡처 → JPEG → Storage 업로드 → RTDB URL 기록."""
+        """모바일 스크린샷 요청: 워커 스레드에서 캡처 + 업로드, RTDB는 메인 스레드."""
+        if not self._firebase_storage or not self._realtime_db:
+            log.warning("스크린샷 명령 무시: Firebase 미초기화")
+            return
+
+        threading.Thread(
+            target=self._do_screenshot_upload,
+            name="screenshot-upload",
+            daemon=True,
+        ).start()
+
+    def _do_screenshot_upload(self) -> None:
+        """워커 스레드: 스크린샷 캡처 → JPEG 인코딩 → Storage 업로드."""
         import hashlib
         import io
         import mss as mss_lib
 
         if not self._firebase_storage or not self._realtime_db:
-            log.warning("스크린샷 명령 무시: Firebase 미초기화")
             return
 
         uid = str(self._config.get("auth.uid", ""))
@@ -552,15 +579,11 @@ class ProgressEyeApp:
             jpeg_bytes = buf.getvalue()
             jpeg_hash = hashlib.md5(jpeg_bytes).hexdigest()
 
-            ts = int(time.time())
             cached = self._screenshot_cache.get(device_id)
-
             if cached and cached[0] == jpeg_hash:
-                # 화면 변경 없음 — 업로드 스킵, 기존 URL 재사용
                 download_url = cached[1]
                 log.info("[SCREENSHOT] 화면 변경 없음, 업로드 스킵")
             else:
-                # 화면 변경됨 — 업로드
                 storage_path = f"screenshots/{uid}/{device_id}/latest.jpg"
                 download_url = self._firebase_storage.upload_jpeg(
                     storage_path, jpeg_bytes
@@ -568,20 +591,39 @@ class ProgressEyeApp:
                 self._screenshot_cache[device_id] = (jpeg_hash, download_url)
                 log.info("[SCREENSHOT] 업로드 완료: %s", storage_path)
 
-            self._realtime_db.patch(
-                f"users/{uid}/devices/{device_id}/screenshots",
-                {"latest": {"url": download_url, "ts": ts}},
+            ts = int(time.time())
+            # RTDB 기록 + 명령 정리를 메인 스레드로 마샬링
+            self._action_queue.put(
+                lambda _u=uid, _d=device_id, _url=download_url, _ts=ts:
+                    self._finish_screenshot(_u, _d, _url, _ts)
             )
-            log.info("스크린샷 처리 완료 (ts=%d)", ts)
         except Exception as exc:
             log.warning("스크린샷 처리 실패: %s", exc)
-        finally:
-            try:
-                if self._realtime_db and uid:
-                    self._realtime_db.delete(f"users/{uid}/commands/screenshot")
-            except Exception:
-                pass
+            self._action_queue.put(lambda _u=uid: self._cleanup_screenshot_command(_u))
 
+    def _finish_screenshot(
+        self, uid: str, device_id: str, download_url: str, ts: int
+    ) -> None:
+        """메인 스레드: RTDB에 스크린샷 URL 기록 + 명령 정리."""
+        try:
+            if self._realtime_db and uid:
+                self._realtime_db.patch(
+                    f"users/{uid}/devices/{device_id}/screenshots",
+                    {"latest": {"url": download_url, "ts": ts}},
+                )
+                log.info("스크린샷 처리 완료 (ts=%d)", ts)
+        except Exception as exc:
+            log.warning("스크린샷 RTDB 기록 실패: %s", exc)
+        finally:
+            self._cleanup_screenshot_command(uid)
+
+    def _cleanup_screenshot_command(self, uid: str) -> None:
+        """스크린샷 명령을 RTDB에서 삭제한다."""
+        try:
+            if self._realtime_db and uid:
+                self._realtime_db.delete(f"users/{uid}/commands/screenshot")
+        except Exception:
+            pass
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
@@ -1236,11 +1278,18 @@ class ProgressEyeApp:
                     except Exception as exc:
                         log.debug("[모니터링 시작] %s 템플릿 생성 실패: %s", rid, exc)
 
-    def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
-        """캐처 콜백 — 분석 + UI 업데이트.
+    def _on_capture_from_worker(self, region_id: str, image: PILImage.Image) -> None:
+        """Timer 스레드에서 호출 — 메인 스레드로 마샬링."""
+        self._action_queue.put(lambda: self._on_capture(region_id, image))
 
-        Timer 스레드에서 호출되므로 Queue로 메인 스레드 UI 업데이트를 보장한다.
-        """
+    def _on_cycle_complete_from_worker(self) -> None:
+        """Timer 스레드에서 호출 — 메인 스레드로 마샬링."""
+        self._action_queue.put(self._on_cycle_complete)
+
+    def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
+        """캡처 콜백 — 분석 + UI 업데이트 (메인 스레드)."""
+        if not self._scheduler.is_running:
+            return
         # 영역 설정 찾기
         region_config = None
         for r in self._config.regions:
@@ -1701,13 +1750,14 @@ class ProgressEyeApp:
             pil_image = pil_image.convert("RGB")
 
         data = pil_image.tobytes("raw", "RGB")
-        return QImage(
+        qimg = QImage(
             data,
             pil_image.width,
             pil_image.height,
             pil_image.width * 3,
             QImage.Format.Format_RGB888,
         )
+        return qimg.copy()  # deep copy — Python buffer 수명과 분리
 
 
 def main() -> None:

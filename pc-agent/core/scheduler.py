@@ -44,6 +44,7 @@ class CaptureScheduler:
         self._running = False
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
+        self._stop_event = threading.Event()
 
     def start(
         self,
@@ -61,6 +62,7 @@ class CaptureScheduler:
                 log.warning("스케줄러 이미 실행 중")
                 return
 
+            self._stop_event.clear()
             self._regions = {r["id"]: r for r in regions}
             self._interval = interval_seconds
             self._running = True
@@ -76,6 +78,7 @@ class CaptureScheduler:
         """주기적 캡처를 중지한다."""
         with self._lock:
             self._running = False
+            self._stop_event.set()
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
@@ -122,7 +125,8 @@ class CaptureScheduler:
     @property
     def region_count(self) -> int:
         """등록된 영역 수."""
-        return len(self._regions)
+        with self._lock:
+            return len(self._regions)
 
     def _schedule_next(self) -> None:
         """다음 캡처 사이클을 예약한다."""
@@ -141,6 +145,8 @@ class CaptureScheduler:
             regions = dict(self._regions)
 
         for region_id, region in regions.items():
+            if self._stop_event.is_set():
+                return
             try:
                 image = self._capturer.capture(region)
                 self._on_capture(region_id, image)
@@ -148,6 +154,9 @@ class CaptureScheduler:
                 log.error("캡처 실패 [%s]: %s", region_id, e)
             except Exception as e:
                 log.error("캡처 콜백 오류 [%s]: %s", region_id, e)
+
+        if self._stop_event.is_set():
+            return
 
         # 사이클 완료 콜백
         if self._on_cycle_complete is not None:
