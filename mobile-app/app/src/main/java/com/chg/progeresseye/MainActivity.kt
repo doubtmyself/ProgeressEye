@@ -7,6 +7,15 @@ import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import timber.log.Timber
+import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.UpdateAvailability
+import com.google.firebase.firestore.FirebaseFirestore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +33,7 @@ import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
+import com.chg.progeresseye.ui.screen.splash.SplashScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
 import com.google.firebase.database.DatabaseReference
@@ -43,11 +53,27 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* granted or denied — no action needed */ }
 
+    /** 인앱 업데이트가 필요한 상태인지 (onResume 재트리거용) */
+    private var updateRequired = false
+
+    private val updateLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) {
+            // 사용자가 업데이트를 취소/실패 → 앱 종료 (강제 업데이트이므로)
+            Timber.w("In-app update cancelled or failed (code=%d)", result.resultCode)
+            finish()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // installSplashScreen() MUST be called BEFORE super.onCreate()
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 강제 버전 체크 (Firestore progress DB — 인증 불필요)
+        checkMinVersion()
 
         setContent {
             ProgressEyeTheme {
@@ -63,9 +89,9 @@ class MainActivity : ComponentActivity() {
                     false // Firebase currentUser is synchronous — no async wait needed
                 }
 
-                // Start destination is driven by AuthUiState, not raw FirebaseAuth state.
+                // Target destination after splash, driven by AuthUiState.
                 // This prevents auto-navigation to main while takeover confirmation is pending.
-                val startDestination = if (
+                val authTarget = if (
                     authState.user != null && !authState.requiresSessionTakeover
                 ) {
                     "main"
@@ -75,6 +101,8 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(authState.user, authState.requiresSessionTakeover) {
                     val currentRoute = navController.currentDestination?.route
+                    // Don't auto-navigate while splash animation is running
+                    if (currentRoute == "splash") return@LaunchedEffect
                     if (authState.user != null && !authState.requiresSessionTakeover && currentRoute != "main") {
                         navController.navigate("main") {
                             popUpTo("login") { inclusive = true }
@@ -97,8 +125,17 @@ class MainActivity : ComponentActivity() {
 
                 NavHost(
                     navController = navController,
-                    startDestination = startDestination,
+                    startDestination = "splash",
                 ) {
+                    composable("splash") {
+                        SplashScreen(
+                            onFinished = {
+                                navController.navigate(authTarget) {
+                                    popUpTo("splash") { inclusive = true }
+                                }
+                            },
+                        )
+                    }
                     composable("login") {
                         val webClientId = getString(R.string.default_web_client_id)
 
@@ -195,6 +232,93 @@ class MainActivity : ComponentActivity() {
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun checkMinVersion() {
+        FirebaseFirestore.getInstance("progress")
+            .collection("appConfig").document("android").get()
+            .addOnSuccessListener { document ->
+                val minVersion = document.getString("minVersion") ?: return@addOnSuccessListener
+                val currentVersion = packageManager.getPackageInfo(packageName, 0).versionName
+                    ?: return@addOnSuccessListener
+                if (isOutdated(currentVersion, minVersion)) {
+                    updateRequired = true
+                    startImmediateUpdate(currentVersion, minVersion)
+                }
+            }
+            .addOnFailureListener { error ->
+                Timber.d(error, "Version check failed")
+            }
+    }
+
+    private fun isOutdated(current: String, minimum: String): Boolean {
+        fun parse(v: String): List<Int> = v.split(".").mapNotNull { it.toIntOrNull() }
+        val c = parse(current)
+        val m = parse(minimum)
+        for (i in 0 until maxOf(c.size, m.size)) {
+            val cv = c.getOrElse(i) { 0 }
+            val mv = m.getOrElse(i) { 0 }
+            if (cv < mv) return true
+            if (cv > mv) return false
+        }
+        return false
+    }
+
+    private fun startImmediateUpdate(currentVersion: String, minVersion: String) {
+        val appUpdateManager = AppUpdateManagerFactory.create(this)
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
+            if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
+                && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
+            ) {
+                appUpdateManager.startUpdateFlowForResult(
+                    info,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
+                )
+            } else {
+                // Play Store에 업데이트가 아직 없거나 사이드로드 → 폴백
+                showFallbackUpdateDialog(currentVersion, minVersion)
+            }
+        }.addOnFailureListener {
+            Timber.w(it, "AppUpdateManager check failed")
+            showFallbackUpdateDialog(currentVersion, minVersion)
+        }
+    }
+
+    /** 인앱 업데이트 불가 시 Play Store 링크로 안내 */
+    private fun showFallbackUpdateDialog(currentVersion: String, minVersion: String) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_required_title))
+            .setMessage(
+                getString(R.string.update_required_message) + "\n\n" +
+                getString(R.string.update_required_current, currentVersion) + "\n" +
+                getString(R.string.update_required_minimum, minVersion)
+            )
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.update_required_button)) { _, _ ->
+                startActivity(Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=$packageName"),
+                ))
+                finish()
+            }
+            .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // IMMEDIATE 업데이트 중 앱으로 돌아왔을 때 완료되지 않았으면 재트리거
+        if (!updateRequired) return
+        val appUpdateManager = AppUpdateManagerFactory.create(this)
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
+            if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                appUpdateManager.startUpdateFlowForResult(
+                    info,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
+                )
             }
         }
     }

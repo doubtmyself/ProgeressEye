@@ -163,7 +163,7 @@ class DashboardViewModel : ViewModel() {
         statusRef?.addChildEventListener(statusChildListener!!)
 
         // ── Listener C 최적화: user plan 1회 조회 (Firestore) ──
-        FirebaseFirestore.getInstance()
+        FirebaseFirestore.getInstance("progress")
             .collection("users").document(uid).get()
             .addOnSuccessListener { document ->
                 val plan = document.getString("plan")?.lowercase() ?: "free"

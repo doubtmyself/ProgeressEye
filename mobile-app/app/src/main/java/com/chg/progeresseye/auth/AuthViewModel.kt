@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +82,7 @@ class AuthViewModel(
                     } catch (e: Exception) {
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
-                            error = e.message ?: "Session check failed",
+                        error = e.message ?: context.getString(R.string.auth_session_check_failed),
                         )
                     }
                 }
@@ -214,6 +216,22 @@ class AuthViewModel(
             )
             .await()
         MobileSessionManager.saveSessionId(context, sessionId)
+
+        // Firestore users/{uid} 문서 자동 생성/갱신 (plan 필드 보존)
+        val user = repository.getCurrentUser()
+        val userData = mapOf(
+            "email" to (user?.email ?: ""),
+            "displayName" to (user?.displayName ?: ""),
+            "lastLoginAt" to System.currentTimeMillis(),
+        )
+        try {
+            FirebaseFirestore.getInstance("progress")
+                .collection("users").document(uid)
+                .set(userData, SetOptions.merge())
+                .await()
+        } catch (e: Exception) {
+            timber.log.Timber.d(e, "Firestore user doc upsert failed")
+        }
     }
 
     private suspend fun clearMobileSessionIfOwned(context: Context) {
