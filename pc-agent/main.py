@@ -239,7 +239,11 @@ class ProgressEyeApp:
     def _is_outdated(current: str, minimum: str) -> bool:
         """버전 문자열을 비교하여 현재 버전이 최소 버전 미만인지 확인한다."""
         def parse(v: str) -> tuple[int, ...]:
-            return tuple(int(x) for x in v.split(".") if x.isdigit())
+            import re
+            return tuple(
+                int(m.group()) for seg in v.split('.')
+                if (m := re.match(r'\d+', seg))
+            )
         return parse(current) < parse(minimum)
 
     def _show_update_required(self, min_version: str) -> None:

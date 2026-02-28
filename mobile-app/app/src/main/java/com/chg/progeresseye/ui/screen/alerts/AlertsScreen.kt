@@ -69,7 +69,7 @@ import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 
 // ═════════════════════════════════════════════════════════
 // AlertsContent — empty state + alert list
-// TODO: Replace with FCM + local Room DB storage
+// TODO: Consider FCM push + local Room DB for offline cache & read-state persistence
 // ═════════════════════════════════════════════════════════
 
 @Composable

@@ -508,3 +508,9 @@ class RegionEditor(QWidget):
         self.hide()
         self.cancelled.emit()
         self.close()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """리소스 정리: 대형 QPixmap을 해제한다."""
+        self._screenshot = None
+        self._darkened = None
+        super().closeEvent(event)

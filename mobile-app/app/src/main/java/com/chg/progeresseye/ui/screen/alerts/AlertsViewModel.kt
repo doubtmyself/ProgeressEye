@@ -34,7 +34,7 @@ class AlertsViewModel : ViewModel() {
     private var alertsRef: DatabaseReference? = null
     private var alertsQuery: Query? = null
     private var alertsListener: ChildEventListener? = null
-    private val readAlertIds = mutableSetOf<String>()
+    private val readAlertIds = mutableSetOf<String>()  // in-memory only; resets on process death
     private var authListener: FirebaseAuth.AuthStateListener? = null
 
     init {

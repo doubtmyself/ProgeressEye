@@ -100,7 +100,7 @@ class CommandListener:
                     params=params,
                     headers=headers,
                     stream=True,
-                    timeout=(10, 60),
+                    timeout=(10, 30),
                 ) as response:
                     response.raise_for_status()
                     backoff_seconds = 1
@@ -175,7 +175,7 @@ class CommandListener:
             try:
                 payload_obj = cast(object, json.loads(data_text))
             except json.JSONDecodeError as exc:
-                log.warning("SSE data JSON 파싱 실패: %s", exc)
+                log.warning("SSE data JSON 파싱 실패: %s | data=%s", exc, data_text[:200])
                 continue
 
             if not isinstance(payload_obj, dict):

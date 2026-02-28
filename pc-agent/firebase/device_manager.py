@@ -10,7 +10,7 @@ from typing import Any
 from .realtime_db import RealtimeDB
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.0"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
 
 class DeviceManager:
     """PC 기기 등록/상태 갱신을 담당한다."""
