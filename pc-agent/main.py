@@ -631,19 +631,33 @@ class ProgressEyeApp:
         if dialog.exec():
             self._task_counter += 1
             region_id = f"task_{self._task_counter:03d}"
+            # 확정된 bar_region으로 좌표 축소 (바 영역만 저장)
+            final_br = dialog.bar_region
+            if final_br:
+                save_x = area["x"] + final_br.left
+                save_y = area["y"] + final_br.top
+                save_w = final_br.width
+                save_h = final_br.height
+                direction = final_br.direction
+                template_image = image.crop(final_br.bbox)
+            else:
+                save_x = area["x"]
+                save_y = area["y"]
+                save_w = area["width"]
+                save_h = area["height"]
+                direction = "horizontal"
+                template_image = image
             region = {
                 "id": region_id,
                 "label": dialog.task_name
                 or t("default_task_name").format(n=self._task_counter),
                 "type": "bar",
                 "monitor": area.get("monitor", 0),
-                "x": area["x"],
-                "y": area["y"],
-                "width": area["width"],
-                "height": area["height"],
-                "direction": dialog.bar_region.direction
-                if dialog.bar_region
-                else "horizontal",
+                "x": save_x,
+                "y": save_y,
+                "width": save_w,
+                "height": save_h,
+                "direction": direction,
             }
             self._config.add_region(region)
             self._main_window.add_region_display(
@@ -656,8 +670,8 @@ class ProgressEyeApp:
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("바 영역 등록: %s (%.1f%%)", region_id, final_progress)
-            # 템플릿 이미지 저장 (이미지 변경 감지용)
-            self._save_template(region_id, image)
+            # 템플릿 이미지 저장 (축소된 바 영역 기준)
+            self._save_template(region_id, template_image)
             # Firebase에 라벨 전송 (등록 시 1회)
             if self._device_manager:
                 try:
@@ -756,14 +770,38 @@ class ProgressEyeApp:
 
     def _update_region_area(self, region_id: str, area: dict) -> None:
         """재선택된 영역으로 기존 작업의 좌표를 업데이트하고 프리뷰를 다시 열다."""
+        try:
+            new_image = self._capturer.capture(area)
+        except Exception as exc:
+            log.warning("재선택 캡처 실패: %s", exc)
+            self._do_edit_region(region_id)
+            return
+        # bar_finder로 바 영역 자동 축소
+        bar_region = self._bar_finder.find(new_image)
+        if bar_region and bar_region.confidence > 0:
+            save_x = area["x"] + bar_region.left
+            save_y = area["y"] + bar_region.top
+            save_w = bar_region.width
+            save_h = bar_region.height
+            direction = bar_region.direction
+            template_image = new_image.crop(bar_region.bbox)
+        else:
+            save_x = area["x"]
+            save_y = area["y"]
+            save_w = area["width"]
+            save_h = area["height"]
+            direction = "horizontal"
+            template_image = new_image
         updates = {
             "monitor": area.get("monitor", 0),
-            "x": area["x"],
-            "y": area["y"],
-            "width": area["width"],
-            "height": area["height"],
+            "x": save_x,
+            "y": save_y,
+            "width": save_w,
+            "height": save_h,
+            "direction": direction,
         }
         self._config.update_region(region_id, updates)
+        self._save_template(region_id, template_image)
         # 스케줄러 영역도 갱신
         if self._scheduler.is_running:
             self._scheduler.remove_region(region_id)
@@ -771,13 +809,7 @@ class ProgressEyeApp:
                 if r["id"] == region_id:
                     self._scheduler.add_region(r)
                     break
-        log.info("영역 좌표 업데이트: %s", region_id)
-        # 새 영역으로 템플릿 갱신
-        try:
-            new_image = self._capturer.capture(area)
-            self._save_template(region_id, new_image)
-        except Exception as exc:
-            log.warning("재선택 템플릿 갱신 실패: %s", exc)
+        log.info("영역 좌표 업데이트 (축소): %s", region_id)
         # 업데이트된 영역으로 편집 다이얼로그 다시 열기
         self._do_edit_region(region_id)
 
@@ -968,13 +1000,28 @@ class ProgressEyeApp:
             if dialog.exec():
                 new_label = dialog.task_name or current_label
                 updates: dict = {"label": new_label}
-                if dialog.bar_region:
-                    updates["direction"] = dialog.bar_region.direction
+                final_br = dialog.bar_region
+                if final_br:
+                    updates["direction"] = final_br.direction
+                    updates["x"] = area["x"] + final_br.left
+                    updates["y"] = area["y"] + final_br.top
+                    updates["width"] = final_br.width
+                    updates["height"] = final_br.height
                 self._config.update_region(region_id, updates)
+                # 스케줄러 영역 갱신 (좌표 변경 반영)
+                if self._scheduler.is_running:
+                    self._scheduler.remove_region(region_id)
+                    for r in self._config.regions:
+                        if r["id"] == region_id:
+                            self._scheduler.add_region(r)
+                            break
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
-                # 템플릿 이미지 갱신 (수정 시 재캡처된 이미지로)
-                self._save_template(region_id, image)
+                # 템플릿 이미지 갱신 (축소된 바 영역 기준)
+                if final_br:
+                    self._save_template(region_id, image.crop(final_br.bbox))
+                else:
+                    self._save_template(region_id, image)
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
@@ -1017,19 +1064,10 @@ class ProgressEyeApp:
             if progress_val is None:
                 progress_val = 0.0
         else:
-            # 바: 기존 로직 유지
-            bar_region, result = self._smart_bar_analyze(image)
-            bar_image = image.crop(bar_region.bbox) if bar_region else image
+            # 바 — 확정된 영역 = 바 영역이므로 전환점 분석만 실행
+            direction = area.get("direction", "horizontal")
+            result = self._analyzer.analyze(image, direction=direction)
             progress_val = result.progress
-            if bar_region is not None:
-                bar_area = {
-                    "monitor": area.get("monitor", 0),
-                    "x": area["x"] + bar_region.left,
-                    "y": area["y"] + bar_region.top,
-                    "width": bar_region.width,
-                    "height": bar_region.height,
-                }
-                bar_qt_rect = self._mss_to_qt_rect(bar_area)
         # 4. 뷰어 생성 + 표시
         if self._region_viewer is not None:
             try:
@@ -1290,8 +1328,9 @@ class ProgressEyeApp:
                     log.warning("[%s] OCR 숫자 인식 실패", region_id)
                 return
         else:
-            # 바 영역 탐지 + 전환점 분석
-            bar_region, result = self._smart_bar_analyze(image)
+            # 바 — 확정된 영역이므로 전환점 분석만 실행 (bar_finder 불필요)
+            direction = region_config.get("direction", "horizontal")
+            result = self._analyzer.analyze(image, direction=direction)
             progress = result.progress
 
         log.info("[%s] 진행률: %.1f%% (%s)", region_id, progress, region_type)
