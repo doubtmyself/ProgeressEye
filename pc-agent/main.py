@@ -1419,30 +1419,8 @@ class ProgressEyeApp:
             self._post_completion_fails.pop(
                 region_id, None
             )  # OCR 성공 → 실패 카운터 리셋
-            if alert_progress - progress >= 30.0:
-                # 시나리오 1: 게이지 초기화 (큰 폭 하락)
-                log.info(
-                    "[완료 시나리오] %s — 게이지 초기화 (%.1f%% → %.1f%%)",
-                    label,
-                    alert_progress,
-                    progress,
-                )
-                self._alerted_regions.pop(region_id, None)
-                reset_msg = t("completion_reset").format(
-                    label=label,
-                    old=alert_progress,
-                    new=progress,
-                )
-                self._action_queue.put(lambda _msg=reset_msg: self._notify(_msg))
-                if self._device_manager:
-                    self._device_manager.push_alert(
-                        "completion", "ProgressEye", reset_msg
-                    )
-            elif progress >= threshold:
-                # 시나리오 3: 완료 상태 유지
-                log.debug("[완료 시나리오] %s — 완료 유지 (%.1f%%)", label, progress)
-            else:
-                # 임계값 아래 소폭 하락 → 재알람 허용
+            if progress < threshold:
+                # 임계값 아래로 하락 → 재알람 허용 (알림 없이 해제만)
                 log.info(
                     "[완료 시나리오] %s — 진행률 하락 (%.1f%% → %.1f%%), 재알람 대기",
                     label,
@@ -1485,6 +1463,15 @@ class ProgressEyeApp:
                     self._device_manager.push_alert(
                         "completion", "ProgressEye", alert_msg
                     )
+                # 완료 확정 → 해당 영역 모니터링 체크 해제
+                self._config.update_region(region_id, {"enabled": False})
+                self._scheduler.remove_region(region_id)
+                self._action_queue.put(
+                    lambda _id=region_id: self._main_window.set_region_enabled(_id, False)
+                )
+                if self._scheduler.region_count == 0:
+                    log.info("모든 영역 완료 — 자동 정지")
+                    self._action_queue.put(self._auto_stop_monitoring)
         else:
             # threshold 미달 또는 이미 완료 → 타이머 리셋
             self._completion_first_reached.pop(region_id, None)

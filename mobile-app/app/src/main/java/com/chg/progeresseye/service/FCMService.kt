@@ -4,7 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
-import android.util.Log
+import timber.log.Timber
 import androidx.core.app.NotificationCompat
 import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
@@ -75,11 +75,10 @@ class FCMService : FirebaseMessagingService() {
         FirebaseDatabase.getInstance()
             .getReference("users/$uid/fcmTokens/$tokenId")
             .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
-            .addOnFailureListener { error -> Log.e(TAG, "Failed to save FCM token", error) }
+            .addOnFailureListener { error -> Timber.e(error, "Failed to save FCM token") }
     }
 
     companion object {
-        private const val TAG = "FCMService"
         private const val CHANNEL_ID = "progress_alerts"
         private const val PREFS_NAME = "settings"
         private const val KEY_COMPLETION_ALERTS = "completionAlerts"
@@ -93,9 +92,9 @@ class FCMService : FirebaseMessagingService() {
                     FirebaseDatabase.getInstance()
                         .getReference("users/$uid/fcmTokens/$tokenId")
                         .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
-                        .addOnFailureListener { error -> Log.e(TAG, "Failed to register FCM token", error) }
+                        .addOnFailureListener { error -> Timber.e(error, "Failed to register FCM token") }
                 }
-                .addOnFailureListener { error -> Log.e(TAG, "Failed to fetch FCM token", error) }
+                .addOnFailureListener { error -> Timber.e(error, "Failed to fetch FCM token") }
         }
     }
 }

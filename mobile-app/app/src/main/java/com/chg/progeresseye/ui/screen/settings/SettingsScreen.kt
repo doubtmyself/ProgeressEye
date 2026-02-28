@@ -421,7 +421,8 @@ private fun AboutCard() {
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "1.0.0",
+                text = LocalContext.current.packageManager
+                    .getPackageInfo(LocalContext.current.packageName, 0).versionName ?: "?",
                 style = MaterialTheme.typography.bodyMedium,
                 color = OnSurfaceVariantDark,
             )

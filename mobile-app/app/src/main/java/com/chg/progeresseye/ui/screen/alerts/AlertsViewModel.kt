@@ -1,6 +1,6 @@
 package com.chg.progeresseye.ui.screen.alerts
 
-import android.util.Log
+import timber.log.Timber
 import androidx.lifecycle.ViewModel
 import com.chg.progeresseye.data.model.AlertItem
 import com.chg.progeresseye.data.model.AlertType
@@ -73,7 +73,7 @@ class AlertsViewModel : ViewModel() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "alerts:onCancelled", error.toException())
+                Timber.e(error.toException(), "alerts:onCancelled")
                 _isLoading.value = false
             }
         }
@@ -84,7 +84,7 @@ class AlertsViewModel : ViewModel() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "alerts:initialLoad:onCancelled", error.toException())
+                Timber.e(error.toException(), "alerts:initialLoad:onCancelled")
                 _isLoading.value = false
             }
         })
@@ -163,7 +163,6 @@ class AlertsViewModel : ViewModel() {
     }
 
     companion object {
-        private const val TAG = "AlertsViewModel"
         private const val MAX_ALERTS = 50
     }
 }

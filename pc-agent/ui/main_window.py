@@ -656,6 +656,12 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_warning(message)
 
+    def set_region_enabled(self, region_id: str, enabled: bool) -> None:
+        """영역 카드의 체크박스 상태를 변경한다."""
+        card = self._region_cards.get(region_id)
+        if card is not None:
+            card.set_checked(enabled)
+
     def set_monitoring_state(self, active: bool, interval: int = 0) -> None:
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active

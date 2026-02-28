@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import android.util.Log
+import timber.log.Timber
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -170,7 +170,7 @@ class MainActivity : ComponentActivity() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.w("MainActivity", "mobileSession listener cancelled", error.toException())
+                Timber.w(error.toException(), "mobileSession listener cancelled")
             }
         }
 

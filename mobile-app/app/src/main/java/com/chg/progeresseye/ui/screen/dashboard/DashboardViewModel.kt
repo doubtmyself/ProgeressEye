@@ -2,7 +2,7 @@ package com.chg.progeresseye.ui.screen.dashboard
 
 import android.app.Activity
 import android.content.Context
-import android.util.Log
+import timber.log.Timber
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chg.progeresseye.data.model.DashboardUiState
@@ -119,7 +119,7 @@ class DashboardViewModel : ViewModel() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "devices:onCancelled", error.toException())
+                Timber.e(error.toException(), "devices:onCancelled")
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = error.message,
@@ -157,7 +157,7 @@ class DashboardViewModel : ViewModel() {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "deviceStatus:child:onCancelled", error.toException())
+                Timber.e(error.toException(), "deviceStatus:child:onCancelled")
             }
         }
         statusRef?.addChildEventListener(statusChildListener!!)
@@ -170,7 +170,7 @@ class DashboardViewModel : ViewModel() {
                 applyUserPlan(plan)
             }
             .addOnFailureListener { error ->
-                Log.e(TAG, "firestore:plan:get:onFailure", error)
+                Timber.e(error, "firestore:plan:get:onFailure")
                 applyUserPlan("free")
             }
 
@@ -196,7 +196,7 @@ class DashboardViewModel : ViewModel() {
                 }
 
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                    Log.w(TAG, "rewarded:onAdFailedToLoad: ${loadAdError.message}")
+                    Timber.w("rewarded:onAdFailedToLoad: ${loadAdError.message}")
                     rewardedAd = null
                     isRewardedAdLoading = false
                     _isRewardedAdReady.value = false
@@ -243,7 +243,7 @@ class DashboardViewModel : ViewModel() {
             }
 
             override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
-                Log.w(TAG, "rewarded:onAdFailedToShow: ${adError.message}")
+                Timber.w("rewarded:onAdFailedToShow: ${adError.message}")
                 requestScreenshot(deviceId)
                 loadRewardedAd(activity.applicationContext)
             }
@@ -303,7 +303,7 @@ class DashboardViewModel : ViewModel() {
                 emitState()
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "heartbeat batch check failed", e)
+                Timber.e(e, "heartbeat batch check failed")
                 _uiState.value = _uiState.value.copy(isRefreshing = false)
             }
     }
@@ -399,10 +399,10 @@ class DashboardViewModel : ViewModel() {
     fun requestScreenshot(deviceId: String) {
         val uid = auth.currentUser?.uid
         if (uid == null) {
-            Log.w(TAG, "[SCREENSHOT] uid is null, aborting")
+            Timber.w("[SCREENSHOT] uid is null, aborting")
             return
         }
-        Log.d(TAG, "[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
+        Timber.d("[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
         _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
 
         // Timeout: 30s
@@ -410,7 +410,7 @@ class DashboardViewModel : ViewModel() {
         screenshotTimeoutJob = viewModelScope.launch {
             delay(SCREENSHOT_TIMEOUT_MS)
             if (_uiState.value.screenshotLoadingDeviceId == deviceId) {
-                Log.w(TAG, "[SCREENSHOT] timeout after ${SCREENSHOT_TIMEOUT_MS / 1000}s")
+                Timber.w("[SCREENSHOT] timeout after ${SCREENSHOT_TIMEOUT_MS / 1000}s")
                 _uiState.value = _uiState.value.copy(
                     screenshotLoadingDeviceId = null,
                     screenshotError = "PC\uAC00 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. PC\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694."
@@ -428,10 +428,10 @@ class DashboardViewModel : ViewModel() {
             )
         )
             .addOnSuccessListener {
-                Log.d(TAG, "[SCREENSHOT] command written to RTDB successfully")
+                Timber.d("[SCREENSHOT] command written to RTDB successfully")
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "[SCREENSHOT] command write FAILED: ${e.message}")
+                Timber.e(e, "[SCREENSHOT] command write FAILED: ${e.message}")
                 screenshotTimeoutJob?.cancel()
                 _uiState.value = _uiState.value.copy(
                     screenshotLoadingDeviceId = null,
@@ -483,7 +483,6 @@ class DashboardViewModel : ViewModel() {
     }
 
     companion object {
-        private const val TAG = "DashboardViewModel"
         /** Mobile heartbeat interval (60 seconds). */
         private const val MOBILE_HEARTBEAT_INTERVAL_MS = 60_000L
         /** Consider device offline if heartbeat > 2 minutes ago. */

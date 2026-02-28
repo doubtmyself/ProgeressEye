@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
     alias(libs.plugins.gradle.play.publisher)
+    alias(libs.plugins.firebase.crashlytics.plugin)
 }
 
 // --- 버전 관리 로직 시작 ---
@@ -102,6 +103,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -122,6 +124,7 @@ dependencies {
     implementation(libs.firebase.database)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.crashlytics)
     implementation(libs.datastore.preferences)
     // Credential Manager (Google Sign-In)
     implementation(libs.androidx.credentials)
@@ -133,6 +136,8 @@ dependencies {
     // Splash Screen
     implementation(libs.core.splashscreen)
     implementation(libs.play.services.ads)
+    // Timber logging
+    implementation(libs.timber)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
