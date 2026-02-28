@@ -12,8 +12,9 @@ Firebase Realtime Database를 통해 모바일 앱과 실시간 양방향 동기
 │  (Python)   │ ←─── 명령 SSE ──────── │  (Kotlin)   │
 └──────┬──────┘                        └──────┬──────┘
        │          Firebase Storage            │
-       └──── 스크린샷 업로드 ──────────────────┘
-              모바일에서 URL로 표시
+       ├──── 스크린샷 업로드 ──────────────────┘
+       │          Firebase Firestore
+       └──── 버전 체크 / plan 조회
 ```
 
 ### 통신 흐름
@@ -23,6 +24,7 @@ Firebase Realtime Database를 통해 모바일 앱과 실시간 양방향 동기
 | PC → Mobile | Firebase RTDB (REST PATCH) | 진행률, 상태, 하트비트 |
 | Mobile → PC | Firebase RTDB (SSE 스트리밍) | 명령 (스크린샷 요청, 모니터링 제어) |
 | PC → Mobile | Firebase Storage | 스크린샷 이미지 (JPEG) |
+| PC ← Firestore | Firestore REST API (공개 읽기) | 강제 버전 체크 (appConfig/pc), plan 조회 |
 
 ## 실행 방법
 
@@ -79,7 +81,7 @@ winget install UB-Mannheim.TesseractOCR
 
 ### 모니터링
 
-- **진행바 모드**: OpenCV 4전략(Canny+Otsu, 적응형이진화, HSV채도분할, 배경제거) + Sobel 트랙 확장
+- **진행바 모드**: **영역 선택 시**: OpenCV 4전략(Canny+Otsu, 적응형이진화, HSV채도분할, 배경제거) + Sobel 트랙 확장으로 바 탐지. **모니터링 중**: bar_analyzer만 사용 (bar_finder 미사용)
 - **OCR 모드**: pytesseract LSTM 숫자 감지, 변화 감지로 불필요한 OCR 스킵
 - **멀티모니터 지원**: Qt screen index + mss monitor index + scale factor 자동 계산
 - **작업별 완료 알람**: 80~100% 범위에서 threshold 설정, 연속 2회 도달 시 트레이 알림
@@ -87,11 +89,14 @@ winget install UB-Mannheim.TesseractOCR
 - **프리징 감지**: 설정 시간(1~60분) 동안 진행률 변화 없으면 멈춤으로 판정
 - **템플릿 이미지 영구 저장**: `templates/{region_id}.png`에 영역 등록 시점의 스크린샷을 저장, 작업 삭제 시에만 파일 삭제
 - **모니터 절전 방지**: 모니터링 중 `SetThreadExecutionState`로 모니터 절전을 자동 방지, 정지 시 복귀
+- **완료 지연 시간**: 작업별 0~60분 완료 확인 지연 설정, threshold 도달 후 설정 시간 유지 확인
 
 ### 모바일 연동
 
 - **SSE 리스너**: Firebase RTDB `users/{uid}/commands/` 경로를 실시간 감시, 모바일 명령 즉시 수신
 - **스크린샷 요청**: 모바일에서 명령 → PC 전체 화면 캡처 → JPEG 압축 → Firebase Storage 업로드 → RTDB에 URL 기록
+- **forceLogout**: 모바일 회원 탈퇴 시 PC Agent 로그아웃 + 앱 종료
+- **강제 버전 체크**: Firestore `appConfig/pc`에서 최소 버전 확인 (로그인 전, 인증 불필요)
 
 ### 완료 시나리오 (3가지)
 
@@ -107,28 +112,56 @@ winget install UB-Mannheim.TesseractOCR
 - **토큰 자동 갱신**: 만료 5분 전 자동 refresh (1시간 유효)
 - **배치 전송**: 모니터링 사이클 단위로 변경된 작업만 전송 (동일 데이터 스킵)
 - **SSL 재시도**: `requests.Session` + `Retry(total=3, backoff_factor=1)`
-- **Free/Pro 플랜**: Free = 동시 1대, Pro = 무제한 기기
+- **Free/Pro 플랜**: plan은 Firestore `users/{uid}`에서 읽음. Free = 동시 1대, Pro = 무제한 기기
 
 ### Firebase 데이터 구조
 
 ```
 users/{uid}/
-  plan: "free" | "pro"
   activeDevice: "pc_xxxx"
   profile: {email, displayName, lastLoginAt}
+  mobileSession/
+    sessionId, deviceId, deviceName, updatedAt
+  mobileHeartbeat: <timestamp_ms>
+  deviceStatus/
+    {deviceId}: "monitoring" | "online" | "offline"
+  heartbeat/
+    {deviceId}: <timestamp_ms>
   commands/                    ← 모바일 → PC 명령 채널
-    screenshot: {ts: 1234567890}
-    monitor: {action: "start" | "stop", ts: 1234567890}
+    screenshot: {ts, cmdId}
+    monitor: {action: "start" | "stop", ts, cmdId}
+    forceLogout: {ts}
   devices/
-    pc_xxxx/
-      name, platform, status, lastSeen, appVersion, createdAt
-      screenshots/             ← PC → 모바일 스크린샷 URL
-        latest: {url: "https://...", ts: 1234567890}
+    {pcId}/
+      name, platform, appVersion, createdAt
+      stats/
+        cpu: <0-100>
+        gpu: <0-100>
+        ram: <0-100>
+      screenshots/latest: {url, ts}
       tasks/
-        region_1/
-          p: 45.2      ← progress
-          s: "r"        ← status (r=running, f=freeze, c=completed)
-          l: "작업이름"  ← label
+        {taskId}/
+          p: <progress>
+          s: "r"|"f"|"c"|"i"
+          l: "작업이름"
+  alerts/
+    {alertId}/
+      type: "completion"|"stall"|"image_change"
+      title: "ProgressEye"
+      body: "알림 메시지"
+      deviceId: "pc_xxxx"
+      ts: <timestamp_ms>
+  fcmTokens/
+    {tokenId}/
+      token: "FCM 토큰 문자열"
+      updatedAt: <server_timestamp>
+```
+
+### Firestore 데이터 구조
+
+```
+appConfig/pc       → { minVersion: "1.0.0" }     # 공개 읽기 (강제 업데이트)
+users/{uid}        → { plan: "free" | "pro" }    # owner 읽기 (구독 상태)
 ```
 
 ### Firebase 비용 (Spark 무료 플랜)
@@ -196,10 +229,12 @@ pc-agent/
 │   ├── bar_analyzer.py      # 바 fill 비율 계산 (그라데이션 지원)
 │   ├── ocr_reader.py        # pytesseract OCR 숫자 감지
 │   ├── freeze_detector.py   # 프리징 감지
-│   └── scheduler.py         # 모니터링 스케줄러
+│   ├── scheduler.py         # 모니터링 스케줄러
 │   └── system_monitor.py   # CPU/GPU/RAM 샘플러 (Windows/Linux 분기)
 ├── firebase/
 │   ├── realtime_db.py       # Firebase RTDB REST API 래퍼
+│   ├── command_listener.py  # SSE 명령 수신 (screenshot, monitor, forceLogout)
+│   ├── storage.py           # Firebase Storage 스크린샷 업로드
 │   └── device_manager.py    # 기기 등록/충돌 관리
 ├── ui/
 │   ├── main_window.py       # PyQt6 메인 윈도우

@@ -4,7 +4,7 @@
 
 ## 1. 개요
 
-ProgressEye는 **Google 로그인 기반 인증**과 Firebase Realtime Database를 중심으로 PC Agent와 Mobile App 간 데이터를 동기화한다. 이미지는 전혀 전송하지 않으며, **막대 픽셀 분석으로 산출된 진행률 숫자만** 저장한다.
+ProgressEye는 **Google 로그인 기반 인증**과 Firebase Realtime Database와 Firestore를 중심으로 PC Agent와 Mobile App 간 데이터를 동기화한다. 이미지는 전혀 전송하지 않으며 (스크린샷 요청 제외), **막대 픽셀 분석 또는 OCR로 산출된 진행률 숫자만** 저장한다.
 
 **핵심 원칙**: 모든 데이터는 `users/{uid}` 아래에 귀속되어, 같은 Google 계정으로 로그인한 기기만 접근 가능하다.
 
@@ -15,20 +15,37 @@ ProgressEye는 **Google 로그인 기반 인증**과 Firebase Realtime Database�
 ### 2.1 전체 구조
 
 ```
-progresseye-db/
+progresseye-db/                          # Realtime Database
 └── users/
-    └── {uid}/                          # Google 계정별 데이터 격리
-        ├── profile/                    # 사용자 프로필
-        ├── devices/                    # 등록된 PC 목록
+    └── {uid}/                           # Google 계정별 데이터 격리
+        ├── profile/                     # 사용자 프로필
+        ├── activeDevice                 # 현재 활성 PC 기기 ID
+        ├── mobileSession/               # 모바일 세션 관리
+        ├── mobileHeartbeat              # 모바일 하트비트
+        ├── deviceStatus/                # 기기별 상태
+        │   └── {deviceId}
+        ├── heartbeat/                   # 기기별 하트비트
+        │   └── {deviceId}
+        ├── commands/                    # 원격 명령 (기기별이 아닌 flat 구조)
+        │   ├── screenshot
+        │   ├── monitor
+        │   └── forceLogout
+        ├── devices/                     # PC 기기 정보
         │   └── {pcId}/
-        ├── tasks/                      # 작업 진행률 (핵심)
-        │   └── {pcId}/
-        │       └── {taskId}/
-        ├── commands/                   # 원격 명령 큐
-        │   └── {pcId}/
-        └── settings/                   # 알림 및 앱 설정
-            ├── fcmTokens/
-            └── notifications/
+        │       ├── stats/               # CPU/GPU/RAM
+        │       ├── screenshots/latest   # 최신 스크린샷 URL
+        │       └── tasks/               # 작업 진행률
+        │           └── {taskId}/
+        ├── alerts/                      # 알림 기록 (Cloud Function 트리거)
+        │   └── {alertId}/
+        └── fcmTokens/                   # FCM 토큰 목록
+            └── {tokenId}/
+
+progresseye-firestore/                   # Firestore
+├── appConfig/
+│   └── pc                               # { minVersion: "1.0.0" }
+└── users/
+    └── {uid}                            # { plan: "free" | "pro" }
 ```
 
 ---
@@ -37,16 +54,10 @@ progresseye-db/
 
 ```json
 {
-  "users": {
-    "{uid}": {
-      "profile": {
-        "email": "user@gmail.com",
-        "displayName": "홍길동",
-        "photoURL": "https://lh3.googleusercontent.com/...",
-        "createdAt": 1700000000000,
-        "lastLoginAt": 1700100000000
-      }
-    }
+  "profile": {
+    "email": "user@gmail.com",
+    "displayName": "홍길동",
+    "lastLoginAt": 1700100000000
   }
 }
 ```
@@ -55,9 +66,7 @@ progresseye-db/
 |------|------|------|
 | email | string | Google 계정 이메일 |
 | displayName | string | Google 프로필 이름 |
-| photoURL | string | Google 프로필 사진 URL |
-| createdAt | number | 최초 가입 시각 (Unix ms) |
-| lastLoginAt | number | 마지막 로그인 시각 |
+| lastLoginAt | number | 마지막 로그인 시각 (Unix ms) |
 
 **쓰기**: PC Agent 또는 Mobile App (최초 로그인 시)
 
@@ -69,16 +78,25 @@ PC Agent에서 Google 로그인하면 자동 등록.
 
 ```json
 {
-  "users": {
-    "{uid}": {
-      "devices": {
-        "pc_a1b2c3d4": {
-          "name": "작업용 PC",
-          "platform": "Windows 11",
-          "status": "online",
-          "lastSeen": 1700000000000,
-          "appVersion": "1.0.0",
-          "createdAt": 1700000000000
+  "devices": {
+    "pc_a1b2c3d4": {
+      "name": "작업용 PC",
+      "platform": "Windows 11",
+      "appVersion": "1.0.0",
+      "createdAt": 1700000000000,
+      "stats": {
+        "cpu": 45,
+        "gpu": 30,
+        "ram": 62
+      },
+      "screenshots": {
+        "latest": { "url": "https://...", "ts": 1700000000 }
+      },
+      "tasks": {
+        "region_1": {
+          "p": 73.2,
+          "s": "r",
+          "l": "프리미어 렌더링"
         }
       }
     }
@@ -90,34 +108,27 @@ PC Agent에서 Google 로그인하면 자동 등록.
 |------|------|------|
 | name | string | PC 표시 이름 (기본값: 컴퓨터 이름) |
 | platform | string | OS 정보 |
-| status | string | "online" / "offline" |
-| lastSeen | number | 마지막 통신 시각 (Unix ms) |
 | appVersion | string | PC Agent 버전 |
-| createdAt | number | 최초 등록 시각 |
-
-> `status`는 Firebase Presence 기능으로 자동 관리.
+| createdAt | number | 최초 등록 시각 (Unix ms) |
+| stats | object | CPU/GPU/RAM 사용률 (%) |
+| screenshots/latest | object | 최신 스크린샷 URL 및 타임스탬프 |
+| tasks | object | 작업 진행률 (2.4 참조) |
 
 ---
 
 ### 2.4 tasks (작업 진행률) — 핵심 데이터
 
-PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분석으로 산출된 값.**
+PC에서 모니터링 중인 작업의 실시간 진행률. `devices/{pcId}/tasks/{taskId}` 하위에 위치한다.
 
 ```json
 {
-  "users": {
-    "{uid}": {
+  "devices": {
+    "pc_a1b2c3d4": {
       "tasks": {
-        "pc_a1b2c3d4": {
-          "task_001": {
-            "label": "프리미어 렌더링",
-            "progress": 73.2,
-            "status": "running",
-            "startedAt": 1700000000000,
-            "updatedAt": 1700001000000,
-            "estimatedEndAt": 1700003535000,
-            "captureIntervalSec": 30
-          }
+        "region_1": {
+          "p": 73.2,
+          "s": "r",
+          "l": "프리미어 렌더링"
         }
       }
     }
@@ -127,36 +138,55 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| label | string | 작업 이름 (사용자 지정) |
-| progress | number | 진행률 (0.0~100.0, 소수점 1자리) |
-| status | string | "running" / "freeze" / "complete" / "error" / "paused" |
-| startedAt | number | 작업 모니터링 시작 시각 |
-| updatedAt | number | 마지막 업데이트 시각 |
-| estimatedEndAt | number | 예상 완료 시각 (진행 속도 기반 계산) |
-| captureIntervalSec | number | 캡처 주기 (초) |
+| p | number | 진행률 (0.0~100.0) |
+| s | string | "r" (running) / "f" (frozen) / "c" (completed) / "i" (idle) |
+| l | string | 작업 라벨 (사용자 지정) |
 
-> **이전 대비 삭제**: `progressRaw`, `timeRemaining`, `timeRemainingRaw`, `ocrConfidence` — OCR 관련 필드 전부 제거. 막대 분석은 순수 숫자만 산출.
+> 대역폭 절감을 위해 압축된 키 사용. 변경된 작업만 배치 전송 (동일 데이터 스킵).
 
-**쓰기**: PC Agent (Firebase REST API, `requests` 라이브러리 직접 호출)
-**읽기**: Mobile App, Cloud Functions
+**쓰기**: PC Agent (Firebase REST API PATCH)
+**읽기**: Mobile App (Firebase SDK ValueEventListener)
 
 ---
 
-### 2.5 commands (원격 명령 큐)
+### 2.5 commands (원격 명령)
+
+모바일에서 PC로 보내는 명령. 기기별이 아닌 flat 구조로, PC Agent가 SSE로 실시간 감시한다.
 
 ```json
 {
-  "users": {
-    "{uid}": {
-      "commands": {
-        "pc_a1b2c3d4": {
-          "type": "shutdown",
-          "requestedAt": 1700001000000,
-          "status": "pending",
-          "executedAt": null,
-          "result": null
-        }
-      }
+  "commands": {
+    "screenshot": { "ts": 1700001000, "cmdId": "cmd_abc123" },
+    "monitor": { "action": "start", "ts": 1700001000, "cmdId": "cmd_def456" },
+    "forceLogout": { "ts": 1700001000 }
+  }
+}
+```
+
+| 명령 | 필드 | 설명 |
+|------|------|------|
+| screenshot | ts, cmdId | PC 전체 화면 캡처 → Storage 업로드 → RTDB URL 기록 |
+| monitor | action, ts, cmdId | "start" / "stop" — 모니터링 시작/정지 |
+| forceLogout | ts | 회원 탈퇴 시 PC Agent 강제 로그아웃 + 앱 종료 |
+
+**쓰기**: Mobile App
+**읽기**: PC Agent (SSE 스트리밍)
+
+---
+
+### 2.6 alerts (알림 기록)
+
+PC Agent가 이벤트 감지 시 기록. Cloud Function이 트리거되어 FCM 발송.
+
+```json
+{
+  "alerts": {
+    "alert_abc123": {
+      "type": "completion",
+      "title": "ProgressEye",
+      "body": "프리미어 렌더링 — 100% 완료",
+      "deviceId": "pc_a1b2c3d4",
+      "ts": 1700001000000
     }
   }
 }
@@ -164,31 +194,82 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| type | string | "shutdown" / "sleep" |
-| requestedAt | number | 요청 시각 |
-| status | string | "pending" / "confirmed" / "executed" / "rejected" |
-| executedAt | number? | 실행 시각 |
-| result | string? | "success" / "failed" + 사유 |
+| type | string | "completion" / "stall" / "image_change" |
+| title | string | 알림 제목 |
+| body | string | 알림 본문 |
+| deviceId | string | 발생 PC ID |
+| ts | number | 이벤트 시각 (Unix ms) |
 
----
+### 2.7 fcmTokens (FCM 토큰)
 
-### 2.6 settings (알림 및 앱 설정)
+모바일 앱의 FCM 토큰 저장. Cloud Function이 알림 발송 시 조회.
 
 ```json
 {
-  "users": {
-    "{uid}": {
-      "settings": {
-        "fcmTokens": {
-          "mob_device_1": "dK8x...token_1...",
-          "mob_device_2": "eL9y...token_2..."
-        },
-        "notifications": {
-          "complete": true,
-          "freeze": true,
-          "offline": false
-        }
-      }
+  "fcmTokens": {
+    "token_xxx": {
+      "token": "dK8x...FCM토큰...",
+      "updatedAt": { ".sv": "timestamp" }
+    }
+  }
+}
+```
+
+### 2.8 기타 노드
+
+| 노드 | 타입 | 설명 |
+|------|------|------|
+| activeDevice | string | 현재 활성 PC ID ("pc_xxxx") |
+| mobileSession | object | 모바일 세션 { sessionId, deviceId, deviceName, updatedAt } |
+| mobileHeartbeat | number | 모바일 하트비트 timestamp |
+| deviceStatus/{deviceId} | string | "monitoring" / "online" / "offline" |
+| heartbeat/{deviceId} | number | 기기 하트비트 timestamp (ms) |
+
+---
+
+## 2B. Firestore 스키마
+
+### appConfig/pc (공개 읽기)
+
+PC Agent 강제 업데이트 체크용. 인증 없이 읽기 가능.
+
+```json
+{
+  "minVersion": "1.0.0"
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| minVersion | string | PC Agent 최소 허용 버전 (시맨틱 버전) |
+
+### users/{uid} (owner 읽기, 쓰기 불가)
+
+사용자 구독 상태. Firebase Console에서만 수정 가능.
+
+```json
+{
+  "plan": "free"
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| plan | string | "free" / "pro" — 구독 상태 |
+
+### Firestore 보안 규칙
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /appConfig/{doc} {
+      allow read: if true;        // 공개 읽기 (버전 체크)
+      allow write: if true;       // Console에서 관리
+    }
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;      // Console에서만 plan 변경
     }
   }
 }
@@ -198,42 +279,23 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 
 ## 3. Cloud Functions
 
-### 3.1 onTaskComplete — 완료 알림 발송
+현재 1개의 Cloud Function만 배포되어 있다.
+
+### 3.1 onAlertCreated — 알림 FCM 발송
 
 ```
-트리거: users/{uid}/tasks/{pcId}/{taskId}/status 가 "complete"로 변경 시
+트리거: users/{uid}/alerts/{alertId} 문서 생성 시 (RTDB onCreate)
 동작:
-  1. users/{uid}/settings/notifications/complete 확인
-  2. true이면 users/{uid}/settings/fcmTokens 의 모든 토큰에 FCM 발송
+  1. alert 문서에서 type, title, body, deviceId 읽기
+  2. users/{uid}/fcmTokens/ 전체 조회
+  3. 각 토큰에 FCM 메시지 발송:
+     - data: { type, title, body, deviceId, alertId }
+     - notification: { title, body }
+  4. 잘못된 토큰 자동 삭제 (messaging/invalid-registration-token 등)
 ```
 
-### 3.2 onTaskFreeze — 멈춤 알림 발송
-
-```
-트리거: users/{uid}/tasks/{pcId}/{taskId}/status 가 "freeze"로 변경 시
-동작:
-  1. users/{uid}/settings/notifications/freeze 확인
-  2. true이면 FCM 발송
-```
-
-### 3.3 onDeviceOffline — 오프라인 알림
-
-```
-트리거: users/{uid}/devices/{pcId}/status 가 "offline"으로 변경 시
-동작:
-  1. 마지막 온라인 시간 확인 (2분 유예)
-  2. users/{uid}/settings/notifications/offline 확인
-  3. true이면 FCM 발송
-```
-
-### 3.4 onUserCreate — 신규 사용자 초기화
-
-```
-트리거: Firebase Auth에 새 사용자 생성 시
-동작:
-  1. users/{uid}/profile 에 이메일, 이름, 사진 URL 저장
-  2. users/{uid}/settings/notifications 기본값 설정
-```
+> 설계서에 있던 onTaskComplete, onTaskFreeze, onDeviceOffline, onUserCreate는 구현되지 않았다.
+> PC Agent가 직접 alerts 노드에 이벤트를 기록하고, onAlertCreated가 FCM을 발송하는 단순 구조이다.
 
 ---
 
@@ -244,14 +306,13 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 ```json
 {
   "notification": {
-    "title": "작업 완료!",
-    "body": "프리미어 렌더링 — 작업용 PC"
+    "title": "ProgressEye",
+    "body": "프리미어 렌더링 — 100% 완료"
   },
   "data": {
-    "type": "complete",
-    "pcId": "pc_a1b2c3d4",
-    "taskId": "task_001",
-    "label": "프리미어 렌더링"
+    "type": "completion",
+    "deviceId": "pc_a1b2c3d4",
+    "alertId": "alert_abc123"
   }
 }
 ```
@@ -261,22 +322,22 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 ```json
 {
   "notification": {
-    "title": "진행 멈춤 감지",
+    "title": "ProgressEye",
     "body": "프리미어 렌더링 — 5분째 73%에서 멈춤"
   },
   "data": {
-    "type": "freeze",
-    "pcId": "pc_a1b2c3d4",
-    "taskId": "task_001",
-    "progress": "73.2",
-    "frozenMinutes": "5"
+    "type": "stall",
+    "deviceId": "pc_a1b2c3d4",
+    "alertId": "alert_def456"
   }
 }
 ```
 
 ---
 
-## 5. 보안 규칙 (Database Rules)
+## 5. 보안 규칙
+
+### Realtime Database Rules
 
 ```json
 {
@@ -284,33 +345,16 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid",
-        
-        "profile": {
-          ".validate": "newData.hasChildren(['email', 'displayName'])"
-        },
-        "devices": {
-          "$pcId": {
-            ".validate": "newData.hasChildren(['name', 'status'])"
-          }
-        },
-        "tasks": {
-          "$pcId": {
-            "$taskId": {
-              ".validate": "newData.hasChildren(['label', 'progress', 'status'])"
-            }
-          }
-        },
-        "commands": {
-          "$pcId": {
-            ".validate": "newData.hasChildren(['type', 'status'])"
-          }
-        }
+        ".write": "auth != null && auth.uid == $uid"
       }
     }
   }
 }
 ```
+
+### Firestore Rules
+
+Firestore 보안 규칙은 Section 2B 참조.
 
 ---
 
@@ -320,5 +364,5 @@ PC에서 모니터링 중인 작업의 실시간 진행률. **막대 픽셀 분�
 |----|------|-----------|------|
 | uid | Firebase Auth 자동 생성 | Google Sign-In | `Uf7xKp2mR...` |
 | pcId | `pc_` + 8자리 랜덤 hex | PC Agent (최초 로그인 시) | `pc_a1b2c3d4` |
-| taskId | `task_` + 3자리 순번 | PC Agent (영역 추가 시) | `task_001` |
-| fcmToken key | 기기 식별자 | Mobile App (로그인 시) | `mob_device_1` |
+| taskId | `region_` + 순번 | PC Agent (영역 추가 시) | `region_1` |
+| fcmToken key | `token_` + 랜덤 문자열 | Mobile App (로그인 시) | `token_xxx` |

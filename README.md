@@ -4,11 +4,15 @@ PC 화면의 진행률을 실시간으로 추적하고, 모바일에서 모니�
 
 ## 최근 업데이트 (2026-02)
 
-- 모바일 인증: **계정당 1개 모바일 세션**만 허용. 다른 기기 로그인 시 기존 기기 로그아웃 확인 후 세션 교체
-- 모바일 광고: Top 영역 배너 레이아웃/인셋 정리 (`TopAppBar`와 겹침 이슈 수정)
-- 모바일 데이터 최적화: `alerts` 증분 구독, `heartbeat` 배치 조회로 RTDB 다운로드 절감
-- 주기 변경: PC `heartbeat/stats` 60초, 모바일 `heartbeat` 60초, PC 오프라인 판정 2분
-- PC 샘플러: 시스템 트레이 제거, CPU 샘플러 안정화(워밍업 스킵 + 초기 N/A 게이트 + APPCPU 디버그 로그)
+- **회원 탈퇴**: 모바일 앱에서 계정 삭제 기능 추가 (연결된 모든 기기 로그아웃 + Firebase 데이터 삭제)
+- **모니터링 파이프라인 리팩토링**: 영역 선택 시에만 bar_finder 사용, 모니터링 중에는 bar_analyzer만 사용 (불필요한 재탐지 제거)
+- **완료 지연 시간**: 작업별 완료 게이지 도달 후 N분간 유지 확인 기능 추가
+- **강제 버전 체크**: Firestore `appConfig/pc` 문서로 최소 버전 관리, 로그인 전 체크
+- **Firestore 마이그레이션**: 사용자 plan 정보를 RTDB에서 Firestore로 이동 (`users/{uid}`)
+- **forceLogout 명령**: 모바일에서 회원 탈퇴 시 PC Agent에 로그아웃 명령 전달
+- **FCM 알림 정상화**: Cloud Functions에 notification 필드 추가, 런타임 알림 권한 요청 (Android 13+)
+- **자동 배포**: Gradle Play Publisher(GPP) 4.0.0으로 Android 앱 자동 배포 파이프라인 구축
+- **R8 난독화**: Release 빌드에 코드 난독화 + 리소스 축소 적용
 
 ```
 ┌─────────────┐     Firebase RTDB      ┌─────────────┐
@@ -16,7 +20,10 @@ PC 화면의 진행률을 실시간으로 추적하고, 모바일에서 모니�
 │  (Python)   │ ←─── 명령 SSE ──────── │  (Kotlin)   │
 └──────┬──────┘                        └──────┬──────┘
        │       Firebase Cloud Functions       │
-       └── alerts RTDB write ──→ FCM push ──→ 시스템 알림
+       ├── alerts RTDB write ──→ FCM push ──→ 시스템 알림
+       │       Firebase Firestore             │
+       └── appConfig (버전체크) ───────────────┘
+           users/{uid} (plan)
 ```
 
 ## 프로젝트 구조
@@ -26,7 +33,9 @@ ProgressEye/
 ├── pc-agent/          # Windows 데스크톱 에이전트 (Python, PyQt6)
 ├── mobile-app/        # Android 모바일 앱 (Kotlin, Jetpack Compose)
 ├── functions/         # Firebase Cloud Functions (Node.js)
+├── privacy-polycy/    # 개인정보처리방침 호스팅 (Firebase Hosting)
 ├── database.rules.json
+├── firestore.rules
 └── firebase.json
 ```
 
@@ -113,11 +122,22 @@ gradlew.bat assembleRelease
 2. Gradle sync 완료 대기
 3. Run (Shift+F10) 또는 Build > Make Project
 
+### Google Play Store 자동 배포
+
+```bash
+cd mobile-app
+.\gradlew.bat publishBundle
+```
+
+Gradle Play Publisher(GPP) 4.0.0을 사용한 자동 배포. 사전 요구:
+- `keystore.properties` — 서명 설정
+- `app/google-play-api-key.json` — Google Play API 서비스 계정 키
+- Google Play Console에서 앱 등록 + 첫 AAB 수동 업로드 완료
 ---
 
 ## Cloud Functions 배포
 
-Cloud Functions는 RTDB에 새 알림이 기록되면 FCM으로 모바일에 푸시합니다.
+Cloud Functions는 RTDB `alerts` 노드에 새 문서가 생성되면 FCM data+notification 메시지를 모바일에 전송합니다.
 
 ### 의존성 설치
 
@@ -168,6 +188,16 @@ firebase deploy --only database --project progresseye-49244
 
 ---
 
+## Firestore 규칙 배포
+
+`firestore.rules` 수정 후:
+
+```bash
+firebase deploy --only firestore:rules --project progresseye-49244
+```
+
+---
+
 ## 전체 배포 (한 번에)
 
 ```bash
@@ -175,7 +205,7 @@ firebase deploy --only database --project progresseye-49244
 firebase deploy --project progresseye-49244
 ```
 
-이 명령으로 Cloud Functions + RTDB 규칙이 모두 배포됩니다.
+이 명령으로 Cloud Functions + RTDB 규칙 + Firestore 규칙 + Hosting이 모두 배포됩니다.
 
 ---
 
@@ -183,27 +213,30 @@ firebase deploy --project progresseye-49244
 
 ```
 users/{uid}/
-  plan: "free" | "pro"
+  activeDevice: "pc_xxxx"
+  profile: { email, displayName, lastLoginAt }
   mobileSession/
     sessionId: "uuid"
     deviceId: "android_xxx"
     deviceName: "Samsung SM-S9xx"
     updatedAt: <server_timestamp>
-  activeDevice: "pc_xxxx"
-  profile: { email, displayName, lastLoginAt }
+  mobileHeartbeat: <timestamp_ms>
   deviceStatus/
     {deviceId}: "monitoring" | "online" | "offline"
   heartbeat/
     {deviceId}: <timestamp_ms>
   commands/
-    screenshot: { ts }
+    screenshot: { ts, cmdId }
+    monitor: { action: "start" | "stop", ts, cmdId }
+    forceLogout: { ts }
   devices/
     {pcId}/
       name, platform, appVersion, createdAt
+      stats/                         # 하드웨어 모니터링
+        cpu: <0-100>
+        gpu: <0-100>
+        ram: <0-100>
       screenshots/latest: { url, ts }
-      stats/                         # 하드웨어 모니터링 (PC 앱 켜져 있을 때만)
-        cpu: <0-100>               # CPU 사용량 (%)
-        gpu: <0-100>               # GPU 사용량 (%, NVIDIA/AMD/Intel)
       tasks/
         {taskId}/
           p: <progress>          # 진행률 (0~100)
@@ -222,6 +255,13 @@ users/{uid}/
       updatedAt: <server_timestamp>
 ```
 
+### Firestore
+
+```
+appConfig/pc           → { minVersion: "1.0.0" }       # 공개 읽기 (PC 앱 강제 업데이트 체크)
+users/{uid}            → { plan: "free" | "pro" }      # owner 읽기 (구독 상태)
+```
+
 ## 알림 흐름
 
 ```
@@ -229,7 +269,7 @@ PC 이벤트 감지 (완료/프리징/화면변경)
   → PC 로컬 로그 기록
   → RTDB /alerts/{id} 기록
   → Cloud Function onAlertCreated 트리거
-  → /fcmTokens 조회 → FCM data message 전송
+  → /fcmTokens 조회 → FCM data+notification message 전송
   → Mobile FCMService.onMessageReceived()
   → 사용자 설정 확인 (완료 알림 ON/OFF, 멈춤 경고 ON/OFF)
   → Android 시스템 알림 표시

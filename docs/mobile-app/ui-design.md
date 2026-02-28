@@ -411,6 +411,8 @@ fun GradientProgressBar(progress: Float, modifier: Modifier) {
 │  │  👤 user@gmail.com           │ │
 │  │     Free Plan                │ │
 │  │                   [Log out]  │ │
+│  │                              │ │
+│  │  [🗑️ Delete Account]         │ │  ← 빨간 OutlinedButton
 │  └─────────────────────────────┘ │
 │                                   │
 │  NOTIFICATIONS                    │
@@ -441,6 +443,8 @@ fun GradientProgressBar(progress: Float, modifier: Modifier) {
 - 토글: MD3 `Switch`
 - 드롭다운: MD3 `ExposedDropdownMenuBox`
 - 로그아웃: 확인 `AlertDialog` 후 실행
+- 회원 탈퇴: 빨간색 `OutlinedButton` + `PersonRemove` 아이콘, 확인 `AlertDialog` 후 실행
+  - 탈퇴 플로우: forceLogout 쓰기 → 2초 대기 → RTDB 삭제 → Auth 삭제 → signOut → 로그인 화면 이동
 
 ---
 
@@ -520,8 +524,6 @@ data class Screenshot(
 - 온라인 판단: lastSeen이 2분 이내이면 Online
 - 스크린샷 요청/표시: Coil 3 AsyncImage + 풀스크린 다이얼로그(핀치 줌)
 
-**TODO:**
-- FCM 푸시 알림 구현 (완료/프리징 백그라운드 알림)
 ### 4.3 리스너 경로
 
 | 데이터 | RTDB 경로 | 갱신 주기 |
@@ -529,7 +531,7 @@ data class Screenshot(
 | 기기 목록 | `users/{uid}/devices` | 기기 등록/해제 시 |
 | 작업 진행률 | `users/{uid}/devices/{id}/tasks` | 모니터링 사이클 (기본 60초) |
 | 스크린샷 | `users/{uid}/devices/{id}/screenshots/latest` | 요청 시 |
-| 사용자 플랜 | `users/{uid}/plan` | 로그인 시 1회 |
+| 사용자 플랜 | Firestore `users/{uid}` | 로그인 시 1회 |
 
 ---
 

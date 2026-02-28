@@ -19,6 +19,7 @@
 | 차트 | Vico | Compose 네이티브 차트 라이브러리 |
 | 위젯 | Glance | Compose 기반 앱 위젯 |
 | 이미지 로딩 | Coil | Compose 네이티브 이미지 로더 (스크린샷 표시) |
+| Firestore | Firebase Firestore SDK | plan 조회 (users/{uid}) |
 
 ---
 
@@ -203,8 +204,6 @@ LifecycleStartEffect(dashboardViewModel) {
 > Firebase RTDB Spark(무료) 플랜에서 쓰기(PATCH/PUT)는 과금되지 않으며,
 > 리스너가 받는 push(다운로드)만 전송량에 잡힌다.
 
-> **TODO**: Hilt DI 도입 시 Repository 계층 분리 예정
-> **TODO**: CPU 사용량, 온도 메트릭 추가 예정
 ### 3.3 FCM 푸시 알림 처리
 
 ```kotlin
@@ -334,12 +333,12 @@ class SendCommandUseCase @Inject constructor(
 
 ```
 users/{uid}/
-  plan: "free" | "pro"
   activeDevice: "pc_xxxx"
   profile: {email, displayName, lastLoginAt}
   commands/                    ← 모바일 → PC 명령 채널
     screenshot: {ts: 1234567890}
     monitor: {action: "start" | "stop", ts: 1234567890}
+    forceLogout: {ts: 1234567890}
   devices/
     pc_xxxx/
       name, platform, status, lastSeen, appVersion, createdAt
@@ -350,6 +349,12 @@ users/{uid}/
           p: 45.2      ← progress
           s: "r"        ← status (r=running, f=freeze, c=completed)
           l: "작업이름"  ← label
+```
+
+### Firestore
+
+```
+users/{uid}   → { plan: "free" | "pro" }   # 구독 상태 (Firestore로 마이그레이션)
 ```
 
 ### Firebase Storage 경로
@@ -375,15 +380,41 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
+    id("com.github.triplet.play") version libs.versions.gradlePlayPublisher.get()
 }
 
 android {
-    compileSdk { version = release(36) { minorApiLevel = 1 } }
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.chg.progeresseye"
         minSdk = 24
         targetSdk = 36
+        // version.properties에서 읽기
+        val vProps = java.util.Properties().apply {
+            file("version.properties").inputStream().use { load(it) }
+        }
+        versionCode = vProps.getProperty("VERSION_CODE").toInt()
+        versionName = vProps.getProperty("VERSION_NAME_PREFIX")
     }
+    signingConfigs {
+        create("release") {
+            // keystore.properties에서 읽기
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true      // R8 난독화
+            isShrinkResources = true    // 리소스 축소
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+
+play {
+    track.set("internal")
+    releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
+    defaultToAppBundles.set(true)
+    serviceAccountCredentials.set(file("google-play-api-key.json"))
 }
 
 dependencies {
@@ -391,10 +422,11 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
-    // Credential Manager (Google Sign-In)
-    implementation(libs.androidx.credentials)              // 1.5.0
+    implementation(libs.firebase.firestore)    // 추가됨
+    // Credential Manager
+    implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
-    implementation(libs.googleid)                          // 1.1.1
+    implementation(libs.googleid)
 }
 ```
 
@@ -404,5 +436,18 @@ dependencies {
 GitHub Push → GitHub Actions
     ├── Lint + Unit Test
     ├── Build Debug APK
-    └── (Release) → Signed AAB → Play Store 업로드
+    └── (Release) → Signed AAB → GPP → Play Store 자동 업로드
+
+# 수동 배포 명령
+.\gradlew.bat publishBundle
 ```
+
+### 버전 관리
+
+`app/version.properties`에서 버전 관리:
+```properties
+VERSION_CODE=1
+VERSION_NAME_PREFIX=1.0.0
+```
+
+`publishBundle` 성공 시 `incrementVersionCode` task가 자동으로 VERSION_CODE를 증가시킨다.
