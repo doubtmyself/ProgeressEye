@@ -13,3 +13,17 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Signing
+*.jks
+*.keystore
+keystore.properties
+
+# Google Play API key
+app/google-play-api-key.json
+
+# Release builds
+app/release/
+
+# Kotlin metadata
+.kotlin/
