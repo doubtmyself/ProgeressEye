@@ -90,8 +90,8 @@ class DeviceManager:
                 f"users/{self._uid}/heartbeat",
                 {self._device_id: 0},
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("set_offline heartbeat 실패: %s", exc)
 
     def heartbeat(self) -> None:
         """하트비트 전용 경로에 lastSeen만 갱신한다.
@@ -166,7 +166,8 @@ class DeviceManager:
                 return "free"
             fields = resp.json().get("fields", {})
             return fields.get("plan", {}).get("stringValue", "free")
-        except Exception:
+        except Exception as exc:
+            log.debug("get_user_plan 조회 실패: %s", exc)
             return "free"
 
     def get_active_device(self) -> str | None:
@@ -206,5 +207,6 @@ def get_min_pc_version(project_id: str = "progresseye-49244") -> str | None:
             return None
         fields = resp.json().get("fields", {})
         return fields.get("minVersion", {}).get("stringValue")
-    except Exception:
+    except Exception as exc:
+        log.debug("get_min_pc_version 조회 실패: %s", exc)
         return None

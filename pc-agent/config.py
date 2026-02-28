@@ -5,6 +5,7 @@ JSON 파일 기반 설정 읽기/쓰기.
 """
 
 import json
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -60,11 +61,11 @@ class Config:
                 log.info("설정 파일 로드: %s", self._path)
             except (json.JSONDecodeError, OSError) as e:
                 log.warning("설정 파일 읽기 실패, 기본값 사용: %s", e)
-                self._data = DEFAULT_CONFIG.copy()
+                self._data = copy.deepcopy(DEFAULT_CONFIG)
                 self._save()
         else:
             log.info("설정 파일 없음 — 기본값으로 생성")
-            self._data = DEFAULT_CONFIG.copy()
+            self._data = copy.deepcopy(DEFAULT_CONFIG)
             self._save()
 
     def _save(self) -> None:

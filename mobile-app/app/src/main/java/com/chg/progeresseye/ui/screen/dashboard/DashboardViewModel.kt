@@ -382,7 +382,7 @@ class DashboardViewModel : ViewModel() {
 
     private fun parseTask(snapshot: DataSnapshot): TaskData? {
         val id = snapshot.key ?: return null
-        val progressRaw = snapshot.child("p").getValue(Double::class.java)?.toFloat() ?: 0f
+        val progressRaw = (snapshot.child("p").value as? Number)?.toFloat() ?: 0f
         val status = snapshot.child("s").getValue(String::class.java) ?: "r"
         val label = snapshot.child("l").getValue(String::class.java) ?: id
 

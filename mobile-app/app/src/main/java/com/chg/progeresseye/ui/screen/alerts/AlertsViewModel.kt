@@ -35,9 +35,19 @@ class AlertsViewModel : ViewModel() {
     private var alertsQuery: Query? = null
     private var alertsListener: ChildEventListener? = null
     private val readAlertIds = mutableSetOf<String>()
+    private var authListener: FirebaseAuth.AuthStateListener? = null
 
     init {
-        startListening()
+        authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            if (firebaseAuth.currentUser != null && alertsListener == null) {
+                startListening()
+            } else if (firebaseAuth.currentUser == null) {
+                stopListening()
+                _alerts.value = emptyList()
+                _isLoading.value = false
+            }
+        }
+        auth.addAuthStateListener(authListener!!)
     }
 
     private fun startListening() {
@@ -154,12 +164,18 @@ class AlertsViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        stopListening()
+        authListener?.let { auth.removeAuthStateListener(it) }
+        authListener = null
+        super.onCleared()
+    }
+
+    private fun stopListening() {
         alertsListener?.let { listener ->
             alertsQuery?.removeEventListener(listener)
         }
         alertsListener = null
         alertsQuery = null
-        super.onCleared()
     }
 
     companion object {
