@@ -243,7 +243,7 @@ private fun LogoSection(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.RemoveRedEye,
-                    contentDescription = "ProgressEye logo",
+                    contentDescription = stringResource(R.string.cd_app_logo),
                     tint = Primary,
                     modifier = Modifier.size(64.dp),
                 )
@@ -278,7 +278,7 @@ private fun TextSection() {
     )
     Spacer(modifier = Modifier.height(8.dp))
     Text(
-        text = "Monitor your progress anywhere, safely.",
+        text = stringResource(R.string.login_subtitle),
         style = MaterialTheme.typography.bodyLarge,
         color = Slate400,
         textAlign = TextAlign.Center,
@@ -514,7 +514,7 @@ private fun GoogleSignInButton(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = if (isLoading) "Signing in..." else "Sign in with Google",
+                text = if (isLoading) stringResource(R.string.login_signing_in) else stringResource(R.string.login_sign_in_google),
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
@@ -582,10 +582,15 @@ private fun TermsRow(
                 checkmarkColor = Color.White,
             ),
         )
+        val prefix = stringResource(R.string.login_terms_prefix)
+        val link = stringResource(R.string.login_terms_link)
+        val suffix = stringResource(R.string.login_terms_suffix)
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = Slate500)) {
-                    append("I agree to the ")
+                if (prefix.isNotEmpty()) {
+                    withStyle(SpanStyle(color = Slate500)) {
+                        append(prefix)
+                    }
                 }
                 withStyle(
                     SpanStyle(
@@ -593,7 +598,12 @@ private fun TermsRow(
                         textDecoration = TextDecoration.Underline,
                     ),
                 ) {
-                    append("Terms of Service")
+                    append(link)
+                }
+                if (suffix.isNotEmpty()) {
+                    withStyle(SpanStyle(color = Slate500)) {
+                        append(suffix)
+                    }
                 }
             },
             style = MaterialTheme.typography.bodySmall,

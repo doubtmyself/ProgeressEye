@@ -42,10 +42,13 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -201,8 +204,21 @@ private fun DeviceCard(
     var showFullScreenshot by rememberSaveable { mutableStateOf(false) }
 
     Surface(
+        modifier = Modifier
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        SurfaceContainerDark,           // 시작 색상 (위)
+                        SurfaceDark // 끝 색상 (아래)
+                    ),
+                    startY = 0f,
+                    endY = 400f
+                ),
+                shape = RoundedCornerShape(16.dp) // 배경도 Surface와 동일한 곡률 적용
+            ),
+        color = Color.Transparent,
+        contentColor = contentColorFor(SurfaceDark),
         shape = RoundedCornerShape(16.dp),
-        color = SurfaceDark,
         border = BorderStroke(1.dp, SurfaceContainerHighDark),
     ) {
         Column {
@@ -248,6 +264,8 @@ private fun DeviceCard(
                 )
             }
 
+            HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
+
             ScreenshotButton(
                 isLoading = isScreenshotLoading,
                 isOnline = device.isOnline,
@@ -263,6 +281,7 @@ private fun DeviceCard(
             onDismiss = { showFullScreenshot = false },
         )
     }
+
 }
 
 // ═════════════════════════════════════════════════════════
@@ -684,7 +703,7 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
 private fun ScreenshotButton(isLoading: Boolean, isOnline: Boolean, onClick: () -> Unit) {
     val enabled = isOnline && !isLoading
     val contentAlpha = if (enabled) 1f else 0.38f
-    Surface(color = Slate800.copy(alpha = 0.50f)) {
+    Surface {
         Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Surface(
                 onClick = { if (enabled) onClick() },

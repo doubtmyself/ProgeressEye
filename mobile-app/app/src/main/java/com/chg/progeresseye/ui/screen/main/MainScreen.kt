@@ -147,15 +147,15 @@ fun MainScreen(
             },
             topBar = {
                 Column(modifier = Modifier.statusBarsPadding()) {
-                    if (userPlan != "pro") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SurfaceDark),
-                        ) {
-                            BannerAd(modifier = Modifier.fillMaxWidth())
-                        }
-                    }
+//                    if (userPlan != "pro") {
+//                        Box(
+//                            modifier = Modifier
+//                                .fillMaxWidth()
+//                                .background(SurfaceDark),
+//                        ) {
+//                            BannerAd(modifier = Modifier.fillMaxWidth())
+//                        }
+//                    }
                     val currentNav = navItems[safeSelectedTab]
                     CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
                     HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
