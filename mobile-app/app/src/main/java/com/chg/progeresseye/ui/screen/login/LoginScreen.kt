@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.RemoveRedEye
@@ -32,6 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +49,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -431,6 +434,8 @@ private fun BottomActions(
     isLoading: Boolean = false,
     error: String? = null,
 ) {
+    var termsAccepted by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -454,8 +459,12 @@ private fun BottomActions(
                 textAlign = TextAlign.Center,
             )
         }
-        GoogleSignInButton(onClick = onSignInClick, isLoading = isLoading)
-        TermsText()
+        TermsRow(checked = termsAccepted, onCheckedChange = { termsAccepted = it })
+        GoogleSignInButton(
+            onClick = onSignInClick,
+            isLoading = isLoading,
+            enabled = termsAccepted,
+        )
     }
 }
 
@@ -464,7 +473,11 @@ private fun BottomActions(
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun GoogleSignInButton(onClick: () -> Unit, isLoading: Boolean = false) {
+private fun GoogleSignInButton(
+    onClick: () -> Unit,
+    isLoading: Boolean = false,
+    enabled: Boolean = true,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -473,11 +486,13 @@ private fun GoogleSignInButton(onClick: () -> Unit, isLoading: Boolean = false) 
         label = "btn_scale",
     )
 
+    val isEnabled = enabled && !isLoading
+
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = if (isLoading) Color.White.copy(alpha = 0.7f) else Color.White,
-        enabled = !isLoading,
+        color = if (isEnabled) Color.White else Color.White.copy(alpha = 0.4f),
+        enabled = isEnabled,
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -504,7 +519,7 @@ private fun GoogleSignInButton(onClick: () -> Unit, isLoading: Boolean = false) 
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                 ),
-                color = Slate900,
+                color = if (isEnabled) Slate900 else Slate900.copy(alpha = 0.5f),
             )
         }
     }
@@ -548,31 +563,45 @@ private fun GoogleColorIcon(modifier: Modifier = Modifier) {
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun TermsText() {
-    val annotated = buildAnnotatedString {
-        withStyle(SpanStyle(color = Slate500)) {
-            append("By continuing you agree to our ")
-        }
-        pushStringAnnotation(tag = "TERMS", annotation = "terms")
-        withStyle(
-            SpanStyle(
-                color = Slate400,
-                textDecoration = TextDecoration.Underline,
-            ),
-        ) {
-            append("Terms")
-        }
-        pop()
-    }
+private fun TermsRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
 
-    ClickableText(
-        text = annotated,
-        style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
-        onClick = { offset ->
-            annotated.getStringAnnotations("TERMS", offset, offset).firstOrNull()
-            // Pure UI — no navigation
-        },
-    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = CheckboxDefaults.colors(
+                checkedColor = Primary,
+                uncheckedColor = Slate500,
+                checkmarkColor = Color.White,
+            ),
+        )
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = Slate500)) {
+                    append("I agree to the ")
+                }
+                withStyle(
+                    SpanStyle(
+                        color = Primary,
+                        textDecoration = TextDecoration.Underline,
+                    ),
+                ) {
+                    append("Terms of Service")
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.clickable {
+                uriHandler.openUri("https://progresseye-49244.web.app")
+            },
+        )
+    }
 }
 
 // ═════════════════════════════════════════════════════════
