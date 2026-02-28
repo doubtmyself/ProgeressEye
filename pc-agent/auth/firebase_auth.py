@@ -8,6 +8,7 @@ firebase-admin SDK를 사용하지 않는다.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import requests
@@ -16,7 +17,10 @@ from . import AuthError
 from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
 
 # 출처: 사용자 제공 Firebase credentials
-FIREBASE_API_KEY = "AIzaSyDXe_l0KKLf4Tnufs2n5AmDF93bZUuuLm4"
+FIREBASE_API_KEY = os.environ.get(
+    "PROGRESSEYE_FIREBASE_API_KEY",
+    "AIzaSyDXe_l0KKLf4Tnufs2n5AmDF93bZUuuLm4",
+)
 SIGN_IN_URL = (
     "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp"
     f"?key={FIREBASE_API_KEY}"

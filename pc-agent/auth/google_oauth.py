@@ -24,8 +24,14 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 SCOPES = ["openid", "email", "profile"]
 USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-CLIENT_ID = "989425742328-gf6rcqd68dualv7cp90ij005j1uefd4b.apps.googleusercontent.com"
-CLIENT_SECRET = "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"
+CLIENT_ID = os.environ.get(
+    "PROGRESSEYE_OAUTH_CLIENT_ID",
+    "989425742328-gf6rcqd68dualv7cp90ij005j1uefd4b.apps.googleusercontent.com",
+)
+CLIENT_SECRET = os.environ.get(
+    "PROGRESSEYE_OAUTH_CLIENT_SECRET",
+    "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",
+)
 
 
 class GoogleOAuth:
