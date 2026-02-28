@@ -108,9 +108,9 @@ class ProgressEyeApp:
             str, PILImage.Image
         ] = {}  # 이미지 변경 감지용 메모리 캐시
         self._template_dir = (
-            pathlib.Path(os.path.dirname(os.path.abspath(__file__))) / "templates"
+            pathlib.Path.home() / "AppData" / "Local" / "ProgressEye" / "templates"
         )
-        self._template_dir.mkdir(exist_ok=True)
+        self._template_dir.mkdir(parents=True, exist_ok=True)
 
         # 언어 설정 (MainWindow 생성 전에 적용해야 t() 번역이 올바름)
         set_language(self._config.get("language", "en"))
@@ -148,6 +148,7 @@ class ProgressEyeApp:
         self._main_window.settings_requested.connect(self._open_settings)
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
+        self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
         self._main_window.test_stall_requested.connect(self._on_test_stall)
@@ -401,9 +402,7 @@ class ProgressEyeApp:
         self._command_listener.start(uid)
 
     def _send_heartbeat(self) -> None:
-        """하트비트 전송 (모니터링 비활성 시에만 동작)."""
-        if self._scheduler.is_running:
-            return  # 모니터링 중이면 batch sync가 lastSeen 갱신
+        """하트비트 전송 (모니터링 상태와 무관하게 주기적으로 전송)."""
         if self._device_manager:
             try:
                 self._device_manager.heartbeat()

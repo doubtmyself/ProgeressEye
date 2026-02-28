@@ -6,6 +6,7 @@ JSON 파일 기반 설정 읽기/쓰기.
 
 import json
 import copy
+import os
 from pathlib import Path
 from typing import Any
 
@@ -69,10 +70,19 @@ class Config:
             self._save()
 
     def _save(self) -> None:
-        """설정을 JSON 파일에 저장한다."""
+        """설정을 JSON 파일에 원자적으로 저장한다 (tmp → fsync → replace)."""
         self._dir.mkdir(parents=True, exist_ok=True)
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2, ensure_ascii=False)
+        tmp_path = self._path.with_suffix(".json.tmp")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(str(tmp_path), str(self._path))
+        except OSError as e:
+            log.warning("설정 파일 원자적 저장 실패, 직접 쓰기 시도: %s", e)
+            with open(self._path, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, ensure_ascii=False)
         log.debug("설정 파일 저장: %s", self._path)
 
     def get(self, key: str, default: Any = None) -> Any:

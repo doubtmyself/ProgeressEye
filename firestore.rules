@@ -5,7 +5,7 @@ service cloud.firestore {
     // appConfig: public read, admin-only write (Firebase Console)
     match /appConfig/{document} {
       allow read: if true;
-      allow write: if true;
+      allow write: if false;
     }
 
     // users: owner can read/create/update (plan 필드는 관리자만 변경 가능)

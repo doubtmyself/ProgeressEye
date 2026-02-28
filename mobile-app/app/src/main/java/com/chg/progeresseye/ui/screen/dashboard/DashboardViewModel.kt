@@ -1,9 +1,10 @@
 package com.chg.progeresseye.ui.screen.dashboard
 
+import android.app.Application
 import android.app.Activity
 import android.content.Context
 import timber.log.Timber
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chg.progeresseye.data.model.DashboardUiState
 import com.chg.progeresseye.data.model.DeviceData
@@ -38,7 +39,7 @@ import java.util.UUID
 //   users/{uid}/mobileHeartbeat       → 30초마다 모바일 하트비트 갱신
 // ═════════════════════════════════════════════════════════
 
-class DashboardViewModel : ViewModel() {
+class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseDatabase.getInstance()
@@ -413,7 +414,7 @@ class DashboardViewModel : ViewModel() {
                 Timber.w("[SCREENSHOT] timeout after ${SCREENSHOT_TIMEOUT_MS / 1000}s")
                 _uiState.value = _uiState.value.copy(
                     screenshotLoadingDeviceId = null,
-                    screenshotError = "PC\uAC00 \uC751\uB2F5\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. PC\uAC00 \uCF1C\uC838 \uC788\uB294\uC9C0 \uD655\uC778\uD574\uC8FC\uC138\uC694."
+                    screenshotError = getApplication<Application>().getString(com.chg.progeresseye.R.string.screenshot_timeout)
                 )
             }
         }
@@ -436,7 +437,7 @@ class DashboardViewModel : ViewModel() {
                 screenshotTimeoutJob?.cancel()
                 _uiState.value = _uiState.value.copy(
                     screenshotLoadingDeviceId = null,
-                    screenshotError = "\uBA85\uB839 \uC804\uC1A1 \uC2E4\uD328: ${e.message}"
+                    screenshotError = getApplication<Application>().getString(com.chg.progeresseye.R.string.screenshot_command_failed, e.message ?: "")
                 )
             }
     }

@@ -111,4 +111,6 @@
     <string name="update_required_current">Current: %1$s</string>
     <string name="update_required_minimum">Required: %1$s</string>
     <string name="update_required_button">Update</string>
+    <string name="screenshot_timeout">PC is not responding. Please check if your PC is turned on.</string>
+    <string name="screenshot_command_failed">Command send failed: %1$s</string>
 </resources>

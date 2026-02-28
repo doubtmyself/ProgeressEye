@@ -156,7 +156,7 @@ class AuthViewModel(
                 // 1. Send forceLogout command to all connected PCs
                 db.reference.child("users").child(uid).child("commands")
                     .child("forceLogout")
-                    .setValue(mapOf("ts" to ServerValue.TIMESTAMP))
+                    .setValue(mapOf("ts" to (System.currentTimeMillis() / 1000), "cmdId" to java.util.UUID.randomUUID().toString()))
                     .await()
 
                 // 2. Wait for PC to receive the command via SSE

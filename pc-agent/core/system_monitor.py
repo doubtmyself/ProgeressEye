@@ -12,8 +12,8 @@
   Windows PDH  — AMD/Intel GPU 사용량 fallback
 
 측정 방식:
-  백그라운드 데몬 스레드에서 5초 간격으로 CPU/GPU/RAM을 샘플링한다.
-  CPU/GPU는 최근 5개 샘플의 이동평균(~25초)을, RAM은 최신값을 반환한다.
+  백그라운드 데몬 스레드에서 10초 간격으로 CPU/GPU/RAM을 샘플링한다.
+  CPU/GPU는 최근 5개 샘플의 이동평균(~50초)을, RAM은 최신값을 반환한다.
   collect_stats()는 캐시된 값만 읽으므로 호출 시점의 spike가 반영되지 않는다.
 """
 
@@ -47,7 +47,7 @@ _stop = threading.Event()
 
 
 def _sampler_loop() -> None:
-    """백그라운드에서 CPU/GPU/RAM을 5초 주기로 샘플링한다."""
+    """백그라운드에서 CPU/GPU/RAM을 10초 주기로 샘플링한다."""
     global _ram_value
 
     # ── psutil 초기화 (RAM + CPU) ──
@@ -81,8 +81,8 @@ def _sampler_loop() -> None:
         pass
 
     while not _stop.is_set():
-        # 5초 대기 (첫 반복 포함)
-        _stop.wait(timeout=5)
+        # 10초 대기 (첫 반복 포함)
+        _stop.wait(timeout=10)
         if _stop.is_set():
             break
 

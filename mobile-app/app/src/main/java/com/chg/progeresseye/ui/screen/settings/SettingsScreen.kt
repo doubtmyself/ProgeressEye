@@ -81,7 +81,7 @@ fun SettingsContent(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val currentUser = remember { FirebaseAuth.getInstance().currentUser }
+    val currentUser = FirebaseAuth.getInstance().currentUser
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
 

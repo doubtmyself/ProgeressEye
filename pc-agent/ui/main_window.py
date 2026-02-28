@@ -411,6 +411,7 @@ class MainWindow(QMainWindow):
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
+    close_requested = pyqtSignal()  # 창 닫기 시 cleanup 요청
 
     def __init__(
         self,
@@ -788,6 +789,9 @@ class MainWindow(QMainWindow):
             self._settings_overlay.setGeometry(self.centralWidget().geometry())
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """닫기 버튼을 누르면 앱을 종료한다."""
-        event.accept()
-        log.info("메인 창 종료")
+        """닫기 버튼을 누르면 cleanup 시그널을 발생시킨다."""
+        if getattr(self, "_really_quit", False):
+            event.accept()
+            return
+        event.ignore()
+        self.close_requested.emit()
