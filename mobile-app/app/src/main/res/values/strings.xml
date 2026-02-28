@@ -85,6 +85,16 @@
     <string name="settings_delete_account_message">This will permanently delete your account and all associated data. All connected devices will be logged out. This action cannot be undone.</string>
     <string name="settings_delete_account_confirm">Delete</string>
 
+    <!-- ── Login ── -->
+    <string name="cd_app_logo">ProgressEye logo</string>
+    <string name="login_subtitle">Monitor your progress anywhere, safely.</string>
+    <string name="login_signing_in">Signing in…</string>
+    <string name="login_sign_in_google">Sign in with Google</string>
+    <string name="login_terms_prefix">I agree to the </string>
+    <string name="login_terms_link">Terms of Service</string>
+    <string name="login_terms_suffix"></string>
+    <string name="auth_session_check_failed">Session check failed</string>
+
     <!-- ── Mobile Session ── -->
     <string name="session_takeover_title">Another mobile is already logged in</string>
     <string name="session_takeover_message">A signed-in mobile device exists (%1$s). Do you want to log out the existing device and continue here?</string>
@@ -94,4 +104,11 @@
     <string name="auth_session_takeover_failed">Failed to switch active mobile session.</string>
     <string name="auth_session_takeover_cancelled">Sign-in cancelled.</string>
     <string name="auth_logged_out_by_other_device">You were logged out because this account signed in on another mobile device.</string>
+
+    <!-- ── Force Update ── -->
+    <string name="update_required_title">Update Required</string>
+    <string name="update_required_message">A new version of ProgressEye is available. Please update to continue using the app.</string>
+    <string name="update_required_current">Current: %1$s</string>
+    <string name="update_required_minimum">Required: %1$s</string>
+    <string name="update_required_button">Update</string>
 </resources>

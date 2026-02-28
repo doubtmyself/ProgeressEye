@@ -137,8 +137,12 @@ dependencies {
     // Splash Screen
     implementation(libs.core.splashscreen)
     implementation(libs.play.services.ads)
+    // Play In-App Updates
+    implementation(libs.play.app.update.ktx)
     // Timber logging
     implementation(libs.timber)
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.material3)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
