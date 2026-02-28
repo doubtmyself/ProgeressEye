@@ -53,10 +53,19 @@ function New-PlaceholderPng {
 function Ensure-Tool {
     Param([string]$Name)
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-    if (-not $cmd) {
-        throw "$Name not found. Install Windows SDK and run from Developer PowerShell."
+    if ($cmd) { return $cmd.Source }
+
+    # Windows SDK 경로 자동 탐색
+    $sdkRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+    if (Test-Path $sdkRoot) {
+        $found = Get-ChildItem -Path $sdkRoot -Recurse -Filter $Name -File |
+            Where-Object { $_.DirectoryName -like "*\x64" } |
+            Sort-Object { $_.DirectoryName } -Descending |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
     }
-    return $cmd.Source
+
+    throw "$Name not found. Install Windows SDK: winget install Microsoft.WindowsSDK.10.0.26100"
 }
 
 $PcAgentRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\")).Path

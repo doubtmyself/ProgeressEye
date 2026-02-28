@@ -32,8 +32,8 @@ def _find_tesseract_cmd() -> str | None:
     2. 시스템 PATH
     3. Windows 기본 설치 경로
     """
-    # 1. 번들 경로 (exe 배포 또는 개발 환경)
-    if getattr(sys, "frozen", False):
+    # 1. 번들 경로 (Nuitka standalone / PyInstaller / 개발 환경)
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
         base = Path(sys.executable).parent
     else:
         base = Path(__file__).resolve().parent.parent

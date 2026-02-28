@@ -373,9 +373,11 @@ class BarPreviewDialog(QDialog):
         bar_image: PILImage.Image,
         detected_progress: float,
         bar_region: BarRegion | None = None,
+        debug_mode: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self._debug_mode = debug_mode
         self._image = image  # 전체 캡처 QImage (미리보기용)
         self._full_image = full_image  # 전체 캡처 PIL Image
         self._bar_image = bar_image  # 크롭된 바 PIL Image
@@ -435,6 +437,7 @@ class BarPreviewDialog(QDialog):
         self._btn_debug_save = QPushButton(t("btn_debug_save"))
         self._btn_debug_save.setToolTip(t("tooltip_debug_save"))
         self._btn_debug_save.clicked.connect(self._on_debug_save)
+        self._btn_debug_save.setVisible(self._debug_mode)
         tools_row.addWidget(self._btn_debug_save)
 
         layout.addLayout(tools_row)
