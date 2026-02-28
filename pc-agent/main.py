@@ -347,22 +347,15 @@ class ProgressEyeApp:
         except Exception as exc:
             log.warning("Firebase 기기 등록 실패: %s", exc)
 
-        # 플랜 확인 + Free 단일기기 강제
-        try:
-            plan = self._device_manager.get_user_plan()
-            self._config.set("plan", plan)
-            log.info("유저 플랜: %s", plan)
-            if plan == "free":
-                active = self._device_manager.get_active_device()
-                if active and active != device_id:
-                    if self._device_manager.is_other_device_online(active):
-                        log.warning("다른 PC에서 사용 중: %s", active)
-                        self._show_device_conflict(active)
-                        return
-                self._device_manager.set_active_device()
-        except Exception as exc:
-            log.debug("플랜/디바이스 확인 실패: %s", exc)
-
+        # 플랜 확인 + Free 단일기기 강제 (워커 스레드에서 수행, UI 블로킹 방지)
+        dm = self._device_manager
+        d_id = device_id
+        threading.Thread(
+            target=self._check_plan_worker,
+            args=(dm, d_id),
+            daemon=True,
+            name="plan-check",
+        ).start()
         # 프로필 저장
         try:
             profile_data = {
@@ -402,13 +395,24 @@ class ProgressEyeApp:
         self._command_listener.start(uid)
 
     def _send_heartbeat(self) -> None:
-        """하트비트 전송 (모니터링 상태와 무관하게 주기적으로 전송)."""
-        if self._device_manager:
-            try:
-                self._device_manager.heartbeat()
-                self._sync_stats_if_due()
-            except Exception as exc:
-                log.debug("하트비트 전송 실패: %s", exc)
+        """하트비트 + stats 전송 (워커 스레드에서 수행, UI 블로킹 방지)."""
+        dm = self._device_manager
+        if not dm:
+            return
+        threading.Thread(
+            target=self._heartbeat_worker,
+            args=(dm,),
+            daemon=True,
+            name="heartbeat",
+        ).start()
+
+    def _heartbeat_worker(self, dm: DeviceManager) -> None:
+        """워커 스레드: 하트비트 + stats RTDB 전송."""
+        try:
+            dm.heartbeat()
+            self._sync_stats_if_due()
+        except Exception as exc:
+            log.debug("하트비트 전송 실패: %s", exc)
 
     def _sync_stats_if_due(self) -> None:
         """하드웨어 stats를 최소 1분 간격으로만 RTDB에 전송한다."""
@@ -421,6 +425,23 @@ class ProgressEyeApp:
         if stats:
             self._device_manager.sync_stats(stats)
             self._last_stats_synced_at_ms = now_ms
+
+    def _check_plan_worker(self, dm: DeviceManager, device_id: str) -> None:
+        """워커 스레드: Firestore 플랜 조회 + Free 단일기기 강제."""
+        try:
+            plan = dm.get_user_plan()
+            self._config.set("plan", plan)
+            log.info("유저 플랜: %s", plan)
+            if plan == "free":
+                active = dm.get_active_device()
+                if active and active != device_id:
+                    if dm.is_other_device_online(active):
+                        log.warning("다른 PC에서 사용 중: %s", active)
+                        self._action_queue.put(lambda a=active: self._show_device_conflict(a))
+                        return
+                dm.set_active_device()
+        except Exception as exc:
+            log.debug("플랜/디바이스 확인 실패: %s", exc)
 
     def _notify(self, message: str) -> None:
         """트레이 제거 버전: 알림은 로그로 대체한다."""
@@ -946,7 +967,7 @@ class ProgressEyeApp:
             log.info("언어 변경: %s", new_lang)
         if new_freeze != current_freeze:
             self._config.set("freeze_detection.timeout_minutes", new_freeze)
-            self._freeze_detector._timeout_seconds = new_freeze * 60
+            self._freeze_detector.set_timeout_minutes(new_freeze)
             log.info("프리징 감지 시간 변경: %d분", new_freeze)
 
     def _do_logout(self) -> None:
@@ -1588,17 +1609,28 @@ class ProgressEyeApp:
                     self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
 
     def _on_cycle_complete(self) -> None:
-        """캡처 사이클 완료 — 배치 Firebase 전송 + 하드웨어 stats."""
-        if not self._device_manager:
+        """캐프쳐 사이클 완료 — 배치 Firebase 전송을 워커 스레드에서 수행."""
+        dm = self._device_manager
+        if not dm:
             return
+        # 메인 스레드에서 배치 스냅샷 후 클리어 (UI 불록킹 방지)
+        batch = dict(self._pending_firebase_batch)
+        self._pending_firebase_batch.clear()
+        threading.Thread(
+            target=self._sync_firebase_worker,
+            args=(dm, batch),
+            daemon=True,
+            name="firebase-sync",
+        ).start()
+
+    def _sync_firebase_worker(self, dm: DeviceManager, batch: dict) -> None:
+        """워커 스레드: Firebase RTDB 전송 (UI 스레드 외부)."""
         try:
-            if self._pending_firebase_batch:
-                self._device_manager.sync_tasks(dict(self._pending_firebase_batch))
+            if batch:
+                dm.sync_tasks(batch)
             self._sync_stats_if_due()
         except Exception as exc:
             log.debug("Firebase 배치 전송 실패: %s", exc)
-        self._pending_firebase_batch.clear()
-
     def _should_sync_firebase_state(
         self,
         new_state: dict,

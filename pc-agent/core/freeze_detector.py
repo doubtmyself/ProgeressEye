@@ -37,6 +37,15 @@ class FreezeDetector:
         self._change_threshold = change_threshold
         self._states: dict[str, FreezeState] = {}
 
+    def set_timeout_minutes(self, minutes: int) -> None:
+        """멈춤 판정 시간을 변경한다.
+
+        Args:
+            minutes: 마지막 변화 후 이 시간이 지나면 freeze 판정.
+        """
+        self._timeout_seconds = minutes * 60
+        log.debug("프리징 감지 시간 변경: %d분", minutes)
+
     def update(self, region_id: str, progress: float) -> FreezeState:
         """새 진행률로 상태를 업데이트한다.
 

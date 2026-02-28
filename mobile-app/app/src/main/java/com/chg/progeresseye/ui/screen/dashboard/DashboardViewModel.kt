@@ -264,6 +264,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 db.reference.child("users").child(uid)
                     .child("mobileHeartbeat")
                     .setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
+                    .addOnFailureListener { e -> Timber.w(e, "[HEARTBEAT] mobile heartbeat write failed") }
                 delay(MOBILE_HEARTBEAT_INTERVAL_MS)
             }
         }

@@ -34,6 +34,10 @@ class RealtimeDB:
         self._session = requests.Session()
         self._session.mount("https://", HTTPAdapter(max_retries=retry))
 
+    def get_id_token(self) -> str:
+        """현재 유효한 id_token을 반환한다 (필요 시 자동 갱신)."""
+        return self._get_id_token()
+
     def get(self, path: str) -> Any:
         """경로 데이터를 조회한다."""
         return self._request("GET", path)

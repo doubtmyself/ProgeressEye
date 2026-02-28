@@ -105,7 +105,7 @@ class DeviceManager:
         )
 
     def sync_tasks(self, task_updates: dict[str, dict[str, Any]]) -> None:
-        """Multi-path update로 작업 데이터 + 하트비트를 한 번에 전송한다.
+        """Multi-path update로 작업 데이터를 전송한다 (하트비트는 별도 경로).
 
         Args:
             task_updates: {region_id: {"p": progress, "s": status_code}} 형식.
@@ -149,7 +149,7 @@ class DeviceManager:
         """
         import requests as _requests
 
-        token = self._db._get_id_token()
+        token = self._db.get_id_token()
         if not token:
             return "free"
         url = (
