@@ -85,6 +85,10 @@ exports.onAlertCreated = onValueCreated(
       try {
         await messaging.send({
           token: token,
+          notification: {
+            title: fcmData.title,
+            body: fcmData.body,
+          },
           data: fcmData,
         });
         logger.info("FCM sent", { token: token.slice(-8) });

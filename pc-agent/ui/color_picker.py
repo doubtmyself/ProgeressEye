@@ -384,6 +384,7 @@ class BarPreviewDialog(QDialog):
         self._progress = detected_progress
         self._bar_region = bar_region
         self._analyzer = BarAnalyzer()
+        self.reselect_requested = False
 
         self.setWindowTitle(t("bar_preview_title"))
         self.setFixedWidth(380)
@@ -461,7 +462,7 @@ class BarPreviewDialog(QDialog):
         btn_layout = QHBoxLayout()
 
         self._btn_reselect = QPushButton(t("btn_reselect"))
-        self._btn_reselect.clicked.connect(self.reject)
+        self._btn_reselect.clicked.connect(self._on_reselect)
         btn_layout.addWidget(self._btn_reselect)
 
         self._btn_confirm = QPushButton(t("btn_confirm"))
@@ -475,6 +476,11 @@ class BarPreviewDialog(QDialog):
         btn_layout.addWidget(self._btn_confirm)
 
         layout.addLayout(btn_layout)
+
+    def _on_reselect(self) -> None:
+        """재선택 버튼 클릭 시 플래그 설정 후 reject."""
+        self.reselect_requested = True
+        self.reject()
 
     @property
     def _direction(self) -> str:

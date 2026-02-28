@@ -99,9 +99,9 @@ class ProgressEyeApp:
             str, dict
         ] = {}  # region_id -> {p, s} 마지막 전송값
         self._last_stats_synced_at_ms: int = 0
-        self._completion_confirm: dict[
-            str, int
-        ] = {}  # region_id -> 연속 threshold 도달 횟수
+        self._completion_first_reached: dict[
+            str, float
+        ] = {}  # region_id -> threshold 최초 도달 timestamp (time.time())
         self._template_images: dict[
             str, PILImage.Image
         ] = {}  # 이미지 변경 감지용 메모리 캐시
@@ -147,6 +147,7 @@ class ProgressEyeApp:
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
+        self._main_window.region_delay_changed.connect(self._on_delay_changed)
         self._main_window.test_stall_requested.connect(self._on_test_stall)
         self._main_window.test_complete_requested.connect(self._on_test_complete)
         # 기존 영역 복원
@@ -435,6 +436,9 @@ class ProgressEyeApp:
                         self._toggle_monitoring()
                     elif action == "stop" and self._scheduler.is_running:
                         self._toggle_monitoring()
+            elif cmd_type == "forceLogout":
+                log.info("[CMD] 원격 강제 로그아웃 수신 — 앱을 종료합니다.")
+                self._do_logout()
 
     def _is_fresh_command(self, cmd_type: str, data_obj: object) -> bool:
         """재전송/재연결 중복 명령과 오래된 명령을 필터링한다."""
@@ -557,6 +561,7 @@ class ProgressEyeApp:
                 region_type=region.get("type", "bar"),
                 enabled=enabled,
                 alert_threshold=region.get("alert_threshold", 100),
+                alert_delay_minutes=region.get("alert_delay_minutes", 0),
             )
             # 로컬 템플릿 이미지 복원
             tpl = self._load_template(region["id"])
@@ -678,7 +683,7 @@ class ProgressEyeApp:
                     self._device_manager.set_task_label(region_id, region["label"])
                 except Exception:
                     pass
-        else:
+        elif dialog.reselect_requested:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_area_selection)
 
@@ -736,7 +741,7 @@ class ProgressEyeApp:
                     self._device_manager.set_task_label(region_id, region["label"])
                 except Exception:
                     pass
-        else:
+        elif dialog.reselect_requested:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_ocr_area_selection)
 
@@ -825,7 +830,7 @@ class ProgressEyeApp:
         self._pending_firebase_batch.pop(region_id, None)
         self._last_firebase_state.pop(region_id, None)
         self._last_synced_firebase_state.pop(region_id, None)
-        self._completion_confirm.pop(region_id, None)
+        self._completion_first_reached.pop(region_id, None)
         self._delete_template(region_id)
         log.info("영역 삭제: %s", region_id)
 
@@ -970,7 +975,7 @@ class ProgressEyeApp:
                         self._device_manager.set_task_label(region_id, new_label)
                     except Exception:
                         pass
-            else:
+            elif dialog.reselect_requested:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
                 QTimer.singleShot(100, self._start_ocr_area_selection)
@@ -1009,7 +1014,7 @@ class ProgressEyeApp:
                         self._device_manager.set_task_label(region_id, new_label)
                     except Exception:
                         pass
-            else:
+            elif dialog.reselect_requested:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
                 QTimer.singleShot(100, self._start_area_selection)
@@ -1171,7 +1176,7 @@ class ProgressEyeApp:
             self._freeze_detector.reset_all()
             self._alerted_regions.clear()
             self._post_completion_fails.clear()
-            self._completion_confirm.clear()
+            self._completion_first_reached.clear()
             self._last_firebase_state.clear()
             self._last_synced_firebase_state.clear()
             self._pending_firebase_batch.clear()
@@ -1424,13 +1429,22 @@ class ProgressEyeApp:
             region_id in self._alerted_regions,
         )
         if region_id not in self._alerted_regions and progress >= threshold:
-            # 연속 2회 이상 threshold 도달 시에만 완료 판정 (스파이크 방지)
-            confirm = self._completion_confirm.get(region_id, 0) + 1
-            self._completion_confirm[region_id] = confirm
-            log.debug("[%s] 완료 확인 %d/2회 (%.1f%%)", region_id, confirm, progress)
-            if confirm >= 2:
+            # 타임스탬프 기반 완료 판정: delay분 동안 threshold 이상 유지 시 완료
+            delay_minutes = region_config.get("alert_delay_minutes", 0)
+            now = time.time()
+            first = self._completion_first_reached.get(region_id)
+            if first is None:
+                self._completion_first_reached[region_id] = now
+                first = now
+                log.debug("[%s] 완료 기준 최초 도달 (%.1f%%)", region_id, progress)
+            elapsed_min = (now - first) / 60.0
+            log.debug(
+                "[%s] 완료 확인 — %.1f%% >= %d%%, %.1f/%.0f분 경과",
+                region_id, progress, threshold, elapsed_min, delay_minutes,
+            )
+            if elapsed_min >= delay_minutes:
                 self._alerted_regions[region_id] = progress
-                self._completion_confirm.pop(region_id, None)
+                self._completion_first_reached.pop(region_id, None)
                 alert_msg = t("alert_triggered").format(label=label, progress=progress)
                 log.info("[완료 알람] %s", alert_msg)
                 self._action_queue.put(
@@ -1441,8 +1455,8 @@ class ProgressEyeApp:
                         "completion", "ProgressEye", alert_msg
                     )
         else:
-            # threshold 미달 또는 이미 완료 → 카운터 리셋
-            self._completion_confirm.pop(region_id, None)
+            # threshold 미달 또는 이미 완료 → 타이머 리셋
+            self._completion_first_reached.pop(region_id, None)
 
         if freeze_state.is_frozen:
             log.warning(
@@ -1513,6 +1527,13 @@ class ProgressEyeApp:
         # 임계값 변경시 알람 상태 초기화 (재알람 가능)
         self._alerted_regions.pop(region_id, None)
         log.info("[완료 알람] %s 임계값 변경: %d%%", region_id, threshold)
+
+    def _on_delay_changed(self, region_id: str, minutes: int) -> None:
+        """완료 확인 지연 시간 변경 — config에 저장한다."""
+        self._config.update_region(region_id, {"alert_delay_minutes": minutes})
+        # 지연 변경 시 타이머 리셋 (재측정)
+        self._completion_first_reached.pop(region_id, None)
+        log.info("[완료 알람] %s 지연 변경: %d분", region_id, minutes)
 
     def _on_test_stall(self, region_id: str) -> None:
         """프리징 테스트 — RTDB에 stall 알림을 기록한다 (FCM 파이프라인 검증용)."""

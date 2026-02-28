@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -75,12 +76,14 @@ import com.google.firebase.auth.FirebaseAuth
 @Composable
 fun SettingsContent(
     onSignOut: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val currentUser = remember { FirebaseAuth.getInstance().currentUser }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     // ── Logout confirmation dialog ──
     if (showLogoutDialog) {
@@ -90,6 +93,17 @@ fun SettingsContent(
                 onSignOut()
             },
             onDismiss = { showLogoutDialog = false },
+        )
+    }
+
+    // ── Delete account confirmation dialog ──
+    if (showDeleteAccountDialog) {
+        DeleteAccountConfirmDialog(
+            onConfirm = {
+                showDeleteAccountDialog = false
+                onDeleteAccount()
+            },
+            onDismiss = { showDeleteAccountDialog = false },
         )
     }
 
@@ -107,6 +121,7 @@ fun SettingsContent(
                 email = currentUser?.email,
                 photoUrl = currentUser?.photoUrl?.toString(),
                 onLogout = { showLogoutDialog = true },
+                onDeleteAccount = { showDeleteAccountDialog = true },
             )
         }
 
@@ -203,6 +218,7 @@ private fun AccountCard(
     email: String?,
     photoUrl: String?,
     onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit,
 ) {
     SettingsCard {
         // Profile row
@@ -249,7 +265,7 @@ private fun AccountCard(
         HorizontalDivider(color = OutlineVariantDark)
 
         // Logout button
-        Box(modifier = Modifier.padding(16.dp)) {
+        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
             OutlinedButton(
                 onClick = onLogout,
                 border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
@@ -267,6 +283,30 @@ private fun AccountCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.settings_logout),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+
+        // Delete account button
+        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp)) {
+            OutlinedButton(
+                onClick = onDeleteAccount,
+                border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = ErrorRed,
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PersonRemove,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.settings_delete_account),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -460,6 +500,52 @@ private fun LogoutConfirmDialog(
     )
 }
 
+// ═════════════════════════════════════════════════════════
+// Delete account confirmation dialog
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun DeleteAccountConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceContainerDark,
+        titleContentColor = OnSurfaceDark,
+        textContentColor = OnSurfaceVariantDark,
+        title = {
+            Text(
+                text = stringResource(R.string.settings_delete_account_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.settings_delete_account_message),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.settings_delete_account_confirm),
+                    color = ErrorRed,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.settings_cancel),
+                    color = OnSurfaceVariantDark,
+                )
+            }
+        },
+    )
+}
+
 @Preview(showBackground = true, showSystemUi = true, locale = "ko")
 @Composable
 private fun SettingsContentPreview() {
@@ -485,6 +571,7 @@ private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
                 email = "reg13@example.com",
                 photoUrl = null,
                 onLogout = {},
+                onDeleteAccount = {},
             )
         }
 

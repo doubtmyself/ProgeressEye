@@ -1,6 +1,11 @@
 package com.chg.progeresseye
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +38,10 @@ class MainActivity : ComponentActivity() {
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null
     private var isHandlingSessionConflict: Boolean = false
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or denied — no action needed */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // installSplashScreen() MUST be called BEFORE super.onCreate()
@@ -114,12 +123,16 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("main") {
                         LaunchedEffect(Unit) {
+                            requestNotificationPermission()
                             FCMService.registerToken()
                         }
                         MainScreen(
                             onSignOut = {
                                 authViewModel.signOut(this@MainActivity)
                                 this@MainActivity.finishAffinity()
+                            },
+                            onDeleteAccount = {
+                                authViewModel.deleteAccount(this@MainActivity)
                             },
                         )
                     }
@@ -174,5 +187,16 @@ class MainActivity : ComponentActivity() {
         mobileSessionListener = null
         mobileSessionRef = null
         isHandlingSessionConflict = false
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 }

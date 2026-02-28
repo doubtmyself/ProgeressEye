@@ -63,6 +63,7 @@ class RegionCard(QFrame):
     edit_requested = pyqtSignal(str)
     view_requested = pyqtSignal(str)
     threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
+    delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)
     test_complete_requested = pyqtSignal(str)
 
@@ -72,6 +73,7 @@ class RegionCard(QFrame):
         label: str,
         region_type: str = "bar",
         alert_threshold: int = 100,
+        alert_delay_minutes: int = 0,
         show_test_buttons: bool = False,
         parent: QWidget | None = None,
     ) -> None:
@@ -195,6 +197,27 @@ class RegionCard(QFrame):
         threshold_row.addStretch()
         layout.addLayout(threshold_row)
 
+        # ── Alert delay row: ⏱ 완료 확인 [0-60] 분 ──
+        delay_row = QHBoxLayout()
+        self._delay_label = QLabel(t("alert_delay_label"))
+        self._delay_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px;"
+            f" background: transparent; border: none;"
+        )
+        delay_row.addWidget(self._delay_label)
+
+        self._delay_spin = QSpinBox()
+        self._delay_spin.setRange(0, 60)
+        self._delay_spin.setValue(alert_delay_minutes)
+        self._delay_spin.setSuffix(t("alert_delay_suffix"))
+        self._delay_spin.setStyleSheet(spin_style)
+        self._delay_spin.setFixedSize(110, 30)
+        self._delay_spin.valueChanged.connect(self._on_delay_changed)
+        self._delay_spin.setToolTip(t("tooltip_delay"))
+        delay_row.addWidget(self._delay_spin)
+        delay_row.addStretch()
+        layout.addLayout(delay_row)
+
         # ── Bottom row: timestamp ──
         self._time_label = QLabel(t("card_standby"))
         self._time_label.setStyleSheet(
@@ -303,6 +326,10 @@ class RegionCard(QFrame):
         """완료 알람 임계값 변경 시 시그널을 발생시킨다."""
         self.threshold_changed.emit(self.region_id, value)
 
+    def _on_delay_changed(self, value: int) -> None:
+        """완료 확인 지연 시간 변경 시 시그널을 발생시킨다."""
+        self.delay_changed.emit(self.region_id, value)
+
     def update_progress(self, progress: float) -> None:
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
@@ -336,6 +363,8 @@ class RegionCard(QFrame):
         self._btn_view.setToolTip(t("tooltip_view"))
         self._btn_delete.setToolTip(t("tooltip_delete"))
         self._threshold_spin.setToolTip(t("tooltip_threshold"))
+        self._delay_label.setText(t("alert_delay_label"))
+        self._delay_spin.setToolTip(t("tooltip_delay"))
         self._btn_test_stall.setText(t("btn_test_stall"))
         self._btn_test_stall.setToolTip(t("tooltip_test_stall"))
         self._btn_test_complete.setText(t("btn_test_complete"))
@@ -368,6 +397,7 @@ class MainWindow(QMainWindow):
     settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
+    region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
 
@@ -569,6 +599,7 @@ class MainWindow(QMainWindow):
         region_type: str = "bar",
         enabled: bool = True,
         alert_threshold: int = 100,
+        alert_delay_minutes: int = 0,
     ) -> None:
         """영역 카드를 추가한다."""
         if region_id in self._region_cards:
@@ -579,6 +610,7 @@ class MainWindow(QMainWindow):
             label,
             region_type=region_type,
             alert_threshold=alert_threshold,
+            alert_delay_minutes=alert_delay_minutes,
             show_test_buttons=self._show_test_buttons,
         )
         card.set_checked(enabled)
@@ -587,6 +619,7 @@ class MainWindow(QMainWindow):
         card.view_requested.connect(self.region_view_requested)
         card.edit_requested.connect(self.region_edit_requested)
         card.threshold_changed.connect(self.region_threshold_changed)
+        card.delay_changed.connect(self.region_delay_changed)
         card.test_stall_requested.connect(self.test_stall_requested)
         card.test_complete_requested.connect(self.test_complete_requested)
         self._region_cards[region_id] = card

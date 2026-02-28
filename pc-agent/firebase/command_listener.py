@@ -224,7 +224,7 @@ class CommandListener:
                     data_map[key] = value
 
             commands: list[dict[str, object]] = []
-            for key in ("screenshot", "monitor"):
+            for key in ("screenshot", "monitor", "forceLogout"):
                 item = data_map.get(key)
                 if item is not None:
                     commands.append(
@@ -240,7 +240,7 @@ class CommandListener:
             return []
 
         command_type = segments[0]
-        if command_type not in {"screenshot", "monitor"}:
+        if command_type not in {"screenshot", "monitor", "forceLogout"}:
             return []
 
         if len(segments) == 1:

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.UUID
 
 // ═════════════════════════════════════════════════════════
@@ -135,6 +136,44 @@ class AuthViewModel(
     fun signOut(context: Context) {
         viewModelScope.launch {
             clearMobileSessionIfOwned(context)
+            repository.signOut(context)
+            MobileSessionManager.clearSession(context)
+            pendingUser = null
+            pendingUid = null
+            _uiState.value = AuthUiState()
+        }
+    }
+
+    fun deleteAccount(context: Context) {
+        viewModelScope.launch {
+            val user = repository.getCurrentUser() ?: return@launch
+            val uid = user.uid
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            try {
+                // 1. Send forceLogout command to all connected PCs
+                db.reference.child("users").child(uid).child("commands")
+                    .child("forceLogout")
+                    .setValue(mapOf("ts" to ServerValue.TIMESTAMP))
+                    .await()
+
+                // 2. Wait for PC to receive the command via SSE
+                delay(2000)
+
+                // 3. Delete all user data from RTDB
+                db.reference.child("users").child(uid).removeValue().await()
+
+                // 4. Delete Firebase Auth account (may fail if re-auth required)
+                try {
+                    user.delete().await()
+                } catch (_: Exception) {
+                    // Auth deletion failed — continue with local sign-out
+                }
+            } catch (e: Exception) {
+                // forceLogout or RTDB deletion failed — still sign out locally
+            }
+
+            // Always clear local state regardless of remote errors
             repository.signOut(context)
             MobileSessionManager.clearSession(context)
             pendingUser = null

@@ -108,3 +108,29 @@ powershell -ExecutionPolicy Bypass -File .\packaging\msix\make_msix.ps1 \
 
 - Nuitka 빌드 스크립트: `packaging/scripts/build_exe_nuitka.ps1`
 - PyInstaller spec (레거시 참조용): `packaging/pyinstaller/progresseye.spec`
+
+## 배포 전 민감정보 체크리스트
+
+### 포함 가능(공개 전제)
+- `OAuth client_id`
+- Desktop OAuth에서 요구되는 `client_secret` (PKCE 사용 전제, 노출 가능 값으로 운영)
+- Firebase Web API Key (`AIza...`)  
+  (서버 비밀키가 아니며, Firebase Rules/Auth 검증이 실제 보안 경계)
+
+### 절대 포함 금지
+- Service Account JSON/Private Key (`-----BEGIN PRIVATE KEY-----`)
+- 코드 서명 인증서 개인키 파일 (`.pfx`)
+- 로컬 토큰 파일 (`token.json`, `refresh token` 덤프)
+- 개인 PC 설정/캐시 파일 (`.firebase/`, 개발자 로컬 경로 정보)
+
+### 현재 배포 스크립트 기준 확인 포인트
+1. MSIX는 `dist\ProgressEye`만 패키징됨 (`make_msix.ps1`)
+2. EXE 빌드에서 `resources`, `templates`, `tesseract`가 포함됨 (`build_exe_nuitka.ps1`)
+3. 따라서 민감파일은 `dist\ProgressEye`와 위 포함 디렉터리에 없어야 함
+
+### 배포 직전 권장 점검
+```powershell
+rg -n "BEGIN PRIVATE KEY|service_account|token\.json|refresh_token|\.pfx|client_secret\.json" dist\ProgressEye -S
+```
+
+문제 키워드가 발견되면 배포를 중단하고 파일을 제외한 뒤 다시 빌드하세요.

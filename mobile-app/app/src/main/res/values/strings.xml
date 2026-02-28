@@ -80,6 +80,10 @@
     <string name="settings_logout_title">Log out?</string>
     <string name="settings_logout_message">You will need to sign in again.</string>
     <string name="settings_cancel">Cancel</string>
+    <string name="settings_delete_account">Delete Account</string>
+    <string name="settings_delete_account_title">Delete account?</string>
+    <string name="settings_delete_account_message">This will permanently delete your account and all associated data. All connected devices will be logged out. This action cannot be undone.</string>
+    <string name="settings_delete_account_confirm">Delete</string>
 
     <!-- ── Mobile Session ── -->
     <string name="session_takeover_title">Another mobile is already logged in</string>

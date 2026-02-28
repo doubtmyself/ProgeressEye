@@ -8,6 +8,7 @@ import uuid
 from typing import Any
 
 from .realtime_db import RealtimeDB
+from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
 class DeviceManager:
@@ -76,8 +77,8 @@ class DeviceManager:
                 f"users/{self._uid}/alerts/{alert_id}",
                 payload,
             )
-        except Exception:
-            pass  # 알림 실패는 무시 (모니터링 중단 방지)
+        except Exception as exc:
+            log.warning("push_alert 실패 [%s]: %s", alert_type, exc)
 
     def set_offline(self) -> None:
         """오프라인 상태를 기록한다."""

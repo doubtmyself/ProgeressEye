@@ -100,6 +100,7 @@ private val navItems = listOf(
 @Composable
 fun MainScreen(
     onSignOut: () -> Unit = {},
+    onDeleteAccount: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val dashboardViewModel: DashboardViewModel = viewModel()
@@ -183,7 +184,7 @@ fun MainScreen(
                     modifier = Modifier.padding(padding),
                 )
                 1 -> AlertsContent(modifier = Modifier.padding(padding))
-                else -> SettingsContent(onSignOut = onSignOut, modifier = Modifier.padding(padding))
+                else -> SettingsContent(onSignOut = onSignOut, onDeleteAccount = onDeleteAccount, modifier = Modifier.padding(padding))
             }
         }
 }

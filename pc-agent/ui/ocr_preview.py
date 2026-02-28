@@ -40,6 +40,7 @@ class OcrPreviewDialog(QDialog):
         self._image = image
         self._ocr_results = ocr_results
         self._progress = detected_progress if detected_progress is not None else 0.0
+        self.reselect_requested = False
 
         self.setWindowTitle(t("ocr_preview_title"))
         self.setFixedWidth(380)
@@ -119,7 +120,7 @@ class OcrPreviewDialog(QDialog):
         btn_layout = QHBoxLayout()
 
         self._btn_reselect = QPushButton(t("btn_reselect"))
-        self._btn_reselect.clicked.connect(self.reject)
+        self._btn_reselect.clicked.connect(self._on_reselect)
         btn_layout.addWidget(self._btn_reselect)
 
         self._btn_confirm = QPushButton(t("btn_confirm"))
@@ -131,8 +132,12 @@ class OcrPreviewDialog(QDialog):
         )
         self._btn_confirm.clicked.connect(self.accept)
         btn_layout.addWidget(self._btn_confirm)
-
         layout.addLayout(btn_layout)
+
+    def _on_reselect(self) -> None:
+        """재선택 버튼 클릭 시 플래그 설정 후 reject."""
+        self.reselect_requested = True
+        self.reject()
 
     def _draw_detections(self) -> QImage:
         """OCR 결과에 사각형을 그린 이미지를 반환한다.
