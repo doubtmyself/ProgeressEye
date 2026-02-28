@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.ocr_reader import OcrResult
+from utils.i18n import t
 
 
 class OcrPreviewDialog(QDialog):
@@ -40,7 +41,7 @@ class OcrPreviewDialog(QDialog):
         self._ocr_results = ocr_results
         self._progress = detected_progress if detected_progress is not None else 0.0
 
-        self.setWindowTitle("숫자(%) 탐지 결과")
+        self.setWindowTitle(t("ocr_preview_title"))
         self.setFixedWidth(380)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
@@ -77,15 +78,17 @@ class OcrPreviewDialog(QDialog):
                 f"{r.text}{'%' if not r.has_percent_sign else ''}"
                 for r in self._ocr_results
             ]
-            detect_label = QLabel(f"탐지된 텍스트: {', '.join(texts)}")
+            detect_label = QLabel(t("ocr_detected_text").format(texts=", ".join(texts)))
         else:
-            detect_label = QLabel("숫자를 감지하지 못했습니다.")
+            detect_label = QLabel(t("ocr_no_detection"))
         detect_label.setStyleSheet("color: #888; font-size: 11px;")
         detect_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(detect_label)
 
         # 감지된 진행률
-        self._progress_label = QLabel(f"감지된 진행률: {self._progress:.1f}%")
+        self._progress_label = QLabel(
+            t("detected_progress").format(progress=f"{self._progress:.1f}")
+        )
         self._progress_label.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(self._progress_label)
 
@@ -97,14 +100,13 @@ class OcrPreviewDialog(QDialog):
         self._progress_bar.setFixedHeight(24)
         layout.addWidget(self._progress_bar)
 
-
         # 작업 이름 입력
         name_layout = QHBoxLayout()
-        name_label = QLabel("작업 이름:")
+        name_label = QLabel(t("task_name_label"))
         name_label.setStyleSheet("color: #888; font-size: 12px;")
         name_layout.addWidget(name_label)
         self._task_name_input = QLineEdit()
-        self._task_name_input.setPlaceholderText("비워두면 자동 지정")
+        self._task_name_input.setPlaceholderText(t("task_name_placeholder"))
         self._task_name_input.setStyleSheet(
             "QLineEdit { background: #1c1c30; border: 1px solid #2a2a45;"
             "border-radius: 4px; padding: 4px 8px; color: #ffffff; font-size: 12px; }"
@@ -116,11 +118,11 @@ class OcrPreviewDialog(QDialog):
         # 버튼 영역
         btn_layout = QHBoxLayout()
 
-        self._btn_reselect = QPushButton("재선택")
+        self._btn_reselect = QPushButton(t("btn_reselect"))
         self._btn_reselect.clicked.connect(self.reject)
         btn_layout.addWidget(self._btn_reselect)
 
-        self._btn_confirm = QPushButton("확인")
+        self._btn_confirm = QPushButton(t("btn_confirm"))
         self._btn_confirm.setDefault(True)
         self._btn_confirm.setStyleSheet(
             "QPushButton { background-color: #4285F4; color: white; "
@@ -160,7 +162,6 @@ class OcrPreviewDialog(QDialog):
     def progress(self) -> float:
         """감지된 진행률."""
         return self._progress
-
 
     @property
     def task_name(self) -> str | None:

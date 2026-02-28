@@ -15,6 +15,7 @@ from keyring.errors import KeyringError, PasswordDeleteError
 
 from . import AuthError
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
 
 if TYPE_CHECKING:
     from .firebase_auth import FirebaseAuth
@@ -41,7 +42,7 @@ class TokenManager:
             keyring.set_password(SERVICE_NAME, "refresh_token", refresh_token)
             keyring.set_password(SERVICE_NAME, "id_token", id_token)
         except KeyringError as exc:
-            raise AuthError(f"토큰 저장소 접근 실패: {exc}") from exc
+            raise AuthError(t("token_store_failed").format(error=exc)) from exc
 
     def load_tokens(self, firebase_auth: "FirebaseAuth") -> dict[str, str] | None:
         """저장된 refresh_token으로 Firebase 토큰 자동 갱신을 시도한다."""
@@ -94,11 +95,11 @@ class TokenManager:
             except PasswordDeleteError:
                 continue
             except KeyringError as exc:
-                raise AuthError(f"토큰 삭제 실패: {exc}") from exc
+                raise AuthError(t("token_delete_failed").format(error=exc)) from exc
 
     def _get_secret(self, key: str) -> str | None:
         """keyring에서 값을 읽는다."""
         try:
             return keyring.get_password(SERVICE_NAME, key)
         except KeyringError as exc:
-            raise AuthError(f"토큰 조회 실패: {exc}") from exc
+            raise AuthError(t("token_read_failed").format(error=exc)) from exc

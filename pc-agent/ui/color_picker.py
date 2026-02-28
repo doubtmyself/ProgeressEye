@@ -25,6 +25,7 @@ from PIL import Image as PILImage
 
 from core.bar_analyzer import BarAnalyzer
 from core.bar_finder import BarRegion
+from utils.i18n import t
 from utils.logger import log
 
 
@@ -382,7 +383,7 @@ class BarPreviewDialog(QDialog):
         self._bar_region = bar_region
         self._analyzer = BarAnalyzer()
 
-        self.setWindowTitle("바 탐지 결과")
+        self.setWindowTitle(t("bar_preview_title"))
         self.setFixedWidth(380)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
@@ -402,14 +403,20 @@ class BarPreviewDialog(QDialog):
         layout.addWidget(self._preview, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 방향 표시
-        direction = "수평" if self._direction == "horizontal" else "수직"
-        dir_label = QLabel(f"방향: {direction}")
+        direction = (
+            t("direction_horizontal")
+            if self._direction == "horizontal"
+            else t("direction_vertical")
+        )
+        dir_label = QLabel(t("bar_direction").format(direction=direction))
         dir_label.setStyleSheet("color: #888; font-size: 11px;")
         dir_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(dir_label)
 
         # 감지된 진행률
-        self._progress_label = QLabel(f"감지된 진행률: {self._progress:.1f}%")
+        self._progress_label = QLabel(
+            t("detected_progress").format(progress=f"{self._progress:.1f}")
+        )
         self._progress_label.setStyleSheet("font-size: 15px; font-weight: bold;")
         layout.addWidget(self._progress_label)
 
@@ -425,21 +432,20 @@ class BarPreviewDialog(QDialog):
         tools_row = QHBoxLayout()
         tools_row.addStretch()
 
-        self._btn_debug_save = QPushButton("💾 디버그 저장")
-        self._btn_debug_save.setToolTip("temp/ 폴더에 디버그 이미지 저장")
+        self._btn_debug_save = QPushButton(t("btn_debug_save"))
+        self._btn_debug_save.setToolTip(t("tooltip_debug_save"))
         self._btn_debug_save.clicked.connect(self._on_debug_save)
         tools_row.addWidget(self._btn_debug_save)
 
         layout.addLayout(tools_row)
 
-
         # 작업 이름 입력
         name_layout = QHBoxLayout()
-        name_label = QLabel("작업 이름:")
+        name_label = QLabel(t("task_name_label"))
         name_label.setStyleSheet("color: #888; font-size: 12px;")
         name_layout.addWidget(name_label)
         self._task_name_input = QLineEdit()
-        self._task_name_input.setPlaceholderText("비워두면 자동 지정")
+        self._task_name_input.setPlaceholderText(t("task_name_placeholder"))
         self._task_name_input.setStyleSheet(
             "QLineEdit { background: #1c1c30; border: 1px solid #2a2a45;"
             "border-radius: 4px; padding: 4px 8px; color: #ffffff; font-size: 12px; }"
@@ -451,11 +457,11 @@ class BarPreviewDialog(QDialog):
         # 버튼 영역
         btn_layout = QHBoxLayout()
 
-        self._btn_reselect = QPushButton("재선택")
+        self._btn_reselect = QPushButton(t("btn_reselect"))
         self._btn_reselect.clicked.connect(self.reject)
         btn_layout.addWidget(self._btn_reselect)
 
-        self._btn_confirm = QPushButton("확인")
+        self._btn_confirm = QPushButton(t("btn_confirm"))
         self._btn_confirm.setDefault(True)
         self._btn_confirm.setStyleSheet(
             "QPushButton { background-color: #4285F4; color: white; "
@@ -489,7 +495,9 @@ class BarPreviewDialog(QDialog):
         self._progress = result.progress
 
         # UI 업데이트
-        self._progress_label.setText(f"감지된 진행률: {self._progress:.1f}%")
+        self._progress_label.setText(
+            t("detected_progress").format(progress=f"{self._progress:.1f}")
+        )
         self._progress_bar.setValue(int(self._progress * 10))
         self._progress_bar.setFormat(f"{self._progress:.1f}%")
 
@@ -541,7 +549,6 @@ class BarPreviewDialog(QDialog):
     def bar_region(self) -> BarRegion | None:
         """편집된 바 영역."""
         return self._bar_region
-
 
     @property
     def task_name(self) -> str | None:

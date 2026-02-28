@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import sys
 import webbrowser
@@ -18,6 +19,7 @@ import requests
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 from . import AuthError
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 SCOPES = ["openid", "email", "profile"]
@@ -52,25 +54,20 @@ class GoogleOAuth:
                 port=8080,
                 open_browser=True,
                 prompt="consent",
-                success_message="ProgressEye 로그인 성공! 이 창을 닫고 앱으로 돌아가세요.",
+                success_message=t("oauth_success_message"),
             )
         except OSError as exc:
-            raise AuthError("브라우저 로그인 서버 시작에 실패했습니다.") from exc
+            raise AuthError(t("oauth_server_failed")) from exc
         except Exception as exc:
             message = str(exc)
             if "client_secret is missing" in message:
-                raise AuthError(
-                    "현재 OAuth 클라이언트가 client_secret을 요구합니다. "
-                    "Google Cloud에서 Desktop app 타입 client_id를 사용하세요."
-                ) from exc
-            raise AuthError(f"Google 로그인에 실패했습니다: {exc}") from exc
+                raise AuthError(t("oauth_secret_required")) from exc
+            raise AuthError(t("oauth_login_failed").format(error=exc)) from exc
 
         id_token_raw = getattr(creds, "id_token", None)
         id_token = str(id_token_raw) if id_token_raw else ""
         if not id_token:
-            raise AuthError(
-                "Google id_token을 받지 못했습니다. openid scope를 확인하세요."
-            )
+            raise AuthError(t("oauth_no_id_token"))
 
         access_token_raw = getattr(creds, "token", None)
         access_token = str(access_token_raw) if access_token_raw else None
@@ -127,7 +124,6 @@ class GoogleOAuth:
         except (json.JSONDecodeError, ValueError):
             return {}
 
-
     def _build_pkce_client_config(self) -> dict[str, Any]:
         """Build PKCE client config for desktop flow."""
         return {
@@ -139,4 +135,3 @@ class GoogleOAuth:
                 "redirect_uris": ["http://localhost"],
             }
         }
-

@@ -15,6 +15,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from utils.i18n import t
 from utils.logger import log
 
 
@@ -152,7 +153,7 @@ class RegionViewer(QWidget):
             # 바 미탐지 — 영역 중앙에 안내 (OCR은 표시 안 함)
             painter.setFont(QFont("Segoe UI", 12))
             painter.setPen(QColor(255, 100, 100))
-            no_bar_text = "바 미탐지"
+            no_bar_text = t("no_bar_detected")
             no_bar_rect = QRect(r.left(), r.bottom() + 8, 280, 26)
             if no_bar_rect.bottom() > self.height():
                 no_bar_rect = QRect(r.left(), r.top() - 28, 280, 26)
@@ -162,7 +163,7 @@ class RegionViewer(QWidget):
             )
 
         # 안내 텍스트 (상단 중앙): "클릭 또는 ESC로 닫기"
-        hint = "클릭 또는 ESC로 닫기"
+        hint = t("hint_click_or_esc")
         painter.setFont(QFont("Segoe UI", 12))
         hint_w = 260
         hint_rect = QRect(0, 8, self.width(), 36)

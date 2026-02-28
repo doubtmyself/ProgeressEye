@@ -13,6 +13,7 @@ from typing import Any
 import requests
 
 from . import AuthError
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
 
 # 출처: 사용자 제공 Firebase credentials
 FIREBASE_API_KEY = "AIzaSyDXe_l0KKLf4Tnufs2n5AmDF93bZUuuLm4"
@@ -58,7 +59,7 @@ class FirebaseAuth:
                 "display_name": str(data.get("displayName", "")),
             }
         except KeyError as exc:
-            raise AuthError("Firebase 로그인 응답 형식이 올바르지 않습니다.") from exc
+            raise AuthError(t("firebase_login_bad_response")) from exc
 
     def refresh_token(self, refresh_token: str) -> dict[str, str]:
         """refresh_token으로 Firebase id_token을 갱신한다.
@@ -81,18 +82,16 @@ class FirebaseAuth:
                 "refresh_token": str(data["refresh_token"]),
             }
         except KeyError as exc:
-            raise AuthError(
-                "Firebase 토큰 갱신 응답 형식이 올바르지 않습니다."
-            ) from exc
+            raise AuthError(t("firebase_refresh_bad_response")) from exc
 
     def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         """JSON POST 요청을 보내고 JSON 응답을 반환한다."""
         try:
             response = requests.post(url, json=payload, timeout=10)
         except requests.Timeout as exc:
-            raise AuthError("Firebase 요청 시간이 초과되었습니다.") from exc
+            raise AuthError(t("firebase_timeout")) from exc
         except requests.RequestException as exc:
-            raise AuthError(f"Firebase 네트워크 요청 실패: {exc}") from exc
+            raise AuthError(t("firebase_network_error").format(error=exc)) from exc
 
         return self._parse_response(response)
 
@@ -101,9 +100,9 @@ class FirebaseAuth:
         try:
             response = requests.post(url, data=payload, timeout=10)
         except requests.Timeout as exc:
-            raise AuthError("Firebase 요청 시간이 초과되었습니다.") from exc
+            raise AuthError(t("firebase_timeout")) from exc
         except requests.RequestException as exc:
-            raise AuthError(f"Firebase 네트워크 요청 실패: {exc}") from exc
+            raise AuthError(t("firebase_network_error").format(error=exc)) from exc
 
         return self._parse_response(response)
 
@@ -117,10 +116,10 @@ class FirebaseAuth:
 
         if not response.ok:
             message = FirebaseAuth._extract_error_message(data)
-            raise AuthError(f"Firebase 인증 실패: {message}")
+            raise AuthError(t("firebase_auth_failed").format(message=message))
 
         if not isinstance(data, dict):
-            raise AuthError("Firebase 응답 파싱에 실패했습니다.")
+            raise AuthError(t("firebase_parse_error"))
         return data
 
     @staticmethod
@@ -129,7 +128,7 @@ class FirebaseAuth:
         try:
             error = data.get("error", {})
             if isinstance(error, dict):
-                return str(error.get("message", "알 수 없는 오류"))
+                return str(error.get("message", t("unknown_error")))
         except AttributeError:
             pass
-        return "알 수 없는 오류"
+        return t("unknown_error")

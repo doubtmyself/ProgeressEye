@@ -18,6 +18,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from utils.i18n import t
 from utils.logger import log
 
 
@@ -47,8 +48,6 @@ class AreaSelector(QWidget):
 
         self._capture_screen()
         self._setup_window()
-
-
 
     def showEvent(self, event) -> None:  # noqa: N802
         """표시 시 키보드 포커스를 강제 획득한다."""
@@ -98,8 +97,7 @@ class AreaSelector(QWidget):
     def _setup_window(self) -> None:
         """윈도우 속성을 설정한다."""
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -153,7 +151,7 @@ class AreaSelector(QWidget):
             painter.drawText(label_x, label_y + 16, label_text)
 
             # 안내 텍스트 (상단 중앙)
-            hint = "드래그로 영역을 선택하세요  |  ESC: 취소"
+            hint = t("hint_select_area")
             painter.setFont(QFont("Segoe UI", 12))
             hint_rect = QRect(0, 8, self.width(), 36)
             painter.fillRect(
@@ -180,7 +178,7 @@ class AreaSelector(QWidget):
             painter.drawText(
                 hint_rect,
                 Qt.AlignmentFlag.AlignCenter,
-                "드래그로 영역을 선택하세요  |  ESC: 취소",
+                t("hint_select_area"),
             )
 
         painter.end()
@@ -257,8 +255,10 @@ class AreaSelector(QWidget):
                 local_y = mss_y
 
                 for i, mon in enumerate(sct.monitors[1:], 1):
-                    if (mon["left"] <= cx < mon["left"] + mon["width"]
-                            and mon["top"] <= cy < mon["top"] + mon["height"]):
+                    if (
+                        mon["left"] <= cx < mon["left"] + mon["width"]
+                        and mon["top"] <= cy < mon["top"] + mon["height"]
+                    ):
                         monitor_idx = i
                         local_x = mss_x - mon["left"]
                         local_y = mss_y - mon["top"]
@@ -290,11 +290,13 @@ class AreaSelector(QWidget):
         self._pending_result = result
         self.hide()
         QTimer.singleShot(300, self._emit_and_close)
+
     def _emit_and_close(self) -> None:
         """오버레이 숨김 후 시그널을 발생시키고 닫는다."""
-        if hasattr(self, '_pending_result'):
+        if hasattr(self, "_pending_result"):
             self.area_selected.emit(self._pending_result)
         self.close()
+
     def _cancel(self) -> None:
         """선택을 취소한다."""
         log.info("영역 선택 취소")

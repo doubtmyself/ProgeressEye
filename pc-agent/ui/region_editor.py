@@ -19,6 +19,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
+from utils.i18n import t
 from utils.logger import log
 
 
@@ -295,7 +296,7 @@ class RegionEditor(QWidget):
         painter.drawText(label_x, label_y + 16, label_text)
 
         # 안내 텍스트 (상단 중앙)
-        hint = "드래그로 이동/크기 조절  |  Enter: 확정  |  ESC: 취소"
+        hint = t("hint_edit_region")
         painter.setFont(QFont("Segoe UI", 12))
         hint_w = 460
         hint_rect = QRect(0, 8, self.width(), 36)

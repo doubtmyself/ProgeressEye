@@ -202,7 +202,9 @@ class ProgressEyeApp:
                     log.warning("로그인 취소 - 비로그인 모드로 계속 진행")
                     return
             except Exception as exc:
-                retry = self._show_login_error(f"알 수 없는 로그인 오류: {exc}")
+                retry = self._show_login_error(
+                    t("login_unknown_error").format(error=exc)
+                )
                 if not retry:
                     log.warning("로그인 취소 - 비로그인 모드로 계속 진행")
                     return
@@ -210,9 +212,9 @@ class ProgressEyeApp:
     def _show_login_error(self, message: str) -> bool:
         """로그인 에러 다이얼로그를 표시하고 재시도 여부를 반환한다."""
         dialog = QMessageBox(self._main_window)
-        dialog.setWindowTitle("로그인 실패")
+        dialog.setWindowTitle(t("login_failed_title"))
         dialog.setIcon(QMessageBox.Icon.Warning)
-        dialog.setText("Google/Firebase 인증에 실패했습니다.")
+        dialog.setText(t("login_failed_message"))
         dialog.setInformativeText(message)
         dialog.setStandardButtons(
             QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel
@@ -631,7 +633,8 @@ class ProgressEyeApp:
             region_id = f"task_{self._task_counter:03d}"
             region = {
                 "id": region_id,
-                "label": dialog.task_name or f"작업 {self._task_counter}",
+                "label": dialog.task_name
+                or t("default_task_name").format(n=self._task_counter),
                 "type": "bar",
                 "monitor": area.get("monitor", 0),
                 "x": area["x"],
@@ -691,7 +694,8 @@ class ProgressEyeApp:
             region_id = f"task_{self._task_counter:03d}"
             region = {
                 "id": region_id,
-                "label": dialog.task_name or f"작업 {self._task_counter}",
+                "label": dialog.task_name
+                or t("default_task_name").format(n=self._task_counter),
                 "type": "ocr",
                 "monitor": area.get("monitor", 0),
                 "x": area["x"],
@@ -1628,7 +1632,7 @@ class ProgressEyeApp:
 def main() -> None:
     """메인 함수. -d 옵션으로 디버그 로그 활성화."""
     debug_cli = "-d" in sys.argv or "--debug" in sys.argv
-    is_packaged = bool(getattr(sys, "frozen", False))
+    is_packaged = bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
     debug_mode = debug_cli and not is_packaged
     if debug_cli and is_packaged:
         from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
