@@ -8,10 +8,13 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // users: owner can read, admin-only write (Firebase Console)
+    // users: owner can read/create/update (plan 필드는 관리자만 변경 가능)
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && !('plan' in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan']);
     }
 
     // Block everything else

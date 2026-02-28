@@ -2,9 +2,12 @@
   "database": {
     "rules": "database.rules.json"
   },
-  "firestore": {
-    "rules": "firestore.rules"
-  },
+  "firestore": [
+    {
+      "database": "progress",
+      "rules": "firestore.rules"
+    }
+  ],
   "functions": {
     "source": "functions"
   },
