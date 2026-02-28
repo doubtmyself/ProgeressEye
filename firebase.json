@@ -4,5 +4,14 @@
   },
   "functions": {
     "source": "functions"
+  },
+  "hosting": {
+    "public": "privacy-polycy",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true
   }
 }
