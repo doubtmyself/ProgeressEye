@@ -36,6 +36,16 @@ a = Analysis(
     optimize=0,
 )
 
+# ── Remove unused large binaries ──
+EXCLUDE_BINARIES = {
+    'opencv_videoio_ffmpeg',    # FFmpeg video I/O (27 MB)
+    'libscipy_openblas',        # OpenBLAS BLAS (19 MB)
+    '_multiarray_tests',        # numpy test module
+    'Qt6Pdf',                   # Qt PDF module (5 MB)
+    'qt6pdf',
+}
+a.binaries = [b for b in a.binaries if not any(ex in b[0] for ex in EXCLUDE_BINARIES)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -54,7 +64,7 @@ exe = EXE(
 coll = COLLECT(
     exe,
     a.binaries,
-    a.datas,
+    [d for d in a.datas if 'osd.traineddata' not in d[0]],  # exclude Tesseract OSD (10 MB)
     strip=False,
     upx=False,
     upx_exclude=[],

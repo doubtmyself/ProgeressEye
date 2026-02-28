@@ -18,7 +18,7 @@ SOURCE = Path(r"C:\Program Files\Tesseract-OCR")
 DEST = Path(__file__).resolve().parent / "tesseract"
 
 # 필수 tessdata 파일
-TESSDATA_FILES = ["eng.traineddata", "osd.traineddata"]
+TESSDATA_FILES = ["eng.traineddata"]
 
 
 def main() -> None:

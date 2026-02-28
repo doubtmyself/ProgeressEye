@@ -99,6 +99,43 @@ if (Test-Path $StagingRoot) {
 New-Item -ItemType Directory -Path $StagingRoot | Out-Null
 
 Copy-Item (Join-Path $InputDist "*") $StagingRoot -Recurse -Force
+
+# ── Remove unused large files to reduce MSIX size ──
+$removePatterns = @(
+    "cv2\opencv_videoio_ffmpeg*.dll",    # FFmpeg video I/O (27 MB) — app uses image-only
+    "numpy.libs\libscipy_openblas*.dll",  # OpenBLAS BLAS (19 MB) — no linalg usage
+    "numpy\_core\_multiarray_tests.pyd",  # numpy test module — not needed in production
+    "qt6pdf.dll",                          # Qt PDF module (5 MB) — not used
+    "tesseract\tessdata\osd.traineddata"   # Tesseract OSD (10 MB) — digit OCR only
+)
+$removedMB = 0
+foreach ($pattern in $removePatterns) {
+    $targets = Get-ChildItem -Path $StagingRoot -Filter (Split-Path $pattern -Leaf) -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like "*$($pattern -replace '\\','\')" -or $_.FullName -like "*$pattern" }
+    foreach ($f in $targets) {
+        $sizeMB = [math]::Round($f.Length / 1MB, 1)
+        Write-Host "[make_msix] Removing $($f.Name) ($sizeMB MB)"
+        $removedMB += $sizeMB
+        Remove-Item $f.FullName -Force
+    }
+}
+# Also remove by direct glob match for nested paths
+$directRemove = @(
+    (Join-Path $StagingRoot "cv2\opencv_videoio_ffmpeg*.dll"),
+    (Join-Path $StagingRoot "numpy.libs\libscipy_openblas*.dll"),
+    (Join-Path $StagingRoot "numpy\_core\_multiarray_tests.pyd"),
+    (Join-Path $StagingRoot "qt6pdf.dll"),
+    (Join-Path $StagingRoot "tesseract\tessdata\osd.traineddata")
+)
+foreach ($glob in $directRemove) {
+    Get-Item $glob -ErrorAction SilentlyContinue | ForEach-Object {
+        $sizeMB = [math]::Round($_.Length / 1MB, 1)
+        Write-Host "[make_msix] Removing $($_.Name) ($sizeMB MB)"
+        $removedMB += $sizeMB
+        Remove-Item $_.FullName -Force
+    }
+}
+Write-Host "[make_msix] Removed ~$removedMB MB of unused files"
 New-Item -ItemType Directory -Path $AssetsTarget -Force | Out-Null
 
 $requiredAssets = @(
