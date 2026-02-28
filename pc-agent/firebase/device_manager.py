@@ -154,7 +154,7 @@ class DeviceManager:
             return "free"
         url = (
             f"https://firestore.googleapis.com/v1/"
-            f"projects/{project_id}/databases/(default)/documents/users/{self._uid}"
+            f"projects/{project_id}/databases/progress/documents/users/{self._uid}"
         )
         try:
             resp = _requests.get(
@@ -199,7 +199,7 @@ def get_min_pc_version(project_id: str = "progresseye-49244") -> str | None:
     import requests as _requests
     url = (
         f"https://firestore.googleapis.com/v1/"
-        f"projects/{project_id}/databases/(default)/documents/appConfig/pc"
+        f"projects/{project_id}/databases/progress/documents/appConfig/pc"
     )
     try:
         resp = _requests.get(url, timeout=5)

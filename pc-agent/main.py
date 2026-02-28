@@ -85,6 +85,7 @@ class ProgressEyeApp:
         self._screenshot_cache: dict[
             str, tuple[str, str]
         ] = {}  # device_id -> (jpeg_hash, download_url)
+        self._screenshot_cache_lock = threading.Lock()
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._processed_command_ids: dict[str, float] = {}
         self._last_command_ts_by_type: dict[str, int] = {}
@@ -579,7 +580,8 @@ class ProgressEyeApp:
             jpeg_bytes = buf.getvalue()
             jpeg_hash = hashlib.md5(jpeg_bytes).hexdigest()
 
-            cached = self._screenshot_cache.get(device_id)
+            with self._screenshot_cache_lock:
+                cached = self._screenshot_cache.get(device_id)
             if cached and cached[0] == jpeg_hash:
                 download_url = cached[1]
                 log.info("[SCREENSHOT] 화면 변경 없음, 업로드 스킵")
@@ -588,7 +590,8 @@ class ProgressEyeApp:
                 download_url = self._firebase_storage.upload_jpeg(
                     storage_path, jpeg_bytes
                 )
-                self._screenshot_cache[device_id] = (jpeg_hash, download_url)
+                with self._screenshot_cache_lock:
+                    self._screenshot_cache[device_id] = (jpeg_hash, download_url)
                 log.info("[SCREENSHOT] 업로드 완료: %s", storage_path)
 
             ts = int(time.time())
@@ -622,8 +625,9 @@ class ProgressEyeApp:
         try:
             if self._realtime_db and uid:
                 self._realtime_db.delete(f"users/{uid}/commands/screenshot")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("스크린샷 명령 삭제 실패: %s", exc)
+
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
@@ -838,6 +842,9 @@ class ProgressEyeApp:
             else:
                 # 비활성화 — 스케줄러에서 영역 제거
                 self._scheduler.remove_region(region_id)
+                # 모든 영역이 비활성화되면 모니터링 자동 정지
+                if self._scheduler.region_count == 0:
+                    self._auto_stop_monitoring()
                 # RTDB에 idle 상태 기록
                 if self._device_manager:
                     self._device_manager.sync_tasks({region_id: {"s": "i"}})
@@ -888,6 +895,9 @@ class ProgressEyeApp:
         # 스케줄러에서 제거
         if self._scheduler.is_running:
             self._scheduler.remove_region(region_id)
+            # 모든 영역이 삭제되면 모니터링 자동 정지
+            if self._scheduler.region_count == 0:
+                self._auto_stop_monitoring()
         # config에서 제거
         self._config.remove_region(region_id)
         # UI에서 제거
@@ -1054,8 +1064,25 @@ class ProgressEyeApp:
                 QTimer.singleShot(100, self._start_ocr_area_selection)
         else:
             # 바 타입: BarPreviewDialog
-            bar_region, result = self._smart_bar_analyze(image)
-            bar_image = image.crop(bar_region.bbox) if bar_region else image
+            # 저장된 바 오프셋이 있으면 사용, 없으면 자동 탐지
+            saved_left = area.get("bar_left")
+            saved_right = area.get("bar_right")
+            if saved_left is not None and saved_right is not None:
+                bar_region = BarRegion(
+                    left=saved_left,
+                    top=area.get("bar_top", 0),
+                    right=saved_right,
+                    bottom=area.get("bar_bottom", image.height),
+                    confidence=1.0,
+                    direction=area.get("direction", "horizontal"),
+                )
+                bar_image = image.crop(bar_region.bbox)
+                result = self._analyzer.analyze(
+                    bar_image, direction=bar_region.direction
+                )
+            else:
+                bar_region, result = self._smart_bar_analyze(image)
+                bar_image = image.crop(bar_region.bbox) if bar_region else image
 
             qimage = self._pil_to_qimage(image)
             dialog = BarPreviewDialog(
@@ -1082,6 +1109,13 @@ class ProgressEyeApp:
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
                 # 템플릿은 변경하지 않음 (원본 영역 유지)
+                # 스케줄러에 갱신된 영역 반영
+                if self._scheduler.is_running:
+                    self._scheduler.remove_region(region_id)
+                    for r in self._config.regions:
+                        if r["id"] == region_id:
+                            self._scheduler.add_region(r)
+                            break
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
@@ -1310,8 +1344,21 @@ class ProgressEyeApp:
             log.debug("[%s] 템플릿 이미지 없음 — 유사도 검사 생략", region_id)
         else:
             try:
+                # 바 영역은 게이지 변화로 유사도가 떨어지므로 제외
+                bar_bbox = None
+                if region_type == "bar":
+                    bl = region_config.get("bar_left")
+                    br = region_config.get("bar_right")
+                    if bl is not None and br is not None:
+                        bar_bbox = (
+                            bl,
+                            region_config.get("bar_top", 0),
+                            br,
+                            region_config.get("bar_bottom", image.height),
+                        )
                 similarity = self._check_image_similarity(
-                    self._template_images[region_id], image
+                    self._template_images[region_id], image,
+                    bar_bbox=bar_bbox,
                 )
             except Exception as exc:
                 log.warning("[%s] 이미지 유사도 계산 실패: %s", region_id, exc)
@@ -1699,14 +1746,27 @@ class ProgressEyeApp:
             log.warning("템플릿 삭제 실패 [%s]: %s", region_id, exc)
 
     def _check_image_similarity(
-        self, img1: PILImage.Image, img2: PILImage.Image
+        self, img1: PILImage.Image, img2: PILImage.Image,
+        bar_bbox: tuple[int, int, int, int] | None = None,
     ) -> float:
         """두 이미지의 유사도를 반환한다 (0.0~1.0).
 
+        bar_bbox가 주어지면 해당 영역을 동일 상수로 마스킹하여
+        게이지 변화가 유사도에 영향을 주지 않도록 한다.
         64x64 grayscale 다운스케일 후 numpy 상관계수로 비교.
         """
         import cv2
         import numpy as np
+
+        # 바 영역 마스킹: 두 이미지의 바 부분을 동일한 회색(128)으로 채움
+        if bar_bbox is not None:
+            left, top, right, bottom = bar_bbox
+            img1 = img1.copy()
+            img2 = img2.copy()
+            from PIL import ImageDraw
+            for img in (img1, img2):
+                draw = ImageDraw.Draw(img)
+                draw.rectangle([left, top, right, bottom], fill=(128, 128, 128))
 
         size = (64, 64)
         arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)

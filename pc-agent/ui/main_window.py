@@ -163,8 +163,11 @@ class RegionCard(QFrame):
         )
         layout.addWidget(self._progress_bar)
 
-        # ── Alert threshold row: 🔔 완료 알람 [80-100] % ──
-        threshold_row = QHBoxLayout()
+        # ── Alert threshold row: 🔔 완료 알람 [80-100] % (bar 타입만) ──
+        self._threshold_widget = QWidget()
+        self._threshold_widget.setStyleSheet("background: transparent; border: none;")
+        threshold_row = QHBoxLayout(self._threshold_widget)
+        threshold_row.setContentsMargins(0, 0, 0, 0)
         self._threshold_label = QLabel(t("alert_threshold_label"))
         self._threshold_label.setStyleSheet(
             f"color: {SUBTITLE_TEXT}; font-size: 11px;"
@@ -195,10 +198,13 @@ class RegionCard(QFrame):
         self._threshold_spin.setToolTip(t("tooltip_threshold"))
         threshold_row.addWidget(self._threshold_spin)
         threshold_row.addStretch()
-        layout.addLayout(threshold_row)
+        layout.addWidget(self._threshold_widget)
 
-        # ── Alert delay row: ⏱ 완료 확인 [0-60] 분 ──
-        delay_row = QHBoxLayout()
+        # ── Alert delay row: ⏱ 완료 확인 [0-60] 분 (bar 타입만) ──
+        self._delay_widget = QWidget()
+        self._delay_widget.setStyleSheet("background: transparent; border: none;")
+        delay_row = QHBoxLayout(self._delay_widget)
+        delay_row.setContentsMargins(0, 0, 0, 0)
         self._delay_label = QLabel(t("alert_delay_label"))
         self._delay_label.setStyleSheet(
             f"color: {SUBTITLE_TEXT}; font-size: 11px;"
@@ -216,7 +222,12 @@ class RegionCard(QFrame):
         self._delay_spin.setToolTip(t("tooltip_delay"))
         delay_row.addWidget(self._delay_spin)
         delay_row.addStretch()
-        layout.addLayout(delay_row)
+        layout.addWidget(self._delay_widget)
+
+        # OCR 타입은 완료 알람/확인 지연 불필요 (100% 즉시 알림)
+        if region_type == "ocr":
+            self._threshold_widget.setVisible(False)
+            self._delay_widget.setVisible(False)
 
         # ── Bottom row: timestamp ──
         self._time_label = QLabel(t("card_standby"))
