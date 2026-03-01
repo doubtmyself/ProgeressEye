@@ -228,64 +228,16 @@ class AreaSelector(QWidget):
         """선택을 확정하고 시그널을 발생시킨다."""
         if self._selection is None:
             return
-        # mss 좌표계로 직접 변환 (Qt 스크린 인덱스 사용 안 함)
-        # Qt 가상 데스크톱(virtual_geo)과 mss 전체 화면(monitor 0) 간
-        # 스케일 팩터로 위젯 좌표를 mss 물리 좌표로 변환
-        import mss as mss_lib
+        from ui.screen_mapper import qt_widget_to_mss  # pyright: ignore[reportImplicitRelativeImport]
 
-        scale_x = 1.0
-        try:
-            with mss_lib.mss() as sct:
-                full = sct.monitors[0]  # 전체 가상 데스크톱 (mss 물리 좌표)
-
-                scale_x = full["width"] / self._virtual_geo.width()
-                scale_y = full["height"] / self._virtual_geo.height()
-
-                mss_x = int(self._selection.x() * scale_x) + full["left"]
-                mss_y = int(self._selection.y() * scale_y) + full["top"]
-                mss_w = max(1, int(self._selection.width() * scale_x))
-                mss_h = max(1, int(self._selection.height() * scale_y))
-
-                # 중심점이 속한 mss 모니터 찾기
-                cx = mss_x + mss_w // 2
-                cy = mss_y + mss_h // 2
-
-                monitor_idx = 0
-                local_x = mss_x
-                local_y = mss_y
-
-                for i, mon in enumerate(sct.monitors[1:], 1):
-                    if (
-                        mon["left"] <= cx < mon["left"] + mon["width"]
-                        and mon["top"] <= cy < mon["top"] + mon["height"]
-                    ):
-                        monitor_idx = i
-                        local_x = mss_x - mon["left"]
-                        local_y = mss_y - mon["top"]
-                        break
-
-        except Exception as e:
-            log.warning("mss 좌표 변환 실패: %s — fallback", e)
-            monitor_idx = 0
-            local_x = self._selection.x() + self._virtual_geo.x()
-            local_y = self._selection.y() + self._virtual_geo.y()
-            mss_w = self._selection.width()
-            mss_h = self._selection.height()
-        result = {
-            "x": local_x,
-            "y": local_y,
-            "width": mss_w,
-            "height": mss_h,
-            "monitor": monitor_idx,
-        }
+        result = qt_widget_to_mss(self._selection, self._virtual_geo)
         log.info(
-            "영역 선택 완료: %dx%d @ (%d, %d) 모니터=%d (scale=%.2f)",
+            "영역 선택 완료: %dx%d @ (%d, %d) 모니터=%d",
             result["width"],
             result["height"],
             result["x"],
             result["y"],
             result["monitor"],
-            scale_x,
         )
         self._pending_result = result
         self.hide()

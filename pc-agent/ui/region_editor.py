@@ -7,7 +7,6 @@ AreaSelector와 동일한 스크린샷 기반 접근 방식 사용.
 
 from enum import IntEnum, auto
 
-import mss as mss_lib
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QPainter,
@@ -135,42 +134,15 @@ class RegionEditor(QWidget):
 
     def _init_selection(self) -> None:
         """mss 좌표 → Qt 위젯 좌표로 역변환하여 초기 선택 영역을 설정한다."""
-        try:
-            with mss_lib.mss() as sct:
-                full = sct.monitors[0]  # mss 전체 가상 데스크톱
-                mon_idx = self._area.get("monitor", 0)
+        from ui.screen_mapper import mss_to_qt_widget  # pyright: ignore[reportImplicitRelativeImport]
 
-                # mss 로컬 좌표 → mss 전역 좌표
-                if mon_idx > 0 and mon_idx < len(sct.monitors):
-                    mon = sct.monitors[mon_idx]
-                    mss_global_x = self._area["x"] + mon["left"]
-                    mss_global_y = self._area["y"] + mon["top"]
-                else:
-                    mss_global_x = self._area["x"]
-                    mss_global_y = self._area["y"]
-
-                # mss 전역 → Qt 위젯 좌표
-                scale_x = self._virtual_geo.width() / full["width"]
-                scale_y = self._virtual_geo.height() / full["height"]
-                qt_x = int((mss_global_x - full["left"]) * scale_x)
-                qt_y = int((mss_global_y - full["top"]) * scale_y)
-                qt_w = int(self._area["width"] * scale_x)
-                qt_h = int(self._area["height"] * scale_y)
-
-        except Exception as e:
-            log.warning("mss 역변환 실패: %s — fallback", e)
-            qt_x = self._area["x"]
-            qt_y = self._area["y"]
-            qt_w = self._area["width"]
-            qt_h = self._area["height"]
-
-        self._selection = QRect(qt_x, qt_y, qt_w, qt_h)
+        self._selection = mss_to_qt_widget(self._area, self._virtual_geo)
         log.debug(
             "초기 선택 영역 (Qt): %d,%d %dx%d",
-            qt_x,
-            qt_y,
-            qt_w,
-            qt_h,
+            self._selection.x(),
+            self._selection.y(),
+            self._selection.width(),
+            self._selection.height(),
         )
 
     def _setup_window(self) -> None:
@@ -437,52 +409,9 @@ class RegionEditor(QWidget):
 
     def _confirm_edit(self) -> None:
         """편집을 확정하고 mss 좌표로 변환하여 시그널을 발생시킨다."""
-        # Qt 위젯 좌표 → mss 물리 좌표 변환 (AreaSelector._confirm_selection 동일 로직)
-        try:
-            with mss_lib.mss() as sct:
-                full = sct.monitors[0]
+        from ui.screen_mapper import qt_widget_to_mss  # pyright: ignore[reportImplicitRelativeImport]
 
-                scale_x = full["width"] / self._virtual_geo.width()
-                scale_y = full["height"] / self._virtual_geo.height()
-
-                mss_x = int(self._selection.x() * scale_x) + full["left"]
-                mss_y = int(self._selection.y() * scale_y) + full["top"]
-                mss_w = max(1, int(self._selection.width() * scale_x))
-                mss_h = max(1, int(self._selection.height() * scale_y))
-
-                # 중심점이 속한 mss 모니터 찾기
-                cx = mss_x + mss_w // 2
-                cy = mss_y + mss_h // 2
-
-                monitor_idx = 0
-                local_x = mss_x
-                local_y = mss_y
-
-                for i, mon in enumerate(sct.monitors[1:], 1):
-                    if (
-                        mon["left"] <= cx < mon["left"] + mon["width"]
-                        and mon["top"] <= cy < mon["top"] + mon["height"]
-                    ):
-                        monitor_idx = i
-                        local_x = mss_x - mon["left"]
-                        local_y = mss_y - mon["top"]
-                        break
-
-        except Exception as e:
-            log.warning("mss 좌표 변환 실패: %s — fallback", e)
-            monitor_idx = self._area.get("monitor", 0)
-            local_x = self._selection.x() + self._virtual_geo.x()
-            local_y = self._selection.y() + self._virtual_geo.y()
-            mss_w = self._selection.width()
-            mss_h = self._selection.height()
-
-        result = {
-            "x": local_x,
-            "y": local_y,
-            "width": mss_w,
-            "height": mss_h,
-            "monitor": monitor_idx,
-        }
+        result = qt_widget_to_mss(self._selection, self._virtual_geo)
         log.info(
             "영역 편집 완료: %s → %dx%d @ (%d, %d) 모니터=%d",
             self._region_id,

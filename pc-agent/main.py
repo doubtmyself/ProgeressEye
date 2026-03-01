@@ -156,6 +156,30 @@ class ProgressEyeApp:
         # 기존 영역 복원
         self._restore_regions()
 
+        # 모니터 DPI/구성 변경 감지
+        self._connect_screen_signals()
+
+    def _connect_screen_signals(self) -> None:
+        """Qt 화면 DPI/해상도 변경 시그널을 연결한다."""
+        app = QGuiApplication.instance()
+        if app is not None:
+            app.screenAdded.connect(self._on_screen_changed)  # type: ignore[union-attr]
+            app.screenRemoved.connect(self._on_screen_changed)  # type: ignore[union-attr]
+        for screen in QGuiApplication.screens():
+            screen.logicalDotsPerInchChanged.connect(self._on_screen_changed)
+            screen.geometryChanged.connect(self._on_screen_changed)
+
+    def _on_screen_changed(self, *_args: object) -> None:
+        """DPI/모니터 구성 변경 시 호출된다."""
+        log.info("모니터 구성 변경 감지 — 열린 오버레이를 닫습니다")
+        # 열려 있는 오버레이 닫기 (좌표계가 달라졌으므로)
+        if self._area_selector is not None:
+            self._area_selector.close()
+            self._area_selector = None
+        if self._region_viewer is not None:
+            self._region_viewer.close()
+            self._region_viewer = None
+
     def run(self) -> int:
         """애플리케이션을 실행한다."""
         log.info("ProgressEye 시작")
@@ -1216,36 +1240,9 @@ class ProgressEyeApp:
 
     def _mss_to_qt_rect(self, area: dict) -> QRect:
         """mss 좌표를 Qt 위젯 좌표로 변환한다."""
-        import mss as mss_lib
+        from ui.screen_mapper import mss_to_qt_widget  # pyright: ignore[reportImplicitRelativeImport]
 
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return QRect(area["x"], area["y"], area["width"], area["height"])
-
-        virtual_geo = screen.virtualGeometry()
-
-        try:
-            with mss_lib.mss() as sct:
-                full = sct.monitors[0]
-                mon_idx = area.get("monitor", 0)
-
-                if mon_idx > 0 and mon_idx < len(sct.monitors):
-                    mon = sct.monitors[mon_idx]
-                    mss_global_x = area["x"] + mon["left"]
-                    mss_global_y = area["y"] + mon["top"]
-                else:
-                    mss_global_x = area["x"]
-                    mss_global_y = area["y"]
-
-                scale_x = virtual_geo.width() / full["width"]
-                scale_y = virtual_geo.height() / full["height"]
-                qt_x = int((mss_global_x - full["left"]) * scale_x)
-                qt_y = int((mss_global_y - full["top"]) * scale_y)
-                qt_w = int(area["width"] * scale_x)
-                qt_h = int(area["height"] * scale_y)
-                return QRect(qt_x, qt_y, qt_w, qt_h)
-        except Exception:
-            return QRect(area["x"], area["y"], area["width"], area["height"])
+        return mss_to_qt_widget(area)
 
     def _on_region_viewer_closed(self) -> None:
         """뷰어 닫힘."""
