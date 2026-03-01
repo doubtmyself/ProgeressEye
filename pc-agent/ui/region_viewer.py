@@ -4,23 +4,16 @@
 읽기 전용 전체 화면 오버레이. AreaSelector와 동일한 스크린샷 기반 패턴.
 """
 
-from PyQt6.QtCore import Qt, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import (
-    QPainter,
-    QColor,
-    QPen,
-    QFont,
-    QGuiApplication,
-    QPixmap,
-)
+from PyQt6.QtCore import Qt, QRect, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtWidgets import QWidget
 
-from utils.i18n import t
-from utils.logger import log
+from ui.overlay_base import OverlayBase  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
+from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
-
-class RegionViewer(QWidget):
+class RegionViewer(OverlayBase):
     """전체 화면 오버레이로 탐지된 바 영역을 표시한다.
 
     어두운 배경 위에 등록된 영역을 밝게 표시하고,
@@ -51,81 +44,15 @@ class RegionViewer(QWidget):
         self._progress = progress
         self._region_type = region_type
 
-        # 스크린샷 (오버레이 표시 전에 캡처)
-        self._screenshot: QPixmap | None = None
-        self._darkened: QPixmap | None = None
-        self._virtual_geo: QRect = QRect(0, 0, 1920, 1080)
-
         self._capture_screen()
-        self._setup_window()
-
-    # ── 초기화 ─────────────────────────────────────────────
-
-    def _capture_screen(self) -> None:
-        """오버레이 표시 전에 전체 가상 화면을 캡처한다."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return
-
-        self._virtual_geo = screen.virtualGeometry()
-
-        # 전체 가상 데스크톱 스크린샷
-        self._screenshot = screen.grabWindow(
-            0,
-            self._virtual_geo.x(),
-            self._virtual_geo.y(),
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
-
-        # 어두운 버전 생성
-        self._darkened = self._screenshot.copy()
-        painter = QPainter(self._darkened)
-        painter.fillRect(self._darkened.rect(), QColor(0, 0, 0, 120))
-        painter.end()
-
-        log.debug(
-            "RegionViewer 스크린샷 캡처: %dx%d",
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
-    def _setup_window(self) -> None:
-        """윈도우 속성을 설정한다."""
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setCursor(Qt.CursorShape.ArrowCursor)
-        self.setGeometry(self._virtual_geo)
-
-    # ── 이벤트: 표시/포커스 ──────────────────────────────────
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        """표시 시 키보드 포커스를 강제 획득한다."""
-        super().showEvent(event)
-        self.raise_()
-        self.activateWindow()
-        self.setFocus()
-        QTimer.singleShot(100, self._ensure_focus)
-
-    def _ensure_focus(self) -> None:
-        """포커스가 없으면 다시 획득한다."""
-        if not self.hasFocus():
-            self.raise_()
-            self.activateWindow()
-            self.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._setup_overlay()
 
     # ── 페인팅 ────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:  # noqa: N802
         """어두운 배경 + 등록 영역(원본 밝기) + 바 영역(빨간 사각형)을 그린다."""
         painter = QPainter(self)
-
-        # 어두운 스크린샷을 배경으로
-        if self._darkened is not None:
-            painter.drawPixmap(0, 0, self._darkened)
-        else:
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 180))
+        self._draw_darkened_background(painter)
 
         r = self._region_rect
 

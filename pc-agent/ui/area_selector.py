@@ -6,24 +6,15 @@ Windows 호환성을 위해 투명 배경 대신 스크린샷 기반 접근 사�
 """
 
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import (
-    QPainter,
-    QColor,
-    QPen,
-    QFont,
-    QGuiApplication,
-    QPixmap,
-    QScreen,
-    QRegion,
-)
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtWidgets import QWidget
 
+from ui.overlay_base import OverlayBase  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
+from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
-from utils.i18n import t
-from utils.logger import log
 
-
-class AreaSelector(QWidget):
+class AreaSelector(OverlayBase):
     """전체 화면 스크린샷 기반 영역 선택기.
 
     스크린샷을 찍어 어둡게 표시하고,
@@ -42,76 +33,13 @@ class AreaSelector(QWidget):
         self._current_pos: QPoint | None = None
         self._selection: QRect | None = None
 
-        # 스크린샷 (오버레이 표시 전에 캡처)
-        self._screenshot: QPixmap | None = None
-        self._darkened: QPixmap | None = None
-        self._virtual_geo: QRect = QRect(0, 0, 1920, 1080)
-
         self._capture_screen()
-        self._setup_window()
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        """표시 시 키보드 포커스를 강제 획득한다."""
-        super().showEvent(event)
-        self.raise_()
-        self.activateWindow()
-        self.setFocus()
-        # Windows에서 포커스 획득이 지연될 수 있으므로 재시도
-        QTimer.singleShot(100, self._ensure_focus)
-
-    def _capture_screen(self) -> None:
-        """오버레이 표시 전에 전체 가상 화면을 캡처한다."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return
-
-        self._virtual_geo = screen.virtualGeometry()
-
-        # 전체 가상 데스크톱 스크린샷
-        self._screenshot = screen.grabWindow(
-            0,
-            self._virtual_geo.x(),
-            self._virtual_geo.y(),
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
-
-        # 어두운 버전 생성
-        self._darkened = self._screenshot.copy()
-        painter = QPainter(self._darkened)
-        painter.fillRect(self._darkened.rect(), QColor(0, 0, 0, 120))
-        painter.end()
-
-        log.debug(
-            "스크린샷 캡처: %dx%d",
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
-    def _ensure_focus(self) -> None:
-        """포커스가 없으면 다시 획득한다."""
-        if not self.hasFocus():
-            self.raise_()
-            self.activateWindow()
-            self.setFocus(Qt.FocusReason.OtherFocusReason)
-
-    def _setup_window(self) -> None:
-        """윈도우 속성을 설정한다."""
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setCursor(Qt.CursorShape.CrossCursor)
-        self.setGeometry(self._virtual_geo)
+        self._setup_overlay(cursor=Qt.CursorShape.CrossCursor)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         """어두운 배경 + 선택 영역(원본 밝기)을 그린다."""
         painter = QPainter(self)
-
-        # 어두운 스크린샷을 배경으로
-        if self._darkened is not None:
-            painter.drawPixmap(0, 0, self._darkened)
-        else:
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 180))
+        self._draw_darkened_background(painter)
 
         if self._start_pos is not None and self._current_pos is not None:
             rect = QRect(self._start_pos, self._current_pos).normalized()
@@ -255,9 +183,3 @@ class AreaSelector(QWidget):
         self.hide()
         self.cancelled.emit()
         self.close()
-
-    def closeEvent(self, event) -> None:  # noqa: N802
-        """리소스 정리: 대형 QPixmap을 해제한다."""
-        self._screenshot = None
-        self._darkened = None
-        super().closeEvent(event)

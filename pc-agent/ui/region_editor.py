@@ -8,19 +8,12 @@ AreaSelector와 동일한 스크린샷 기반 접근 방식 사용.
 from enum import IntEnum, auto
 
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import (
-    QPainter,
-    QColor,
-    QPen,
-    QFont,
-    QGuiApplication,
-    QPixmap,
-)
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtWidgets import QWidget
 
-
-from utils.i18n import t
-from utils.logger import log
+from ui.overlay_base import OverlayBase  # pyright: ignore[reportImplicitRelativeImport]
+from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
+from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
 class _Handle(IntEnum):
@@ -57,7 +50,7 @@ _MIN_W = 10
 _MIN_H = 5
 
 
-class RegionEditor(QWidget):
+class RegionEditor(OverlayBase):
     """등록된 영역의 위치/크기를 편집하는 전체 화면 오버레이.
 
     AreaSelector와 동일하게 스크린샷을 캡처하여 배경으로 사용하고,
@@ -84,11 +77,6 @@ class RegionEditor(QWidget):
         self._region_id = region_id
         self._area = area
 
-        # 스크린샷 (오버레이 표시 전에 캡처)
-        self._screenshot: QPixmap | None = None
-        self._darkened: QPixmap | None = None
-        self._virtual_geo: QRect = QRect(0, 0, 1920, 1080)
-
         # 편집 중인 선택 영역 (Qt 위젯 좌표)
         self._selection: QRect = QRect()
 
@@ -100,38 +88,9 @@ class RegionEditor(QWidget):
 
         self._capture_screen()
         self._init_selection()
-        self._setup_window()
+        self._setup_overlay(mouse_tracking=True)
 
     # ── 초기화 ─────────────────────────────────────────────
-
-    def _capture_screen(self) -> None:
-        """오버레이 표시 전에 전체 가상 화면을 캡처한다."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return
-
-        self._virtual_geo = screen.virtualGeometry()
-
-        # 전체 가상 데스크톱 스크린샷
-        self._screenshot = screen.grabWindow(
-            0,
-            self._virtual_geo.x(),
-            self._virtual_geo.y(),
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
-
-        # 어두운 버전 생성
-        self._darkened = self._screenshot.copy()
-        painter = QPainter(self._darkened)
-        painter.fillRect(self._darkened.rect(), QColor(0, 0, 0, 120))
-        painter.end()
-
-        log.debug(
-            "RegionEditor 스크린샷 캡처: %dx%d",
-            self._virtual_geo.width(),
-            self._virtual_geo.height(),
-        )
 
     def _init_selection(self) -> None:
         """mss 좌표 → Qt 위젯 좌표로 역변환하여 초기 선택 영역을 설정한다."""
@@ -145,33 +104,6 @@ class RegionEditor(QWidget):
             self._selection.width(),
             self._selection.height(),
         )
-
-    def _setup_window(self) -> None:
-        """윈도우 속성을 설정한다."""
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setCursor(Qt.CursorShape.ArrowCursor)
-        self.setGeometry(self._virtual_geo)
-        self.setMouseTracking(True)
-
-    # ── 이벤트: 표시/포커스 ──────────────────────────────────
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        """표시 시 키보드 포커스를 강제 획득한다."""
-        super().showEvent(event)
-        self.raise_()
-        self.activateWindow()
-        self.setFocus()
-        QTimer.singleShot(100, self._ensure_focus)
-
-    def _ensure_focus(self) -> None:
-        """포커스가 없으면 다시 획득한다."""
-        if not self.hasFocus():
-            self.raise_()
-            self.activateWindow()
-            self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     # ── 핸들 히트 테스트 ──────────────────────────────────────
 
@@ -218,12 +150,7 @@ class RegionEditor(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         """어두운 배경 + 선택 영역(원본 밝기) + 핸들을 그린다."""
         painter = QPainter(self)
-
-        # 어두운 스크린샷을 배경으로
-        if self._darkened is not None:
-            painter.drawPixmap(0, 0, self._darkened)
-        else:
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 180))
+        self._draw_darkened_background(painter)
 
         r = self._selection
 
@@ -438,9 +365,3 @@ class RegionEditor(QWidget):
         self.hide()
         self.cancelled.emit()
         self.close()
-
-    def closeEvent(self, event) -> None:  # noqa: N802
-        """리소스 정리: 대형 QPixmap을 해제한다."""
-        self._screenshot = None
-        self._darkened = None
-        super().closeEvent(event)
