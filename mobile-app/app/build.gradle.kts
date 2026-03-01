@@ -163,8 +163,9 @@ play {
     // 배포 트랙: internal (내부테스트)
     track.set("internal")
 
-    // COMPLETED: 즉시 출시
-    releaseStatus.set(ReleaseStatus.COMPLETED)
+    // 앱이 draft 상태일 때는 release도 DRAFT만 허용된다.
+    // 첫 심사/게시 완료 후에만 COMPLETED 등으로 전환 가능.
+    releaseStatus.set(ReleaseStatus.DRAFT)
 
     // 100% 배포
     userFraction.set(1.0)
