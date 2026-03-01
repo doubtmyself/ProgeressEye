@@ -18,7 +18,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QWidget
 
-import mss as mss_lib
+
 from utils.i18n import t
 from utils.logger import log
 
@@ -60,45 +60,14 @@ class AreaSelector(QWidget):
         QTimer.singleShot(100, self._ensure_focus)
 
     def _capture_screen(self) -> None:
-        """오버레이 표시 전에 전체 물리 데스크톱을 캡처한다.
-
-        mss monitors[0]의 물리 바운드를 프라이머리 DPR로 나누어
-        위젯 크기를 결정한다. virtualGeometry()는 DPI가 다른 모니터에서
-        물리 영역을 완전히 커버하지 못하므로 사용하지 않는다.
-        """
+        """오버레이 표시 전에 전체 가상 화면을 캡처한다."""
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return
 
-        dpr = screen.devicePixelRatio()
+        self._virtual_geo = screen.virtualGeometry()
 
-        try:
-            with mss_lib.mss() as sct:
-                full = sct.monitors[0]
-        except Exception:
-            self._virtual_geo = screen.virtualGeometry()
-            self._screenshot = screen.grabWindow(
-                0,
-                self._virtual_geo.x(),
-                self._virtual_geo.y(),
-                self._virtual_geo.width(),
-                self._virtual_geo.height(),
-            )
-            self._darkened = self._screenshot.copy()
-            painter = QPainter(self._darkened)
-            painter.fillRect(self._darkened.rect(), QColor(0, 0, 0, 120))
-            painter.end()
-            return
-
-        # 물리 바운드 → 위젯 좌표 (프라이머리 DPR 기준)
-        self._virtual_geo = QRect(
-            int(full["left"] / dpr),
-            int(full["top"] / dpr),
-            int(full["width"] / dpr),
-            int(full["height"] / dpr),
-        )
-
-        # 전체 데스크톱 스크린샷
+        # 전체 가상 데스크톱 스크린샷
         self._screenshot = screen.grabWindow(
             0,
             self._virtual_geo.x(),
@@ -114,12 +83,9 @@ class AreaSelector(QWidget):
         painter.end()
 
         log.debug(
-            "스크린샷 캡처: %dx%d (물리 %dx%d, dpr=%.2f)",
+            "스크린샷 캡처: %dx%d",
             self._virtual_geo.width(),
             self._virtual_geo.height(),
-            full["width"],
-            full["height"],
-            dpr,
         )
     def _ensure_focus(self) -> None:
         """포커스가 없으면 다시 획득한다."""
