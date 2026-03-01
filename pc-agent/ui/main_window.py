@@ -407,6 +407,7 @@ class MainWindow(QMainWindow):
     settings_requested = pyqtSignal()
     settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
+    settings_delete_account_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
@@ -429,11 +430,12 @@ class MainWindow(QMainWindow):
         # ── Window icon ──
         import sys
         from pathlib import Path
-        if getattr(sys, 'frozen', False) or '__compiled__' in globals():
+
+        if getattr(sys, "frozen", False) or "__compiled__" in globals():
             _icon_base = Path(sys.executable).parent
         else:
             _icon_base = Path(__file__).resolve().parent.parent
-        _icon_path = _icon_base / 'resources' / 'app-icon.png'
+        _icon_path = _icon_base / "resources" / "app-icon.png"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))
         self.setMinimumSize(600, 500)
@@ -446,6 +448,9 @@ class MainWindow(QMainWindow):
         self._settings_overlay.hide()
         self._settings_overlay.saved.connect(self.settings_saved)
         self._settings_overlay.logout_requested.connect(self.settings_logout_requested)
+        self._settings_overlay.delete_account_requested.connect(
+            self.settings_delete_account_requested
+        )
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -773,7 +778,10 @@ class MainWindow(QMainWindow):
         welcome_mode: bool = False,
     ) -> None:
         """설정 오버레이를 표시한다."""
-        self._settings_overlay.setGeometry(self.centralWidget().geometry())
+        central = self.centralWidget()
+        if central is None:
+            return
+        self._settings_overlay.setGeometry(central.geometry())
         self._settings_overlay.show_settings(
             interval,
             language,
@@ -782,16 +790,20 @@ class MainWindow(QMainWindow):
             welcome_mode,
         )
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, a0) -> None:  # noqa: N802
         """오버레이가 창 크기에 맞게 조정된다."""
-        super().resizeEvent(event)
+        super().resizeEvent(a0)
         if hasattr(self, "_settings_overlay"):
-            self._settings_overlay.setGeometry(self.centralWidget().geometry())
+            central = self.centralWidget()
+            if central is not None:
+                self._settings_overlay.setGeometry(central.geometry())
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+    def closeEvent(self, a0: QCloseEvent | None) -> None:  # noqa: N802
         """닫기 버튼을 누르면 cleanup 시그널을 발생시킨다."""
-        if getattr(self, "_really_quit", False):
-            event.accept()
+        if a0 is None:
             return
-        event.ignore()
+        if getattr(self, "_really_quit", False):
+            a0.accept()
+            return
+        a0.ignore()
         self.close_requested.emit()

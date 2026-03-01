@@ -26,6 +26,9 @@ SIGN_IN_URL = (
     f"?key={FIREBASE_API_KEY}"
 )
 REFRESH_URL = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
+DELETE_ACCOUNT_URL = (
+    f"https://identitytoolkit.googleapis.com/v1/accounts:delete?key={FIREBASE_API_KEY}"
+)
 
 
 class FirebaseAuth:
@@ -87,6 +90,18 @@ class FirebaseAuth:
             }
         except KeyError as exc:
             raise AuthError(t("firebase_refresh_bad_response")) from exc
+
+    def delete_account(self, id_token: str) -> None:
+        """현재 Firebase 계정을 삭제한다.
+
+        Args:
+            id_token: 삭제 대상 계정의 유효 Firebase id_token.
+
+        Raises:
+            AuthError: 계정 삭제 실패 또는 네트워크 오류.
+        """
+        payload = {"idToken": id_token}
+        self._post_json(DELETE_ACCOUNT_URL, payload)
 
     def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         """JSON POST 요청을 보내고 JSON 응답을 반환한다."""

@@ -37,10 +37,9 @@ LANGUAGES = [
 class SettingsOverlay(QWidget):
     """MainWindow 내부 오버레이 설정 패널."""
 
-    saved = pyqtSignal(
-        int, str, int
-    )  # (interval, language, freeze_min)
+    saved = pyqtSignal(int, str, int)  # (interval, language, freeze_min)
     logout_requested = pyqtSignal()
+    delete_account_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
     def __init__(self, parent: QWidget) -> None:
@@ -138,6 +137,20 @@ class SettingsOverlay(QWidget):
             "}"
             "QPushButton:hover {"
             "  background: #ef4444;"
+            "  color: #ffffff;"
+            "}"
+        )
+        btn_style_withdraw = (
+            "QPushButton {"
+            "  background: transparent;"
+            "  border: 1px solid #f59e0b;"
+            "  color: #f59e0b;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #f59e0b;"
             "  color: #ffffff;"
             "}"
         )
@@ -251,6 +264,11 @@ class SettingsOverlay(QWidget):
         self._btn_logout.setToolTip(t("tooltip_logout"))
         self._btn_logout.clicked.connect(self._on_logout_clicked)
         account_row.addWidget(self._btn_logout)
+        self._btn_delete_account = QPushButton(t("btn_delete_account"))
+        self._btn_delete_account.setStyleSheet(btn_style_withdraw)
+        self._btn_delete_account.setToolTip(t("tooltip_delete_account"))
+        self._btn_delete_account.clicked.connect(self._on_delete_account_clicked)
+        account_row.addWidget(self._btn_delete_account)
         acc.addLayout(account_row)
         layout.addWidget(self._account_section)
 
@@ -391,6 +409,7 @@ class SettingsOverlay(QWidget):
             self._sleep_info.show()
             self._account_section.show()
             self._btn_logout.hide()  # welcome에서 로그아웃 숨김
+            self._btn_delete_account.hide()  # welcome에서 회원탈퇴 숨김
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -405,6 +424,7 @@ class SettingsOverlay(QWidget):
             self._sleep_info.hide()
             self._account_section.show()
             self._btn_logout.show()
+            self._btn_delete_account.show()
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -417,6 +437,8 @@ class SettingsOverlay(QWidget):
         self._account_label.setText(t("settings_account"))
         self._btn_logout.setText(t("btn_logout"))
         self._btn_logout.setToolTip(t("tooltip_logout"))
+        self._btn_delete_account.setText(t("btn_delete_account"))
+        self._btn_delete_account.setToolTip(t("tooltip_delete_account"))
         self._interval_label.setText(t("settings_interval"))
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_hint.setText(t("settings_interval_hint"))
@@ -438,8 +460,10 @@ class SettingsOverlay(QWidget):
         set_language(new_lang)
         # 부모(MainWindow) 텍스트 갱신
         parent = self.parent()
-        if parent is not None and hasattr(parent, "refresh_texts"):
-            parent.refresh_texts()
+        if parent is not None:
+            refresh = getattr(parent, "refresh_texts", None)
+            if callable(refresh):
+                refresh()
         # 다이얼로그 자체 텍스트 갱신
         self._refresh_dialog_texts()
         self._welcome_step = 1
@@ -461,11 +485,16 @@ class SettingsOverlay(QWidget):
         self.logout_requested.emit()
         self.hide()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+    def _on_delete_account_clicked(self) -> None:
+        self.delete_account_requested.emit()
+        self.hide()
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802
         """배경(카드 바깥) 클릭 시 닫기. 웰컴 모드에서는 무시."""
+        if a0 is None:
+            return
         if self._welcome_mode:
             return
-        if not self._card.geometry().contains(event.pos()):
+        if not self._card.geometry().contains(a0.pos()):
             self.closed.emit()
             self.hide()
-

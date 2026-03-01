@@ -6,9 +6,12 @@
  */
 
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getDatabase } = require("firebase-admin/database");
+const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { onValueCreated } = require("firebase-functions/v2/database");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 
 initializeApp();
@@ -122,6 +125,108 @@ exports.onAlertCreated = onValueCreated(
       });
     }
 
+    return null;
+  }
+);
+
+/**
+ * 회원탈퇴 유예 정책 정리 배치 (매일 1회)
+ * - users/{uid}.withdrawalStatus == "pending" && deleteAt <= now: 데이터 삭제
+ * - withdrawnUsers/{uid}.rejoinAllowedAt <= now: 재가입 제한 tombstone 삭제
+ */
+exports.cleanupWithdrawnUsers = onSchedule(
+  {
+    schedule: "every day 03:00",
+    region: "us-central1",
+    timeZone: "Asia/Seoul",
+  },
+  async () => {
+    const now = Date.now();
+    const db = getFirestore();
+    const rtdb = getDatabase();
+    const auth = getAuth();
+
+    // 1) 유예기간 만료 사용자 데이터 삭제
+    const pendingSnap = await db
+      .collection("users")
+      .where("withdrawalStatus", "==", "pending")
+      .where("deleteAt", "<=", now)
+      .get();
+
+    let deletedCount = 0;
+    for (const doc of pendingSnap.docs) {
+      const uid = doc.id;
+      const data = doc.data() || {};
+      const rejoinAllowedAt = Number(data.rejoinAllowedAt || now);
+
+      try {
+        await rtdb.ref(`users/${uid}`).remove();
+      } catch (err) {
+        logger.warn("RTDB user remove failed", { uid, error: String(err) });
+      }
+
+      try {
+        await doc.ref.delete();
+      } catch (err) {
+        logger.warn("Firestore users doc delete failed", {
+          uid,
+          error: String(err),
+        });
+      }
+
+      try {
+        await db
+          .collection("withdrawnUsers")
+          .doc(uid)
+          .set(
+            {
+              uid,
+              status: "deleted_data",
+              deletedAt: now,
+              rejoinAllowedAt,
+            },
+            { merge: true }
+          );
+      } catch (err) {
+        logger.warn("withdrawnUsers tombstone upsert failed", {
+          uid,
+          error: String(err),
+        });
+      }
+
+      try {
+        await auth.deleteUser(uid);
+      } catch (err) {
+        logger.warn("Auth user delete failed", { uid, error: String(err) });
+      }
+
+      deletedCount += 1;
+    }
+
+    // 2) 재가입 제한 기간이 지난 tombstone 정리
+    const expiredTombSnap = await db
+      .collection("withdrawnUsers")
+      .where("rejoinAllowedAt", "<=", now)
+      .get();
+
+    let purgedTombCount = 0;
+    for (const doc of expiredTombSnap.docs) {
+      try {
+        await doc.ref.delete();
+        purgedTombCount += 1;
+      } catch (err) {
+        logger.warn("withdrawnUsers tombstone delete failed", {
+          uid: doc.id,
+          error: String(err),
+        });
+      }
+    }
+
+    logger.info("cleanupWithdrawnUsers completed", {
+      pendingDeleted: deletedCount,
+      tombstonesPurged: purgedTombCount,
+      now,
+    });
     return null;
   }
 );

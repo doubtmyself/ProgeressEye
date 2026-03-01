@@ -12,6 +12,7 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 APP_VERSION = "1.0.0"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
 
+
 class DeviceManager:
     """PC 기기 등록/상태 갱신을 담당한다."""
 
@@ -125,6 +126,7 @@ class DeviceManager:
         if not stats:
             return
         self._db.patch(f"{self._path}/stats", stats)
+
     def delete_task(self, region_id: str) -> None:
         """특정 작업 데이터를 삭제한다."""
         self._db.delete(f"{self._path}/tasks/{region_id}")
@@ -170,6 +172,192 @@ class DeviceManager:
             log.debug("get_user_plan 조회 실패: %s", exc)
             return "free"
 
+    def ensure_free_user_registered(
+        self, project_id: str = "progresseye-49244"
+    ) -> None:
+        """Firestore users/{uid} 문서가 없으면 free 플랜 문서를 생성한다.
+
+        앱이 draft/초기 상태일 때 free 유저가 Firestore에 누락되는 케이스를 방지한다.
+        이미 문서가 존재하면 덮어쓰지 않는다.
+        """
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            return
+
+        now = int(time.time() * 1000)
+        url = (
+            f"https://firestore.googleapis.com/v1/"
+            f"projects/{project_id}/databases/progress/documents/users/{self._uid}"
+            f"?currentDocument.exists=false"
+        )
+        body = {
+            "fields": {
+                "plan": {"stringValue": "free"},
+                "uid": {"stringValue": self._uid},
+                "createdAt": {"integerValue": str(now)},
+                "updatedAt": {"integerValue": str(now)},
+            }
+        }
+
+        try:
+            resp = _requests.patch(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+                timeout=5,
+            )
+            if resp.status_code in (200, 201):
+                log.info("Firestore free 유저 문서 생성: %s", self._uid)
+                return
+
+            # 문서가 이미 존재하면 정상 케이스로 간주
+            if resp.status_code in (400, 409, 412):
+                log.debug(
+                    "Firestore 유저 문서 이미 존재/선행조건 불일치: %s", self._uid
+                )
+                return
+
+            log.warning(
+                "Firestore free 유저 등록 실패: status=%d body=%s",
+                resp.status_code,
+                resp.text[:300],
+            )
+        except Exception as exc:
+            log.warning("Firestore free 유저 등록 예외: %s", exc)
+
+    def delete_firestore_user_doc(self, project_id: str = "progresseye-49244") -> None:
+        """Firestore users/{uid} 문서를 삭제한다.
+
+        계정 탈퇴 시 데이터 정리를 위해 사용한다.
+        """
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            return
+
+        url = (
+            f"https://firestore.googleapis.com/v1/"
+            f"projects/{project_id}/databases/progress/documents/users/{self._uid}"
+        )
+        try:
+            resp = _requests.delete(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if resp.status_code in (200, 204, 404):
+                return
+            log.warning(
+                "Firestore 유저 문서 삭제 실패: status=%d body=%s",
+                resp.status_code,
+                resp.text[:300],
+            )
+        except Exception as exc:
+            log.warning("Firestore 유저 문서 삭제 예외: %s", exc)
+
+    def request_account_withdrawal(
+        self,
+        project_id: str = "progresseye-49244",
+        grace_days: int = 7,
+        rejoin_days: int = 30,
+    ) -> None:
+        """회원탈퇴 요청을 Firestore에 기록한다.
+
+        즉시 삭제하지 않고 탈퇴 유예기간(grace_days) 후 데이터 삭제 대상이 되며,
+        rejoin_days 동안 재가입 제한을 적용한다.
+        """
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            raise RuntimeError("id_token unavailable")
+
+        now = int(time.time() * 1000)
+        delete_at = now + grace_days * 24 * 60 * 60 * 1000
+        rejoin_allowed_at = now + rejoin_days * 24 * 60 * 60 * 1000
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        user_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/users/{self._uid}"
+        )
+        user_body = {
+            "fields": {
+                "withdrawalStatus": {"stringValue": "pending"},
+                "withdrawalRequestedAt": {"integerValue": str(now)},
+                "deleteAt": {"integerValue": str(delete_at)},
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+                "updatedAt": {"integerValue": str(now)},
+            }
+        }
+        user_mask = [
+            "withdrawalStatus",
+            "withdrawalRequestedAt",
+            "deleteAt",
+            "rejoinAllowedAt",
+            "updatedAt",
+        ]
+        resp_user = _requests.patch(
+            user_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": user_mask},
+            json=user_body,
+            timeout=5,
+        )
+        if resp_user.status_code not in (200, 201):
+            raise RuntimeError(
+                f"users doc update failed: {resp_user.status_code} {resp_user.text[:200]}"
+            )
+
+        tomb_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
+        )
+        tomb_body = {
+            "fields": {
+                "uid": {"stringValue": self._uid},
+                "status": {"stringValue": "pending"},
+                "requestedAt": {"integerValue": str(now)},
+                "deleteAt": {"integerValue": str(delete_at)},
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+            }
+        }
+        tomb_mask = ["uid", "status", "requestedAt", "deleteAt", "rejoinAllowedAt"]
+        resp_tomb = _requests.patch(
+            tomb_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": tomb_mask},
+            json=tomb_body,
+            timeout=5,
+        )
+        if resp_tomb.status_code not in (200, 201):
+            raise RuntimeError(
+                f"withdrawnUsers doc update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
+            )
+
+        # RTDB에도 상태 마킹 (모바일/운영 가시성)
+        self._db.patch(
+            f"users/{self._uid}",
+            {
+                "withdrawal": {
+                    "status": "pending",
+                    "requestedAt": now,
+                    "deleteAt": delete_at,
+                    "rejoinAllowedAt": rejoin_allowed_at,
+                }
+            },
+        )
+
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""
         data = self._db.get(f"{self._user_path}/activeDevice")
@@ -191,12 +379,14 @@ class DeviceManager:
         elapsed = time.time() * 1000 - data
         return elapsed < 5 * 60 * 1000  # 5분
 
+
 def get_min_pc_version(project_id: str = "progresseye-49244") -> str | None:
     """Firestore에서 최소 PC 버전을 조회한다 (인증 불필요).
 
     Firestore document: appConfig/pc  → field: minVersion
     """
     import requests as _requests
+
     url = (
         f"https://firestore.googleapis.com/v1/"
         f"projects/{project_id}/databases/progress/documents/appConfig/pc"

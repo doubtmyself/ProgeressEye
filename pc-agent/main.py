@@ -177,6 +177,9 @@ class ProgressEyeApp:
         self._main_window.settings_requested.connect(self._open_settings)
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
+        self._main_window.settings_delete_account_requested.connect(
+            self._do_delete_account
+        )
         self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
@@ -265,6 +268,15 @@ class ProgressEyeApp:
             self._config.set("auth.email", email)
         device_id = str(self._config.get("auth.device_id", ""))
         if uid and device_id:
+            block_until = self._get_rejoin_block_until(uid, result["id_token"])
+            if block_until > int(time.time() * 1000):
+                self._token_manager.clear()
+                self._config.set("auth.uid", "")
+                self._config.set("auth.email", "")
+                log.warning(
+                    "자동 로그인 차단(재가입 유예): uid=%s until=%d", uid, block_until
+                )
+                return False
             self._init_firebase(uid, device_id, result["id_token"])
         log.info("자동 로그인 성공")
         return True
@@ -300,6 +312,36 @@ class ProgressEyeApp:
         )
         dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
         return dialog.exec() == QMessageBox.StandardButton.Retry
+
+    def _get_rejoin_block_until(self, uid: str, id_token: str) -> int:
+        """회원탈퇴 유예/재가입 제한 상태를 조회한다.
+
+        Returns:
+            재가입 가능 시각(epoch ms). 제한이 없으면 0.
+        """
+        import requests as _requests
+
+        if not uid or not id_token:
+            return 0
+
+        base = "https://firestore.googleapis.com/v1/projects/progresseye-49244/databases/progress/documents"
+        headers = {"Authorization": f"Bearer {id_token}"}
+        block_until = 0
+
+        # withdrawnUsers/{uid} 우선 조회 (데이터 삭제 후에도 재가입 제한 유지)
+        for path in (f"withdrawnUsers/{uid}", f"users/{uid}"):
+            try:
+                resp = _requests.get(f"{base}/{path}", headers=headers, timeout=5)
+                if resp.status_code != 200:
+                    continue
+                fields = resp.json().get("fields", {})
+                rejoin_raw = fields.get("rejoinAllowedAt", {}).get("integerValue")
+                if rejoin_raw is not None:
+                    block_until = max(block_until, int(rejoin_raw))
+            except Exception as exc:
+                log.debug("재가입 제한 조회 실패(%s): %s", path, exc)
+
+        return block_until
 
     @staticmethod
     def _is_outdated(current: str, minimum: str) -> bool:
@@ -361,6 +403,11 @@ class ProgressEyeApp:
 
         uid = firebase_result["uid"]
         email = firebase_result["email"]
+
+        block_until = self._get_rejoin_block_until(uid, firebase_result["id_token"])
+        if block_until > int(time.time() * 1000):
+            dt = time.strftime("%Y-%m-%d", time.localtime(block_until / 1000))
+            raise AuthError(t("withdrawal_rejoin_blocked").format(date=dt))
 
         device_id = str(self._config.get("auth.device_id", ""))
         if not device_id:
@@ -503,6 +550,8 @@ class ProgressEyeApp:
             self._config.set("plan", plan)
             log.info("유저 플랜: %s", plan)
             if plan == "free":
+                # 최초 로그인/누락 케이스: Firestore users/{uid} free 문서 보정 생성
+                dm.ensure_free_user_registered()
                 active = dm.get_active_device()
                 if active and active != device_id:
                     if dm.is_other_device_online(active):
@@ -1089,6 +1138,34 @@ class ProgressEyeApp:
         log.info("로그아웃 완료 — 앱 종료")
         # tray는 daemon 스레드 — _app.quit() 시 자동 종료
         self._do_quit()
+
+    def _do_delete_account(self) -> None:
+        """회원탈퇴 요청: 7일 유예 후 삭제, 30일 재가입 제한."""
+        confirm = QMessageBox.question(
+            self._main_window,
+            t("delete_account_title"),
+            t("delete_account_confirm"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        dm = self._device_manager
+
+        try:
+            if dm is None:
+                raise RuntimeError("device manager unavailable")
+
+            dm.request_account_withdrawal(grace_days=7, rejoin_days=30)
+            log.info("회원탈퇴 요청 접수: uid=%s", self._config.get("auth.uid", ""))
+            self._notify(t("delete_account_requested"))
+
+            # 로컬 로그아웃 + 종료
+            self._do_logout()
+        except Exception as exc:
+            log.warning("회원탈퇴 실패: %s", exc)
+            self._notify(t("delete_account_failed").format(error=exc))
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
