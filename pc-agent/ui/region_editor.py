@@ -1,24 +1,32 @@
-"""영역 편집 오버레이.
+"""영역 편집 오버레이 (모니터별 오버레이)."""
 
-등록된 모니터링 영역을 전체 화면 위에 표시하고,
-파워포인트 스타일의 8개 리사이즈 핸들로 크기 조절/이동을 지원한다.
-AreaSelector와 동일한 스크린샷 기반 접근 방식 사용.
-"""
+from __future__ import annotations
 
 from enum import IntEnum, auto
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import QWidget
 
-from ui.overlay_base import OverlayBase  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
-class _Handle(IntEnum):
-    """리사이즈 핸들 위치."""
+def _to_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return default
+    return default
 
+
+class _Handle(IntEnum):
     TOP_LEFT = auto()
     TOP_MID = auto()
     TOP_RIGHT = auto()
@@ -29,7 +37,6 @@ class _Handle(IntEnum):
     BOTTOM_RIGHT = auto()
 
 
-# 핸들별 커서 매핑
 _HANDLE_CURSORS: dict[_Handle, Qt.CursorShape] = {
     _Handle.TOP_LEFT: Qt.CursorShape.SizeFDiagCursor,
     _Handle.TOP_RIGHT: Qt.CursorShape.SizeBDiagCursor,
@@ -41,79 +48,200 @@ _HANDLE_CURSORS: dict[_Handle, Qt.CursorShape] = {
     _Handle.MID_RIGHT: Qt.CursorShape.SizeHorCursor,
 }
 
-# 핸들 크기 (px)
 _HANDLE_SIZE = 8
 _HANDLE_HALF = _HANDLE_SIZE // 2
-
-# 영역 최소 크기 (px)
 _MIN_W = 10
 _MIN_H = 5
 
 
-class RegionEditor(OverlayBase):
-    """등록된 영역의 위치/크기를 편집하는 전체 화면 오버레이.
+class _EditorPane(QWidget):
+    def __init__(
+        self, owner: "RegionEditor", geo: QRect, shot: QPixmap, dark: QPixmap
+    ) -> None:
+        super().__init__()
+        self._owner = owner
+        self._geo = geo
+        self._shot = shot
+        self._dark = dark
+        self._sx = max(1, shot.width()) / max(1, geo.width())
+        self._sy = max(1, shot.height()) / max(1, geo.height())
 
-    AreaSelector와 동일하게 스크린샷을 캡처하여 배경으로 사용하고,
-    편집 대상 영역만 원본 밝기로 표시한다.
-    8개 리사이즈 핸들로 크기 조절, 영역 내부 드래그로 이동 가능.
-    """
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setMouseTracking(True)
+        self.setGeometry(geo)
 
+    def paintEvent(self, a0) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.drawPixmap(
+            self.rect(),
+            self._dark,
+            QRect(0, 0, self._shot.width(), self._shot.height()),
+        )
+
+        rr = self._owner._selection_global.intersected(self._geo)
+        if not rr.isEmpty():
+            target = QRect(
+                rr.x() - self._geo.x(), rr.y() - self._geo.y(), rr.width(), rr.height()
+            )
+            src = QRect(
+                int(target.x() * self._sx),
+                int(target.y() * self._sy),
+                max(1, int(target.width() * self._sx)),
+                max(1, int(target.height() * self._sy)),
+            )
+            src = src.intersected(QRect(0, 0, self._shot.width(), self._shot.height()))
+            if not src.isEmpty():
+                painter.drawPixmap(target, self._shot, src)
+
+        # selection border
+        if not rr.isEmpty():
+            local = QRect(
+                rr.x() - self._geo.x(), rr.y() - self._geo.y(), rr.width(), rr.height()
+            )
+            painter.setPen(QPen(QColor(255, 0, 0), 2))
+            painter.drawRect(local)
+            inner = local.adjusted(2, 2, -2, -2)
+            painter.setPen(QPen(QColor(0, 255, 255), 2))
+            painter.drawRect(inner)
+
+        # handles
+        painter.setBrush(QColor(255, 255, 255))
+        painter.setPen(QPen(QColor(0, 102, 204), 1))
+        for hr in self._owner._handle_rects_global().values():
+            ir = hr.intersected(self._geo)
+            if ir.isEmpty():
+                continue
+            painter.drawRect(
+                QRect(
+                    hr.x() - self._geo.x(),
+                    hr.y() - self._geo.y(),
+                    hr.width(),
+                    hr.height(),
+                )
+            )
+
+        if self._owner._hint_geo == self._geo:
+            self._owner._draw_hud(painter, self._geo)
+
+        painter.end()
+
+    def mousePressEvent(self, a0) -> None:  # noqa: N802
+        if a0 is None:
+            return
+        self._owner._mouse_press_global(a0)
+
+    def mouseMoveEvent(self, a0) -> None:  # noqa: N802
+        if a0 is None:
+            return
+        self._owner._mouse_move_global(a0)
+
+    def mouseReleaseEvent(self, a0) -> None:  # noqa: N802
+        if a0 is None:
+            return
+        self._owner._mouse_release_global(a0)
+
+    def keyPressEvent(self, a0) -> None:  # noqa: N802
+        if a0 is None:
+            return
+        self._owner._key_press_global(a0)
+
+
+class RegionEditor(QWidget):
     area_edited = pyqtSignal(str, dict)
     cancelled = pyqtSignal()
 
     def __init__(
-        self,
-        region_id: str,
-        area: dict,
-        parent: QWidget | None = None,
+        self, region_id: str, area: dict[str, object], parent: QWidget | None = None
     ) -> None:
-        """
-        Args:
-            region_id: 편집 대상 영역 ID.
-            area: 영역 정보 (monitor, x, y, width, height).
-            parent: 부모 위젯.
-        """
         super().__init__(parent)
         self._region_id = region_id
         self._area = area
+        self._panes: list[_EditorPane] = []
+        self._hint_geo: QRect | None = None
 
-        # 편집 중인 선택 영역 (Qt 위젯 좌표)
-        self._selection: QRect = QRect()
-
-        # 드래그 상태
-        self._dragging = False
-        self._active_handle: _Handle | None = None
-        self._drag_origin: QPoint = QPoint()
-        self._rect_origin: QRect = QRect()
-
-        self._capture_screen()
-        self._init_selection()
-        self._setup_overlay(mouse_tracking=True)
-
-    # ── 초기화 ─────────────────────────────────────────────
-
-    def _init_selection(self) -> None:
-        """mss 좌표 → Qt 위젯 좌표로 역변환하여 초기 선택 영역을 설정한다."""
-        from ui.screen_mapper import mss_to_qt_widget  # pyright: ignore[reportImplicitRelativeImport]
-
-        self._selection = mss_to_qt_widget(self._area, self._virtual_geo)
-        log.debug(
-            "초기 선택 영역 (Qt): %d,%d %dx%d",
-            self._selection.x(),
-            self._selection.y(),
-            self._selection.width(),
-            self._selection.height(),
+        primary = QGuiApplication.primaryScreen()
+        self._virtual_geo = (
+            primary.virtualGeometry()
+            if primary is not None
+            else QRect(0, 0, 1920, 1080)
         )
 
-    # ── 핸들 히트 테스트 ──────────────────────────────────────
+        from ui.screen_mapper import mss_to_qt_widget  # pyright: ignore[reportImplicitRelativeImport]
 
-    def _handle_rects(self) -> dict[_Handle, QRect]:
-        """8개 핸들의 QRect를 계산한다."""
-        r = self._selection
+        area_for_map: dict[str, int] = {
+            "monitor": _to_int(self._area.get("monitor", 0), 0),
+            "x": _to_int(self._area.get("x", 0), 0),
+            "y": _to_int(self._area.get("y", 0), 0),
+            "width": _to_int(self._area.get("width", 1), 1),
+            "height": _to_int(self._area.get("height", 1), 1),
+        }
+        if self._area.get("abs_x") is not None and self._area.get("abs_y") is not None:
+            area_for_map["abs_x"] = _to_int(self._area["abs_x"], area_for_map["x"])
+            area_for_map["abs_y"] = _to_int(self._area["abs_y"], area_for_map["y"])
+
+        selection_widget = mss_to_qt_widget(area_for_map, self._virtual_geo)
+        self._selection_global = selection_widget.translated(
+            self._virtual_geo.topLeft()
+        )
+
+        self._dragging = False
+        self._active_handle: _Handle | None = None
+        self._drag_origin = QPoint()
+        self._rect_origin = QRect()
+
+        self._capture_panes()
+
+    def _capture_panes(self) -> None:
+        for screen in QGuiApplication.screens():
+            geo = screen.geometry()
+            shot = QPixmap.fromImage(
+                screen.grabWindow(
+                    sip.voidptr(0), 0, 0, geo.width(), geo.height()
+                ).toImage()
+            )
+            dark = shot.copy()
+            p = QPainter(dark)
+            p.fillRect(dark.rect(), QColor(0, 0, 0, 120))
+            p.end()
+            self._panes.append(_EditorPane(self, geo, shot, dark))
+        if self._panes:
+            self._hint_geo = self._panes[0].geometry()
+
+    def show(self) -> None:  # noqa: A003
+        for pane in self._panes:
+            pane.show()
+            pane.raise_()
+            pane.activateWindow()
+        if self._panes:
+            self._panes[0].setFocus()
+
+    def hide(self) -> None:  # noqa: A003
+        for pane in self._panes:
+            pane.hide()
+
+    def close(self) -> bool:  # noqa: A003
+        for pane in self._panes:
+            pane.close()
+        return True
+
+    def deleteLater(self) -> None:  # noqa: N802
+        for pane in self._panes:
+            pane.deleteLater()
+        super().deleteLater()
+
+    def _update_panes(self) -> None:
+        for pane in self._panes:
+            pane.update()
+
+    def _handle_rects_global(self) -> dict[_Handle, QRect]:
+        r = self._selection_global
         cx = r.x() + r.width() // 2
         cy = r.y() + r.height() // 2
         h = _HANDLE_HALF
-
         return {
             _Handle.TOP_LEFT: QRect(
                 r.left() - h, r.top() - h, _HANDLE_SIZE, _HANDLE_SIZE
@@ -135,162 +263,65 @@ class RegionEditor(OverlayBase):
             ),
         }
 
-    def _hit_handle(self, pos: QPoint) -> _Handle | None:
-        """마우스 위치가 핸들 위에 있으면 해당 핸들을 반환한다."""
-        # 히트 판정을 약간 넉넉하게 (±3px)
+    def _hit_handle(self, pos_global: QPoint) -> _Handle | None:
         margin = 3
-        for handle, rect in self._handle_rects().items():
-            expanded = rect.adjusted(-margin, -margin, margin, margin)
-            if expanded.contains(pos):
+        for handle, rect in self._handle_rects_global().items():
+            if rect.adjusted(-margin, -margin, margin, margin).contains(pos_global):
                 return handle
         return None
 
-    # ── 페인팅 ────────────────────────────────────────────────
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        """어두운 배경 + 선택 영역(원본 밝기) + 핸들을 그린다."""
-        painter = QPainter(self)
-        self._draw_darkened_background(painter)
-
-        r = self._selection
-
-        # 선택 영역: 원본 밝은 스크린샷으로 그리기
-        if self._screenshot is not None:
-            painter.drawPixmap(r, self._screenshot, r)
-
-        # 테두리: 빨간 외곽 2px + 시안 내곽 2px
-        pen_red = QPen(QColor(255, 0, 0), 2)
-        painter.setPen(pen_red)
-        painter.drawRect(r)
-
-        inner = r.adjusted(2, 2, -2, -2)
-        pen_cyan = QPen(QColor(0, 255, 255), 2)
-        painter.setPen(pen_cyan)
-        painter.drawRect(inner)
-
-        # 8개 핸들 그리기 (흰색 정사각형 + 파란 테두리)
-        handle_pen = QPen(QColor(0, 102, 204), 1)
-        painter.setBrush(QColor(255, 255, 255))
-        painter.setPen(handle_pen)
-        for rect in self._handle_rects().values():
-            painter.drawRect(rect)
-
-        # 크기 표시 라벨 (우측 하단)
-        w = r.width()
-        h = r.height()
-        label_text = f"{w}\u00d7{h}"
-
-        font = QFont("Segoe UI", 11)
-        painter.setFont(font)
-
-        label_x = r.right() + 8
-        label_y = r.bottom() + 6
-        if label_x + 80 > self.width():
-            label_x = r.left() + 4
-        if label_y + 22 > self.height():
-            label_y = r.top() - 24
-
-        bg_rect = QRect(label_x - 4, label_y, 76, 22)
-        painter.fillRect(bg_rect, QColor(0, 0, 0, 160))
-        painter.setPen(QColor(255, 255, 255))
-        painter.drawText(label_x, label_y + 16, label_text)
-
-        # 안내 텍스트 (상단 중앙)
-        hint = t("hint_edit_region")
-        painter.setFont(QFont("Segoe UI", 12))
-        hint_w = 460
-        hint_rect = QRect(0, 8, self.width(), 36)
-        painter.fillRect(
-            (self.width() - hint_w) // 2,
-            6,
-            hint_w,
-            32,
-            QColor(0, 0, 0, 180),
-        )
-        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter, hint)
-
-        painter.end()
-
-    # ── 마우스 이벤트 ──────────────────────────────────────────
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        """드래그 시작 — 핸들 또는 영역 내부를 판별한다."""
+    def _mouse_press_global(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
-
-        pos = event.pos()
-
-        # 핸들 히트 체크
+        pos = event.globalPosition().toPoint()
         handle = self._hit_handle(pos)
         if handle is not None:
             self._active_handle = handle
             self._dragging = True
             self._drag_origin = pos
-            self._rect_origin = QRect(self._selection)
+            self._rect_origin = QRect(self._selection_global)
             return
-
-        # 영역 내부 → 이동
-        if self._selection.contains(pos):
+        if self._selection_global.contains(pos):
             self._active_handle = None
             self._dragging = True
             self._drag_origin = pos
-            self._rect_origin = QRect(self._selection)
-            return
+            self._rect_origin = QRect(self._selection_global)
 
-        # 영역 밖 → 무시
-
-    def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        """드래그 중 — 리사이즈 또는 이동."""
-        pos = event.pos()
-
+    def _mouse_move_global(self, event) -> None:
+        pos = event.globalPosition().toPoint()
         if self._dragging:
             dx = pos.x() - self._drag_origin.x()
             dy = pos.y() - self._drag_origin.y()
-
             if self._active_handle is not None:
                 self._resize_by_handle(self._active_handle, dx, dy)
             else:
                 self._move_selection(dx, dy)
-
-            self.update()
+            self._update_panes()
             return
 
-        # 드래그 중이 아닐 때: 커서 변경
         handle = self._hit_handle(pos)
+        cursor = Qt.CursorShape.ArrowCursor
         if handle is not None:
-            self.setCursor(_HANDLE_CURSORS[handle])
-        elif self._selection.contains(pos):
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            cursor = _HANDLE_CURSORS[handle]
+        elif self._selection_global.contains(pos):
+            cursor = Qt.CursorShape.SizeAllCursor
+        for pane in self._panes:
+            pane.setCursor(cursor)
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        """드래그 종료."""
+    def _mouse_release_global(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._active_handle = None
 
-    # ── 키보드 이벤트 ─────────────────────────────────────────
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        """키보드 이벤트 처리."""
+    def _key_press_global(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self._cancel()
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._confirm_edit()
 
-    # ── 리사이즈 / 이동 ──────────────────────────────────────
-
     def _resize_by_handle(self, handle: _Handle, dx: int, dy: int) -> None:
-        """핸들 종류에 따라 선택 영역을 리사이즈한다."""
         orig = self._rect_origin
-
-        left = orig.left()
-        top = orig.top()
-        right = orig.right()
-        bottom = orig.bottom()
-
-        # 각 핸들이 움직이는 변
+        left, top, right, bottom = orig.left(), orig.top(), orig.right(), orig.bottom()
         if handle in (_Handle.TOP_LEFT, _Handle.TOP_MID, _Handle.TOP_RIGHT):
             top = orig.top() + dy
         if handle in (_Handle.BOTTOM_LEFT, _Handle.BOTTOM_MID, _Handle.BOTTOM_RIGHT):
@@ -300,46 +331,73 @@ class RegionEditor(OverlayBase):
         if handle in (_Handle.TOP_RIGHT, _Handle.MID_RIGHT, _Handle.BOTTOM_RIGHT):
             right = orig.right() + dx
 
-        # 최소 크기 제한
         if right - left < _MIN_W:
             if handle in (_Handle.TOP_LEFT, _Handle.MID_LEFT, _Handle.BOTTOM_LEFT):
                 left = right - _MIN_W
             else:
                 right = left + _MIN_W
-
         if bottom - top < _MIN_H:
             if handle in (_Handle.TOP_LEFT, _Handle.TOP_MID, _Handle.TOP_RIGHT):
                 top = bottom - _MIN_H
             else:
                 bottom = top + _MIN_H
 
-        self._selection = QRect(
-            QPoint(left, top),
-            QPoint(right, bottom),
-        )
+        vg = self._virtual_geo
+        left = max(vg.left(), left)
+        top = max(vg.top(), top)
+        right = min(vg.right(), right)
+        bottom = min(vg.bottom(), bottom)
+        self._selection_global = QRect(
+            QPoint(left, top), QPoint(right, bottom)
+        ).normalized()
 
     def _move_selection(self, dx: int, dy: int) -> None:
-        """영역을 이동한다 (화면 밖 방지)."""
-        new_x = self._rect_origin.x() + dx
-        new_y = self._rect_origin.y() + dy
+        vg = self._virtual_geo
         w = self._rect_origin.width()
         h = self._rect_origin.height()
+        new_x = self._rect_origin.x() + dx
+        new_y = self._rect_origin.y() + dy
+        new_x = max(vg.left(), min(new_x, vg.right() - w + 1))
+        new_y = max(vg.top(), min(new_y, vg.bottom() - h + 1))
+        self._selection_global = QRect(new_x, new_y, w, h)
 
-        # 화면 경계 클램프
-        max_x = self.width() - w
-        max_y = self.height() - h
-        new_x = max(0, min(new_x, max_x))
-        new_y = max(0, min(new_y, max_y))
+    def _draw_hud(self, painter: QPainter, geo: QRect) -> None:
+        r = QRect(
+            self._selection_global.x() - geo.x(),
+            self._selection_global.y() - geo.y(),
+            self._selection_global.width(),
+            self._selection_global.height(),
+        )
+        w = r.width()
+        h = r.height()
+        label_text = f"{w}×{h}"
+        painter.setFont(QFont("Segoe UI", 11))
+        label_x = r.right() + 8
+        label_y = r.bottom() + 6
+        if label_x + 80 > geo.width():
+            label_x = r.left() + 4
+        if label_y + 22 > geo.height():
+            label_y = r.top() - 24
+        painter.fillRect(QRect(label_x - 4, label_y, 76, 22), QColor(0, 0, 0, 160))
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(label_x, label_y + 16, label_text)
 
-        self._selection = QRect(new_x, new_y, w, h)
-
-    # ── 확정 / 취소 ──────────────────────────────────────────
+        hint = t("hint_edit_region")
+        painter.setFont(QFont("Segoe UI", 12))
+        hint_w = 460
+        hint_rect = QRect(0, 8, geo.width(), 36)
+        painter.fillRect(
+            (geo.width() - hint_w) // 2, 6, hint_w, 32, QColor(0, 0, 0, 180)
+        )
+        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter, hint)
 
     def _confirm_edit(self) -> None:
-        """편집을 확정하고 mss 좌표로 변환하여 시그널을 발생시킨다."""
         from ui.screen_mapper import qt_widget_to_mss  # pyright: ignore[reportImplicitRelativeImport]
 
-        result = qt_widget_to_mss(self._selection, self._virtual_geo)
+        selection_widget = self._selection_global.translated(
+            -self._virtual_geo.topLeft()
+        )
+        result = qt_widget_to_mss(selection_widget, self._virtual_geo)
         log.info(
             "영역 편집 완료: %s → %dx%d @ (%d, %d) 모니터=%d",
             self._region_id,
@@ -351,16 +409,14 @@ class RegionEditor(OverlayBase):
         )
         self._pending_result = result
         self.hide()
-        QTimer.singleShot(300, self._emit_and_close)
+        QTimer.singleShot(150, self._emit_and_close)
 
     def _emit_and_close(self) -> None:
-        """오버레이 숨김 후 시그널을 발생시키고 닫는다."""
         if hasattr(self, "_pending_result"):
             self.area_edited.emit(self._region_id, self._pending_result)
         self.close()
 
     def _cancel(self) -> None:
-        """편집을 취소한다."""
         log.info("영역 편집 취소: %s", self._region_id)
         self.hide()
         self.cancelled.emit()

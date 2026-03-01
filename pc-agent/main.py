@@ -16,6 +16,35 @@ import uuid
 import ctypes
 from typing import Callable
 
+
+def _set_dpi_awareness() -> None:
+    """Windows Per-Monitor DPI Awareness 설정.
+
+    PyQt 초기화 전에 호출해야 모니터별 DPR이 올바르게 반영된다.
+    """
+    if sys.platform != "win32":
+        return
+
+    try:
+        user32 = ctypes.windll.user32
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetProcessDpiAwarenessContext.restype = ctypes.c_bool
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        shcore = ctypes.windll.shcore
+        shcore.SetProcessDpiAwareness.argtypes = [ctypes.c_int]
+        shcore.SetProcessDpiAwareness.restype = ctypes.c_int
+        shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except (AttributeError, OSError):
+        pass
+
+
+_set_dpi_awareness()
+
 from PIL import Image as PILImage
 from PyQt6.QtCore import QRect, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
@@ -168,6 +197,19 @@ class ProgressEyeApp:
         for screen in QGuiApplication.screens():
             screen.logicalDotsPerInchChanged.connect(self._on_screen_changed)
             screen.geometryChanged.connect(self._on_screen_changed)
+        # 모니터 DPR 정보 로깅
+        for i, screen in enumerate(QGuiApplication.screens()):
+            geo = screen.geometry()
+            log.info(
+                "모니터 %d: %s (%d,%d %dx%d) DPR=%.2f",
+                i,
+                screen.name(),
+                geo.x(),
+                geo.y(),
+                geo.width(),
+                geo.height(),
+                screen.devicePixelRatio(),
+            )
 
     def _on_screen_changed(self, *_args: object) -> None:
         """DPI/모니터 구성 변경 시 호출된다."""
@@ -262,12 +304,14 @@ class ProgressEyeApp:
     @staticmethod
     def _is_outdated(current: str, minimum: str) -> bool:
         """버전 문자열을 비교하여 현재 버전이 최소 버전 미만인지 확인한다."""
+
         def parse(v: str) -> tuple[int, ...]:
             import re
+
             return tuple(
-                int(m.group()) for seg in v.split('.')
-                if (m := re.match(r'\d+', seg))
+                int(m.group()) for seg in v.split(".") if (m := re.match(r"\d+", seg))
             )
+
         return parse(current) < parse(minimum)
 
     def _show_update_required(self, min_version: str) -> None:
@@ -277,9 +321,7 @@ class ProgressEyeApp:
         dialog.setIcon(QMessageBox.Icon.Warning)
         dialog.setText(t("update_required_message"))
         dialog.setInformativeText(
-            t("update_required_detail").format(
-                current=APP_VERSION, minimum=min_version
-            )
+            t("update_required_detail").format(current=APP_VERSION, minimum=min_version)
         )
         dialog.addButton(t("update_required_quit"), QMessageBox.ButtonRole.AcceptRole)
         dialog.exec()
@@ -465,7 +507,9 @@ class ProgressEyeApp:
                 if active and active != device_id:
                     if dm.is_other_device_online(active):
                         log.warning("다른 PC에서 사용 중: %s", active)
-                        self._action_queue.put(lambda a=active: self._show_device_conflict(a))
+                        self._action_queue.put(
+                            lambda a=active: self._show_device_conflict(a)
+                        )
                         return
                 dm.set_active_device()
         except Exception as exc:
@@ -645,8 +689,9 @@ class ProgressEyeApp:
             ts = int(time.time())
             # RTDB 기록 + 명령 정리를 메인 스레드로 마샬링
             self._action_queue.put(
-                lambda _u=uid, _d=device_id, _url=download_url, _ts=ts:
+                lambda _u=uid, _d=device_id, _url=download_url, _ts=ts: (
                     self._finish_screenshot(_u, _d, _url, _ts)
+                )
             )
         except Exception as exc:
             log.warning("스크린샷 처리 실패: %s", exc)
@@ -786,6 +831,8 @@ class ProgressEyeApp:
                 "y": area["y"],
                 "width": area["width"],
                 "height": area["height"],
+                "abs_x": area.get("abs_x"),
+                "abs_y": area.get("abs_y"),
                 "direction": direction,
                 **bar_crop,
             }
@@ -846,6 +893,8 @@ class ProgressEyeApp:
                 "y": area["y"],
                 "width": area["width"],
                 "height": area["height"],
+                "abs_x": area.get("abs_x"),
+                "abs_y": area.get("abs_y"),
             }
             self._config.add_region(region)
             self._main_window.add_region_display(
@@ -917,6 +966,8 @@ class ProgressEyeApp:
             "y": area["y"],
             "width": area["width"],
             "height": area["height"],
+            "abs_x": area.get("abs_x"),
+            "abs_y": area.get("abs_y"),
         }
         if bar_region and bar_region.confidence > 0:
             updates["direction"] = bar_region.direction
@@ -1112,6 +1163,13 @@ class ProgressEyeApp:
                 QTimer.singleShot(100, self._start_ocr_area_selection)
         else:
             # 바 타입: BarPreviewDialog
+            # Edit Task는 현재 화면 기준으로 미리보기를 보여준다.
+            # (템플릿 파일은 유지하며, 캡처 실패 시에만 템플릿 fallback)
+            try:
+                image = self._capturer.capture(area)
+            except Exception as e:
+                log.warning("작업 수정용 실시간 캡처 실패 — 템플릿 사용: %s", e)
+
             # 저장된 바 오프셋이 있으면 사용, 없으면 자동 탐지
             saved_left = area.get("bar_left")
             saved_right = area.get("bar_right")
@@ -1207,12 +1265,14 @@ class ProgressEyeApp:
                 progress_val = 0.0
         else:
             # 바 — 원본 영역 내 bar 오프셋으로 크롭하여 분석
-            bar_image = image.crop((
-                area.get("bar_left", 0),
-                area.get("bar_top", 0),
-                area.get("bar_right", image.width),
-                area.get("bar_bottom", image.height),
-            ))
+            bar_image = image.crop(
+                (
+                    area.get("bar_left", 0),
+                    area.get("bar_top", 0),
+                    area.get("bar_right", image.width),
+                    area.get("bar_bottom", image.height),
+                )
+            )
             direction = area.get("direction", "horizontal")
             result = self._analyzer.analyze(bar_image, direction=direction)
             progress_val = result.progress
@@ -1222,8 +1282,12 @@ class ProgressEyeApp:
                 "x": area["x"] + area.get("bar_left", 0),
                 "y": area["y"] + area.get("bar_top", 0),
                 "width": area.get("bar_right", area["width"]) - area.get("bar_left", 0),
-                "height": area.get("bar_bottom", area["height"]) - area.get("bar_top", 0),
+                "height": area.get("bar_bottom", area["height"])
+                - area.get("bar_top", 0),
             }
+            if area.get("abs_x") is not None and area.get("abs_y") is not None:
+                bar_area["abs_x"] = int(area["abs_x"]) + int(area.get("bar_left", 0))
+                bar_area["abs_y"] = int(area["abs_y"]) + int(area.get("bar_top", 0))
             bar_qt_rect = self._mss_to_qt_rect(bar_area)
         # 4. 뷰어 생성 + 표시
         if self._region_viewer is not None:
@@ -1378,7 +1442,8 @@ class ProgressEyeApp:
                             region_config.get("bar_bottom", image.height),
                         )
                 similarity = self._check_image_similarity(
-                    self._template_images[region_id], image,
+                    self._template_images[region_id],
+                    image,
                     bar_bbox=bar_bbox,
                 )
             except Exception as exc:
@@ -1479,12 +1544,14 @@ class ProgressEyeApp:
                 return
         else:
             # 바 — 원본 영역에서 bar 오프셋으로 크롭하여 분석 (bar_finder 불필요)
-            bar_image = image.crop((
-                region_config.get("bar_left", 0),
-                region_config.get("bar_top", 0),
-                region_config.get("bar_right", image.width),
-                region_config.get("bar_bottom", image.height),
-            ))
+            bar_image = image.crop(
+                (
+                    region_config.get("bar_left", 0),
+                    region_config.get("bar_top", 0),
+                    region_config.get("bar_right", image.width),
+                    region_config.get("bar_bottom", image.height),
+                )
+            )
             direction = region_config.get("direction", "horizontal")
             result = self._analyzer.analyze(bar_image, direction=direction)
             progress = result.progress
@@ -1566,7 +1633,11 @@ class ProgressEyeApp:
             elapsed_min = (now - first) / 60.0
             log.debug(
                 "[%s] 완료 확인 — %.1f%% >= %d%%, %.1f/%.0f분 경과",
-                region_id, progress, threshold, elapsed_min, delay_minutes,
+                region_id,
+                progress,
+                threshold,
+                elapsed_min,
+                delay_minutes,
             )
             if elapsed_min >= delay_minutes:
                 self._alerted_regions[region_id] = progress
@@ -1584,7 +1655,9 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, {"enabled": False})
                 self._scheduler.remove_region(region_id)
                 self._action_queue.put(
-                    lambda _id=region_id: self._main_window.set_region_enabled(_id, False)
+                    lambda _id=region_id: self._main_window.set_region_enabled(
+                        _id, False
+                    )
                 )
                 if self._scheduler.region_count == 0:
                     log.info("모든 영역 완료 — 자동 정지")
@@ -1632,6 +1705,7 @@ class ProgressEyeApp:
             self._sync_stats_if_due()
         except Exception as exc:
             log.debug("Firebase 배치 전송 실패: %s", exc)
+
     def _should_sync_firebase_state(
         self,
         new_state: dict,
@@ -1778,7 +1852,9 @@ class ProgressEyeApp:
             log.warning("템플릿 삭제 실패 [%s]: %s", region_id, exc)
 
     def _check_image_similarity(
-        self, img1: PILImage.Image, img2: PILImage.Image,
+        self,
+        img1: PILImage.Image,
+        img2: PILImage.Image,
         bar_bbox: tuple[int, int, int, int] | None = None,
     ) -> float:
         """두 이미지의 유사도를 반환한다 (0.0~1.0).
@@ -1796,6 +1872,7 @@ class ProgressEyeApp:
             img1 = img1.copy()
             img2 = img2.copy()
             from PIL import ImageDraw
+
             for img in (img1, img2):
                 draw = ImageDraw.Draw(img)
                 draw.rectangle([left, top, right, bottom], fill=(128, 128, 128))

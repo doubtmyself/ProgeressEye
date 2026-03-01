@@ -3,7 +3,6 @@
 mss 라이브러리를 사용하여 지정 영역 또는 전체 화면을 캡처한다.
 """
 
-
 import threading
 from typing import Any
 
@@ -22,9 +21,11 @@ class ScreenCapturer:
     """mss 기반 화면 캡처 엔진.
     mss GDI 핸들은 thread-local이므로 스레드별 인스턴스를 관리한다.
     """
+
     def __init__(self) -> None:
         self._local = threading.local()
-    def _get_sct(self) -> mss.mss:
+
+    def _get_sct(self) -> Any:
         """현재 스레드의 mss 인스턴스를 반환한다 (thread-local lazy init)."""
         if not hasattr(self._local, "sct") or self._local.sct is None:
             self._local.sct = mss.mss()
@@ -60,22 +61,40 @@ class ScreenCapturer:
                 )
                 monitor_idx = 0
 
-            # mss는 절대 좌표를 사용
-            # monitor_idx > 0이면 해당 모니터의 좌상단 오프셋 적용
-            if monitor_idx > 0:
-                mon = monitors[monitor_idx]
-                offset_x = mon["left"]
-                offset_y = mon["top"]
+            # 절대 물리 좌표가 있으면 우선 사용 (모니터 인덱스 드리프트 방지)
+            if "abs_x" in region and "abs_y" in region:
+                monitor_area = {
+                    "left": int(region["abs_x"]),
+                    "top": int(region["abs_y"]),
+                    "width": int(region["width"]),
+                    "height": int(region["height"]),
+                }
+                cx = monitor_area["left"] + monitor_area["width"] // 2
+                cy = monitor_area["top"] + monitor_area["height"] // 2
+                for i, mon in enumerate(monitors[1:], 1):
+                    if (
+                        mon["left"] <= cx < mon["left"] + mon["width"]
+                        and mon["top"] <= cy < mon["top"] + mon["height"]
+                    ):
+                        monitor_idx = i
+                        break
             else:
-                offset_x = 0
-                offset_y = 0
+                # mss는 절대 좌표를 사용
+                # monitor_idx > 0이면 해당 모니터의 좌상단 오프셋 적용
+                if monitor_idx > 0:
+                    mon = monitors[monitor_idx]
+                    offset_x = mon["left"]
+                    offset_y = mon["top"]
+                else:
+                    offset_x = 0
+                    offset_y = 0
 
-            monitor_area = {
-                "left": region["x"] + offset_x,
-                "top": region["y"] + offset_y,
-                "width": region["width"],
-                "height": region["height"],
-            }
+                monitor_area = {
+                    "left": int(region["x"] + offset_x),
+                    "top": int(region["y"] + offset_y),
+                    "width": int(region["width"]),
+                    "height": int(region["height"]),
+                }
 
             screenshot = sct.grab(monitor_area)
             # mss → PIL Image (BGRA → RGB)
@@ -86,11 +105,14 @@ class ScreenCapturer:
             )
 
             log.debug(
-                "캡처 완료: %dx%d @ (%d, %d)",
+                "캡처 완료: %dx%d @ (%d, %d) monitor=%d abs=(%d,%d)",
                 region["width"],
                 region["height"],
                 region["x"],
                 region["y"],
+                monitor_idx,
+                monitor_area["left"],
+                monitor_area["top"],
             )
             return img
 

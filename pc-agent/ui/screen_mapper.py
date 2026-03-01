@@ -13,6 +13,7 @@ from __future__ import annotations
 import mss as mss_lib
 from PyQt6.QtCore import QPoint, QRect
 from PyQt6.QtGui import QGuiApplication, QScreen
+from typing import Any
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -22,6 +23,9 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 def _screen_at(global_logical: QPoint) -> QScreen:
     """글로벌 논리 좌표에 해당하는 Qt 화면을 반환한다."""
+    for screen in QGuiApplication.screens():
+        if screen.geometry().contains(global_logical):
+            return screen
     target = QGuiApplication.screenAt(global_logical)
     if target is not None:
         return target
@@ -30,11 +34,68 @@ def _screen_at(global_logical: QPoint) -> QScreen:
     return primary
 
 
+def _screen_for_selection(selection: QRect, virtual_geo: QRect) -> QScreen:
+    """선택 사각형과 가장 많이 겹치는 Qt 화면을 반환한다."""
+    global_rect = selection.translated(virtual_geo.topLeft())
+    best_screen: QScreen | None = None
+    best_area = -1
+    for screen in QGuiApplication.screens():
+        overlap = global_rect.intersected(screen.geometry())
+        area = max(0, overlap.width()) * max(0, overlap.height())
+        if area > best_area:
+            best_area = area
+            best_screen = screen
+
+    if best_screen is not None and best_area > 0:
+        return best_screen
+    return _screen_at(global_rect.center())
+
+
+def _mss_monitor_for_qt_screen(
+    target: QScreen,
+    sct: Any,
+) -> tuple[int, dict[str, int]] | None:
+    """Qt 화면에 가장 잘 대응하는 mss 모니터를 반환한다.
+
+    단순 인덱스 매칭 대신 (물리 해상도 + 화면 배치 순서) 기반으로 점수화한다.
+    """
+    monitors = sct.monitors[1:]
+    if not monitors:
+        return None
+
+    screens = QGuiApplication.screens()
+    if not screens:
+        return None
+
+    geo = target.geometry()
+    target_ratio = geo.width() / max(1, geo.height())
+
+    target_rank_x = sum(1 for s in screens if s.geometry().x() < geo.x())
+    target_rank_y = sum(1 for s in screens if s.geometry().y() < geo.y())
+
+    best_score: int | None = None
+    best_pair: tuple[int, dict[str, int]] | None = None
+    for idx, mon in enumerate(monitors, 1):
+        mon_rank_x = sum(1 for m in monitors if m["left"] < mon["left"])
+        mon_rank_y = sum(1 for m in monitors if m["top"] < mon["top"])
+
+        mon_ratio = mon["width"] / max(1, mon["height"])
+        ratio_error = abs(mon_ratio - target_ratio)
+        rank_error = abs(mon_rank_x - target_rank_x) + abs(mon_rank_y - target_rank_y)
+        score = (rank_error * 10_000.0) + (ratio_error * 100.0)
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_pair = (idx, mon)
+
+    return best_pair
+
+
 def _qt_screen_for_mss(mss_idx: int) -> QScreen:
     """mss 모니터 인덱스에 대응하는 Qt 화면을 반환한다.
 
-    인덱스 매칭(mss[i] = Qt screens[i-1])을 우선 시도하고,
-    실패 시 물리 해상도로 fallback 매칭한다.
+    인덱스가 뒤섞이는 환경(배율/배치 변경)에서도 안정적으로 동작하도록
+    화면 배치 순서(rank) + 종횡비 유사도로 매칭한다.
     """
     screens = QGuiApplication.screens()
     primary = QGuiApplication.primaryScreen()
@@ -48,24 +109,28 @@ def _qt_screen_for_mss(mss_idx: int) -> QScreen:
             if mss_idx >= len(sct.monitors):
                 return primary
             mon = sct.monitors[mss_idx]
+            monitors = sct.monitors[1:]
+            target_rank_x = sum(1 for m in monitors if m["left"] < mon["left"])
+            target_rank_y = sum(1 for m in monitors if m["top"] < mon["top"])
+            mon_ratio = mon["width"] / max(1, mon["height"])
 
-            # 1) 인덱스 기반 매칭
-            qi = mss_idx - 1
-            if qi < len(screens):
-                s = screens[qi]
-                dpr = s.devicePixelRatio()
-                sw = int(s.geometry().width() * dpr)
-                sh = int(s.geometry().height() * dpr)
-                if abs(sw - mon["width"]) <= 10 and abs(sh - mon["height"]) <= 10:
-                    return s
-
-            # 2) 해상도 기반 fallback
+            best_score: float | None = None
+            best_screen: QScreen | None = None
             for s in screens:
-                dpr = s.devicePixelRatio()
-                sw = int(s.geometry().width() * dpr)
-                sh = int(s.geometry().height() * dpr)
-                if abs(sw - mon["width"]) <= 10 and abs(sh - mon["height"]) <= 10:
-                    return s
+                geo = s.geometry()
+                rank_x = sum(1 for other in screens if other.geometry().x() < geo.x())
+                rank_y = sum(1 for other in screens if other.geometry().y() < geo.y())
+                screen_ratio = geo.width() / max(1, geo.height())
+
+                rank_error = abs(rank_x - target_rank_x) + abs(rank_y - target_rank_y)
+                ratio_error = abs(screen_ratio - mon_ratio)
+                score = (rank_error * 10_000.0) + (ratio_error * 100.0)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_screen = s
+
+            if best_screen is not None:
+                return best_screen
     except Exception as exc:
         log.warning("Qt 화면 매칭 실패: %s", exc)
 
@@ -88,99 +153,83 @@ def qt_widget_to_mss(selection: QRect, virtual_geo: QRect) -> dict[str, int]:
     Returns:
         ``{"x", "y", "width", "height", "monitor"}`` — mss 로컬 좌표.
     """
-    # 글로벌 논리 좌표 (위젯 좌표 + virtualGeo offset)
-    center = QPoint(
-        selection.center().x() + virtual_geo.x(),
-        selection.center().y() + virtual_geo.y(),
-    )
-    target = _screen_at(center)
-    dpr = target.devicePixelRatio()
+    # 선택 영역 겹침 기준으로 대상 화면 결정
+    target = _screen_for_selection(selection, virtual_geo)
     geo = target.geometry()
 
-    # 화면 내 논리 좌표 → 물리 좌표
+    # 화면 내 논리 좌표
     in_x = (selection.x() + virtual_geo.x()) - geo.x()
     in_y = (selection.y() + virtual_geo.y()) - geo.y()
-    phys_x = int(in_x * dpr)
-    phys_y = int(in_y * dpr)
-    phys_w = max(1, int(selection.width() * dpr))
-    phys_h = max(1, int(selection.height() * dpr))
 
     try:
         with mss_lib.mss() as sct:
-            # Qt 화면 인덱스 → mss 모니터 인덱스
-            screens = QGuiApplication.screens()
-            qi = screens.index(target) if target in screens else 0
-            mi = qi + 1
-
-            # 인덱스 검증 (해상도 일치 확인)
-            if mi < len(sct.monitors):
-                mon = sct.monitors[mi]
-                expected_w = int(geo.width() * dpr)
-                expected_h = int(geo.height() * dpr)
-                if (
-                    abs(mon["width"] - expected_w) <= 10
-                    and abs(mon["height"] - expected_h) <= 10
-                ):
-                    # 모니터 경계에 클램프
-                    phys_x = max(0, min(phys_x, mon["width"] - 1))
-                    phys_y = max(0, min(phys_y, mon["height"] - 1))
-                    phys_w = min(phys_w, mon["width"] - phys_x)
-                    phys_h = min(phys_h, mon["height"] - phys_y)
-
+            if log.isEnabledFor(10):
+                q_screens = QGuiApplication.screens()
+                for i, s in enumerate(q_screens):
+                    g = s.geometry()
                     log.debug(
-                        "Qt→mss: widget(%d,%d %dx%d) → phys(%d,%d %dx%d) mon=%d dpr=%.2f",
-                        selection.x(),
-                        selection.y(),
-                        selection.width(),
-                        selection.height(),
-                        phys_x,
-                        phys_y,
-                        phys_w,
-                        phys_h,
-                        mi,
-                        dpr,
-                    )
-                    return {
-                        "x": phys_x,
-                        "y": phys_y,
-                        "width": phys_w,
-                        "height": phys_h,
-                        "monitor": mi,
-                    }
-
-            # 인덱스 매칭 실패 → 해상도 기반 fallback
-            for i, mon in enumerate(sct.monitors[1:], 1):
-                expected_w = int(geo.width() * dpr)
-                expected_h = int(geo.height() * dpr)
-                if (
-                    abs(mon["width"] - expected_w) <= 10
-                    and abs(mon["height"] - expected_h) <= 10
-                ):
-                    phys_x = max(0, min(phys_x, mon["width"] - 1))
-                    phys_y = max(0, min(phys_y, mon["height"] - 1))
-                    phys_w = min(phys_w, mon["width"] - phys_x)
-                    phys_h = min(phys_h, mon["height"] - phys_y)
-
-                    log.debug(
-                        "Qt→mss (fallback): widget(%d,%d %dx%d) → phys(%d,%d %dx%d) mon=%d dpr=%.2f",
-                        selection.x(),
-                        selection.y(),
-                        selection.width(),
-                        selection.height(),
-                        phys_x,
-                        phys_y,
-                        phys_w,
-                        phys_h,
+                        "Qt screen[%d]: name=%s geo=(%d,%d %dx%d) dpr=%.2f",
                         i,
-                        dpr,
+                        s.name(),
+                        g.x(),
+                        g.y(),
+                        g.width(),
+                        g.height(),
+                        s.devicePixelRatio(),
                     )
-                    return {
-                        "x": phys_x,
-                        "y": phys_y,
-                        "width": phys_w,
-                        "height": phys_h,
-                        "monitor": i,
-                    }
+                for i, mon in enumerate(sct.monitors):
+                    log.debug(
+                        "mss monitor[%d]: left=%d top=%d %dx%d",
+                        i,
+                        mon["left"],
+                        mon["top"],
+                        mon["width"],
+                        mon["height"],
+                    )
+
+            match = _mss_monitor_for_qt_screen(target, sct)
+            if match is not None:
+                mi, mon = match
+
+                # 모니터별 물리/논리 스케일 (Qt DPR 대신 mss 물리 해상도 기준)
+                sx = mon["width"] / max(1, geo.width())
+                sy = mon["height"] / max(1, geo.height())
+
+                phys_x = int(in_x * sx)
+                phys_y = int(in_y * sy)
+                phys_w = max(1, int(selection.width() * sx))
+                phys_h = max(1, int(selection.height() * sy))
+
+                # 모니터 경계에 클램프
+                phys_x = max(0, min(phys_x, mon["width"] - 1))
+                phys_y = max(0, min(phys_y, mon["height"] - 1))
+                phys_w = min(phys_w, mon["width"] - phys_x)
+                phys_h = min(phys_h, mon["height"] - phys_y)
+
+                log.debug(
+                    "Qt→mss: screen=%s scale=(%.3f,%.3f) widget(%d,%d %dx%d) -> phys(%d,%d %dx%d) mon=%d",
+                    target.name(),
+                    sx,
+                    sy,
+                    selection.x(),
+                    selection.y(),
+                    selection.width(),
+                    selection.height(),
+                    phys_x,
+                    phys_y,
+                    phys_w,
+                    phys_h,
+                    mi,
+                )
+                return {
+                    "x": phys_x,
+                    "y": phys_y,
+                    "width": phys_w,
+                    "height": phys_h,
+                    "monitor": mi,
+                    "abs_x": mon["left"] + phys_x,
+                    "abs_y": mon["top"] + phys_y,
+                }
 
     except Exception as exc:
         log.warning("qt_widget_to_mss mss 접근 실패: %s", exc)
@@ -213,16 +262,74 @@ def mss_to_qt_widget(area: dict[str, int], virtual_geo: QRect | None = None) -> 
         virtual_geo = primary.virtualGeometry()
     assert virtual_geo is not None
 
-    mon_idx = area.get("monitor", 0)
+    mon_idx = int(area.get("monitor", 0))
+    local_x = int(area.get("x", 0))
+    local_y = int(area.get("y", 0))
+    mon_w = 0
+    mon_h = 0
+
+    try:
+        with mss_lib.mss() as sct:
+            if log.isEnabledFor(10):
+                q_screens = QGuiApplication.screens()
+                for i, s in enumerate(q_screens):
+                    g = s.geometry()
+                    log.debug(
+                        "Qt screen[%d]: name=%s geo=(%d,%d %dx%d) dpr=%.2f",
+                        i,
+                        s.name(),
+                        g.x(),
+                        g.y(),
+                        g.width(),
+                        g.height(),
+                        s.devicePixelRatio(),
+                    )
+                for i, mon in enumerate(sct.monitors):
+                    log.debug(
+                        "mss monitor[%d]: left=%d top=%d %dx%d",
+                        i,
+                        mon["left"],
+                        mon["top"],
+                        mon["width"],
+                        mon["height"],
+                    )
+
+            # 절대 물리 좌표가 있으면 중심점으로 모니터를 재판정 (인덱스 불일치 보정)
+            if "abs_x" in area and "abs_y" in area:
+                abs_x = int(area["abs_x"])
+                abs_y = int(area["abs_y"])
+                cx = abs_x + max(1, int(area["width"])) // 2
+                cy = abs_y + max(1, int(area["height"])) // 2
+                for i, mon in enumerate(sct.monitors[1:], 1):
+                    if (
+                        mon["left"] <= cx < mon["left"] + mon["width"]
+                        and mon["top"] <= cy < mon["top"] + mon["height"]
+                    ):
+                        mon_idx = i
+                        local_x = abs_x - mon["left"]
+                        local_y = abs_y - mon["top"]
+                        break
+
+            if 1 <= mon_idx < len(sct.monitors):
+                mon = sct.monitors[mon_idx]
+                mon_w = max(1, int(mon["width"]))
+                mon_h = max(1, int(mon["height"]))
+            else:
+                mon_w = max(1, int(sct.monitors[0]["width"]))
+                mon_h = max(1, int(sct.monitors[0]["height"]))
+    except Exception as exc:
+        log.warning("mss_to_qt_widget mss 접근 실패: %s", exc)
+
     qt_screen = _qt_screen_for_mss(mon_idx)
-    dpr = qt_screen.devicePixelRatio()
     geo = qt_screen.geometry()
+    sx = mon_w / max(1, geo.width())
+    sy = mon_h / max(1, geo.height())
 
     # 물리 → 논리 (화면 내)
-    logical_x = area["x"] / dpr
-    logical_y = area["y"] / dpr
-    logical_w = area["width"] / dpr
-    logical_h = area["height"] / dpr
+    logical_x = local_x / sx
+    logical_y = local_y / sy
+    logical_w = int(area.get("width", 1)) / sx
+    logical_h = int(area.get("height", 1)) / sy
 
     # 글로벌 논리 → 위젯 좌표
     wx = int(geo.x() + logical_x - virtual_geo.x())
@@ -231,7 +338,7 @@ def mss_to_qt_widget(area: dict[str, int], virtual_geo: QRect | None = None) -> 
     wh = max(1, int(logical_h))
 
     log.debug(
-        "mss→Qt: phys(%d,%d %dx%d) mon=%d → widget(%d,%d %dx%d) dpr=%.2f",
+        "mss→Qt: phys(%d,%d %dx%d) mon=%d -> widget(%d,%d %dx%d) scale=(%.3f,%.3f)",
         area["x"],
         area["y"],
         area["width"],
@@ -241,7 +348,8 @@ def mss_to_qt_widget(area: dict[str, int], virtual_geo: QRect | None = None) -> 
         wy,
         ww,
         wh,
-        dpr,
+        sx,
+        sy,
     )
 
     return QRect(wx, wy, ww, wh)
@@ -280,6 +388,8 @@ def _fallback_qt_to_mss(
                         "width": mss_w,
                         "height": mss_h,
                         "monitor": i,
+                        "abs_x": mss_x,
+                        "abs_y": mss_y,
                     }
 
             return {
@@ -288,6 +398,8 @@ def _fallback_qt_to_mss(
                 "width": mss_w,
                 "height": mss_h,
                 "monitor": 0,
+                "abs_x": mss_x,
+                "abs_y": mss_y,
             }
     except Exception:
         return {

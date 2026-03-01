@@ -1,25 +1,102 @@
-"""탐지된 바 영역 전체 화면 뷰어.
+"""탐지된 바 영역 전체 화면 뷰어 (모니터별 오버레이)."""
 
-등록된 영역을 원본 밝기로, 탐지된 바를 빨간 사각형으로 표시하는
-읽기 전용 전체 화면 오버레이. AreaSelector와 동일한 스크린샷 기반 패턴.
-"""
+from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QRect, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import QWidget
 
-from ui.overlay_base import OverlayBase  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
-from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 
-class RegionViewer(OverlayBase):
-    """전체 화면 오버레이로 탐지된 바 영역을 표시한다.
+class _ViewerPane(QWidget):
+    def __init__(
+        self, owner: "RegionViewer", geo: QRect, shot: QPixmap, dark: QPixmap
+    ) -> None:
+        super().__init__()
+        self._owner = owner
+        self._geo = geo
+        self._shot = shot
+        self._dark = dark
+        self._sx = max(1, shot.width()) / max(1, geo.width())
+        self._sy = max(1, shot.height()) / max(1, geo.height())
 
-    어두운 배경 위에 등록된 영역을 밝게 표시하고,
-    그 안에서 탐지된 프로그래스 바를 빨간 사각형으로 표시한다.
-    """
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setGeometry(geo)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
+    def paintEvent(self, a0) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.drawPixmap(
+            self.rect(),
+            self._dark,
+            QRect(0, 0, self._shot.width(), self._shot.height()),
+        )
+
+        rr = self._owner._region_rect_global.intersected(self._geo)
+        if not rr.isEmpty():
+            target = QRect(
+                rr.x() - self._geo.x(), rr.y() - self._geo.y(), rr.width(), rr.height()
+            )
+            src = QRect(
+                int(target.x() * self._sx),
+                int(target.y() * self._sy),
+                max(1, int(target.width() * self._sx)),
+                max(1, int(target.height() * self._sy)),
+            )
+            src = src.intersected(QRect(0, 0, self._shot.width(), self._shot.height()))
+            if not src.isEmpty():
+                painter.drawPixmap(target, self._shot, src)
+
+        # 영역 테두리
+        if not rr.isEmpty():
+            local_rr = QRect(
+                rr.x() - self._geo.x(), rr.y() - self._geo.y(), rr.width(), rr.height()
+            )
+            painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
+            painter.drawRect(local_rr)
+
+        # 바 테두리
+        if self._owner._bar_rect_global is not None:
+            br = self._owner._bar_rect_global.intersected(self._geo)
+            if not br.isEmpty():
+                local_br = QRect(
+                    br.x() - self._geo.x(),
+                    br.y() - self._geo.y(),
+                    br.width(),
+                    br.height(),
+                )
+                painter.setPen(QPen(QColor(255, 0, 0), 2))
+                painter.drawRect(local_br)
+                inner = local_br.adjusted(2, 2, -2, -2)
+                painter.setPen(QPen(QColor(0, 255, 255), 2))
+                painter.drawRect(inner)
+
+        if self._owner._hint_geo == self._geo:
+            hint = t("hint_click_or_esc")
+            painter.setFont(QFont("Segoe UI", 12))
+            hint_w = 260
+            hint_rect = QRect(0, 8, self.width(), 36)
+            painter.fillRect(
+                (self.width() - hint_w) // 2, 6, hint_w, 32, QColor(0, 0, 0, 180)
+            )
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter, hint)
+
+        painter.end()
+
+    def mousePressEvent(self, a0) -> None:  # noqa: N802
+        self._owner._close_viewer()
+
+    def keyPressEvent(self, a0) -> None:  # noqa: N802
+        if a0 is not None and a0.key() == Qt.Key.Key_Escape:
+            self._owner._close_viewer()
+
+
+class RegionViewer(QWidget):
     closed = pyqtSignal()
 
     def __init__(
@@ -30,95 +107,62 @@ class RegionViewer(OverlayBase):
         region_type: str = "bar",
         parent: QWidget | None = None,
     ) -> None:
-        """
-        Args:
-            region_rect: 등록된 영역 (Qt 위젯 좌표).
-            bar_rect: 탐지된 바 영역 (Qt 위젯 좌표, 절대). None이면 바 미탐지.
-            progress: 현재 진행률 (%).
-            region_type: 영역 타입 ("bar" 또는 "ocr").
-            parent: 부모 위젯.
-        """
         super().__init__(parent)
-        self._region_rect = region_rect
-        self._bar_rect = bar_rect
-        self._progress = progress
-        self._region_type = region_type
+        del progress
+        del region_type
 
-        self._capture_screen()
-        self._setup_overlay()
-
-    # ── 페인팅 ────────────────────────────────────────────────
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        """어두운 배경 + 등록 영역(원본 밝기) + 바 영역(빨간 사각형)을 그린다."""
-        painter = QPainter(self)
-        self._draw_darkened_background(painter)
-
-        r = self._region_rect
-
-        # 등록 영역: 원본 밝은 스크린샷으로 그리기
-        if self._screenshot is not None:
-            painter.drawPixmap(r, self._screenshot, r)
-
-        # 등록 영역 테두리: 흰색 1px
-        pen_white = QPen(QColor(255, 255, 255, 180), 1)
-        painter.setPen(pen_white)
-        painter.drawRect(r)
-
-        # 바 영역: 빨간(255,0,0) 2px + 시안(0,255,255) 2px 이중 사각형
-        if self._bar_rect is not None:
-            pen_red = QPen(QColor(255, 0, 0), 2)
-            painter.setPen(pen_red)
-            painter.drawRect(self._bar_rect)
-
-            inner = self._bar_rect.adjusted(2, 2, -2, -2)
-            pen_cyan = QPen(QColor(0, 255, 255), 2)
-            painter.setPen(pen_cyan)
-            painter.drawRect(inner)
-
-        elif self._region_type != "ocr":
-            # 바 미탐지 — 영역 중앙에 안내 (OCR은 표시 안 함)
-            painter.setFont(QFont("Segoe UI", 12))
-            painter.setPen(QColor(255, 100, 100))
-            no_bar_text = t("no_bar_detected")
-            no_bar_rect = QRect(r.left(), r.bottom() + 8, 280, 26)
-            if no_bar_rect.bottom() > self.height():
-                no_bar_rect = QRect(r.left(), r.top() - 28, 280, 26)
-            painter.fillRect(no_bar_rect, QColor(0, 0, 0, 200))
-            painter.drawText(
-                no_bar_rect.left() + 4, no_bar_rect.top() + 19, no_bar_text
-            )
-
-        # 안내 텍스트 (상단 중앙): "클릭 또는 ESC로 닫기"
-        hint = t("hint_click_or_esc")
-        painter.setFont(QFont("Segoe UI", 12))
-        hint_w = 260
-        hint_rect = QRect(0, 8, self.width(), 36)
-        painter.fillRect(
-            (self.width() - hint_w) // 2,
-            6,
-            hint_w,
-            32,
-            QColor(0, 0, 0, 180),
+        primary = QGuiApplication.primaryScreen()
+        virtual_geo = (
+            primary.virtualGeometry()
+            if primary is not None
+            else QRect(0, 0, 1920, 1080)
         )
-        painter.setPen(QColor(255, 255, 255))
-        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignHCenter, hint)
+        self._region_rect_global = region_rect.translated(virtual_geo.topLeft())
+        self._bar_rect_global = (
+            bar_rect.translated(virtual_geo.topLeft()) if bar_rect is not None else None
+        )
+        self._hint_geo: QRect | None = None
+        self._panes: list[_ViewerPane] = []
 
-        painter.end()
+        for screen in QGuiApplication.screens():
+            geo = screen.geometry()
+            shot = QPixmap.fromImage(
+                screen.grabWindow(
+                    sip.voidptr(0), 0, 0, geo.width(), geo.height()
+                ).toImage()
+            )
+            dark = shot.copy()
+            painter = QPainter(dark)
+            painter.fillRect(dark.rect(), QColor(0, 0, 0, 120))
+            painter.end()
+            self._panes.append(_ViewerPane(self, geo, shot, dark))
 
-    # ── 입력 이벤트 ───────────────────────────────────────────
+        if self._panes:
+            self._hint_geo = self._panes[0].geometry()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        """아무 곳 클릭 → 닫기."""
-        self._close_viewer()
+    def show(self) -> None:  # noqa: A003
+        for pane in self._panes:
+            pane.show()
+            pane.raise_()
+            pane.activateWindow()
+        if self._panes:
+            self._panes[0].setFocus()
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        """ESC → 닫기."""
-        if event.key() == Qt.Key.Key_Escape:
-            self._close_viewer()
+    def hide(self) -> None:  # noqa: A003
+        for pane in self._panes:
+            pane.hide()
+
+    def close(self) -> bool:  # noqa: A003
+        for pane in self._panes:
+            pane.close()
+        return True
+
+    def deleteLater(self) -> None:  # noqa: N802
+        for pane in self._panes:
+            pane.deleteLater()
+        super().deleteLater()
 
     def _close_viewer(self) -> None:
-        """뷰어를 닫고 시그널을 발생시킨다."""
         self.hide()
         self.closed.emit()
         self.close()
