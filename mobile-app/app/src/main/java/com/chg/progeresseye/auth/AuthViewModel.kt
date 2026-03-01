@@ -255,17 +255,6 @@ class AuthViewModel(
                     )
                     .await()
 
-                // 5. Mark RTDB withdrawal status (for client visibility)
-                db.reference.child("users").child(uid).child("withdrawal")
-                    .setValue(
-                        mapOf(
-                            "status" to "pending",
-                            "requestedAt" to now,
-                            "deleteAt" to deleteAt,
-                            "rejoinAllowedAt" to rejoinAllowedAt,
-                        ),
-                    )
-                    .await()
             } catch (e: Exception) {
                 // withdrawal mark failed — still sign out locally
             }
@@ -343,7 +332,6 @@ class AuthViewModel(
             )
             .await()
         firestore.collection("withdrawnUsers").document(uid).delete().await()
-        db.reference.child("users").child(uid).child("withdrawal").removeValue().await()
     }
 
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {
@@ -385,6 +373,18 @@ class AuthViewModel(
             pendingUser = null
             pendingUid = null
             _uiState.value = AuthUiState(error = context.getString(R.string.auth_logged_out_by_other_device))
+        }
+    }
+
+    fun forceSignOutByWithdrawal(context: Context) {
+        viewModelScope.launch {
+            repository.signOut(context)
+            MobileSessionManager.clearSession(context)
+            pendingUser = null
+            pendingUid = null
+            pendingWithdrawalUser = null
+            pendingWithdrawalUid = null
+            _uiState.value = AuthUiState(error = context.getString(R.string.auth_logged_out_by_withdrawal))
         }
     }
 

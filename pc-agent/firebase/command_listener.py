@@ -60,8 +60,10 @@ class CommandListener:
         # response.close()는 Windows에서 SSE 소켓 대기로 블로킹될 수 있으므로
         # daemon 스레드에서 처리 — _app.quit() 시 자동 종료됨
         import threading as _threading
+
         _threading.Thread(target=self._close_response, daemon=True).start()
         log.info("CommandListener 비블로킹 중지")
+
     def stop(self) -> None:
         """SSE 리스너를 종료한다."""
         self._stop_event.set()
@@ -130,7 +132,9 @@ class CommandListener:
         initial_snapshot_skipped = False
         log.info("SSE 스트림 수신 시작")
 
-        raw_lines = cast(Iterable[object], response.iter_lines(chunk_size=1, decode_unicode=True))
+        raw_lines = cast(
+            Iterable[object], response.iter_lines(chunk_size=1, decode_unicode=True)
+        )
         for raw_line_obj in raw_lines:
             if self._stop_event.is_set():
                 return
@@ -175,7 +179,9 @@ class CommandListener:
             try:
                 payload_obj = cast(object, json.loads(data_text))
             except json.JSONDecodeError as exc:
-                log.warning("SSE data JSON 파싱 실패: %s | data=%s", exc, data_text[:200])
+                log.warning(
+                    "SSE data JSON 파싱 실패: %s | data=%s", exc, data_text[:200]
+                )
                 continue
 
             if not isinstance(payload_obj, dict):
@@ -193,10 +199,15 @@ class CommandListener:
                 # 초기 스냅샷에 미처리 명령이 있으면 큐에 추가
                 for command in self._extract_commands(payload):
                     try:
+                        command["fromInitialSnapshot"] = True
                         self._command_queue.put_nowait(command)
-                        log.info("초기 스냅샷 미처리 명령 발견: %s", command.get("type"))
+                        log.info(
+                            "초기 스냅샷 미처리 명령 발견: %s", command.get("type")
+                        )
                     except queue.Full:
-                        log.warning("명령 큐가 가득 차 초기 명령을 버립니다: %s", command)
+                        log.warning(
+                            "명령 큐가 가득 차 초기 명령을 버립니다: %s", command
+                        )
                 continue
 
             for command in self._extract_commands(payload):

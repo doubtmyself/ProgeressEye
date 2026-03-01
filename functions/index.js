@@ -16,6 +16,30 @@ const { logger } = require("firebase-functions");
 
 initializeApp();
 
+const CLEANUP_BATCH_SIZE = 200;
+const TOMBSTONE_BATCH_SIZE = 500;
+const CLEANUP_CONCURRENCY = 10;
+
+async function processWithConcurrency(items, concurrency, handler) {
+  const workers = [];
+  let index = 0;
+
+  const runNext = async () => {
+    while (index < items.length) {
+      const current = items[index];
+      index += 1;
+      await handler(current);
+    }
+  };
+
+  const workerCount = Math.min(concurrency, Math.max(items.length, 1));
+  for (let i = 0; i < workerCount; i += 1) {
+    workers.push(runNext());
+  }
+
+  await Promise.all(workers);
+}
+
 /**
  * users/{uid}/alerts/{alertId}에 새 노드가 생성되면 FCM 전송.
  *
@@ -130,15 +154,16 @@ exports.onAlertCreated = onValueCreated(
 );
 
 /**
- * 회원탈퇴 유예 정책 정리 배치 (매일 1회)
+ * 회원탈퇴 유예 정책 정리 배치 (5분 주기, 배치 제한)
  * - users/{uid}.withdrawalStatus == "pending" && deleteAt <= now: 데이터 삭제
  * - withdrawnUsers/{uid}.rejoinAllowedAt <= now: 재가입 제한 tombstone 삭제
  */
 exports.cleanupWithdrawnUsers = onSchedule(
   {
-    schedule: "every day 03:00",
+    schedule: "every 5 minutes",
     region: "us-central1",
     timeZone: "Asia/Seoul",
+    maxInstances: 1,
   },
   async () => {
     const now = Date.now();
@@ -151,10 +176,15 @@ exports.cleanupWithdrawnUsers = onSchedule(
       .collection("users")
       .where("withdrawalStatus", "==", "pending")
       .where("deleteAt", "<=", now)
+      .orderBy("deleteAt", "asc")
+      .limit(CLEANUP_BATCH_SIZE)
       .get();
 
     let deletedCount = 0;
-    for (const doc of pendingSnap.docs) {
+    await processWithConcurrency(
+      pendingSnap.docs,
+      CLEANUP_CONCURRENCY,
+      async (doc) => {
       const uid = doc.id;
       const data = doc.data() || {};
       const rejoinAllowedAt = Number(data.rejoinAllowedAt || now);
@@ -197,20 +227,29 @@ exports.cleanupWithdrawnUsers = onSchedule(
       try {
         await auth.deleteUser(uid);
       } catch (err) {
-        logger.warn("Auth user delete failed", { uid, error: String(err) });
+        const code = err && typeof err === "object" ? err.code : undefined;
+        if (code !== "auth/user-not-found") {
+          logger.warn("Auth user delete failed", { uid, error: String(err) });
+        }
       }
 
       deletedCount += 1;
-    }
+      }
+    );
 
     // 2) 재가입 제한 기간이 지난 tombstone 정리
     const expiredTombSnap = await db
       .collection("withdrawnUsers")
       .where("rejoinAllowedAt", "<=", now)
+      .orderBy("rejoinAllowedAt", "asc")
+      .limit(TOMBSTONE_BATCH_SIZE)
       .get();
 
     let purgedTombCount = 0;
-    for (const doc of expiredTombSnap.docs) {
+    await processWithConcurrency(
+      expiredTombSnap.docs,
+      CLEANUP_CONCURRENCY,
+      async (doc) => {
       try {
         await doc.ref.delete();
         purgedTombCount += 1;
@@ -220,11 +259,16 @@ exports.cleanupWithdrawnUsers = onSchedule(
           error: String(err),
         });
       }
-    }
+      }
+    );
 
     logger.info("cleanupWithdrawnUsers completed", {
+      pendingCandidates: pendingSnap.size,
       pendingDeleted: deletedCount,
+      tombstoneCandidates: expiredTombSnap.size,
       tombstonesPurged: purgedTombCount,
+      hasMorePending: pendingSnap.size === CLEANUP_BATCH_SIZE,
+      hasMoreTombstones: expiredTombSnap.size === TOMBSTONE_BATCH_SIZE,
       now,
     });
     return null;

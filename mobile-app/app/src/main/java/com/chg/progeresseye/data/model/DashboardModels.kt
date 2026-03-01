@@ -42,6 +42,7 @@ data class DashboardUiState(
     val isLoading: Boolean = true,
     val devices: List<DeviceData> = emptyList(),
     val error: String? = null,
+    val requiresForcedSignOut: Boolean = false,
     /** Device ID currently waiting for screenshot response. */
     val screenshotLoadingDeviceId: String? = null,
     /** Screenshot error message to display (timeout, failure). */

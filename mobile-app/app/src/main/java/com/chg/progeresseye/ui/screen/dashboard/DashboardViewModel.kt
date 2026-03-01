@@ -120,11 +120,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Timber.e(error.toException(), "devices:onCancelled")
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = error.message,
-                )
+                if (error.code == DatabaseError.PERMISSION_DENIED) {
+                    Timber.w(error.toException(), "devices:onCancelled permission denied -> force sign-out")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        requiresForcedSignOut = true,
+                        error = null,
+                    )
+                } else {
+                    Timber.e(error.toException(), "devices:onCancelled")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = error.message,
+                    )
+                }
             }
         }
         devicesRef?.addChildEventListener(devicesChildListener!!)
@@ -158,7 +167,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             override fun onCancelled(error: DatabaseError) {
-                Timber.e(error.toException(), "deviceStatus:child:onCancelled")
+                if (error.code == DatabaseError.PERMISSION_DENIED) {
+                    Timber.w(error.toException(), "deviceStatus:child:onCancelled permission denied -> force sign-out")
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        requiresForcedSignOut = true,
+                        error = null,
+                    )
+                } else {
+                    Timber.e(error.toException(), "deviceStatus:child:onCancelled")
+                }
             }
         }
         statusRef?.addChildEventListener(statusChildListener!!)
@@ -445,6 +463,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearScreenshotError() {
         _uiState.value = _uiState.value.copy(screenshotError = null)
+    }
+
+    fun consumeForcedSignOut() {
+        _uiState.value = _uiState.value.copy(requiresForcedSignOut = false)
     }
 
     // ── Pull-to-Refresh ────────────────────────────────

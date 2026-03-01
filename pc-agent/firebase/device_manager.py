@@ -345,19 +345,6 @@ class DeviceManager:
                 f"withdrawnUsers doc update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
             )
 
-        # RTDB에도 상태 마킹 (모바일/운영 가시성)
-        self._db.patch(
-            f"users/{self._uid}",
-            {
-                "withdrawal": {
-                    "status": "pending",
-                    "requestedAt": now,
-                    "deleteAt": delete_at,
-                    "rejoinAllowedAt": rejoin_allowed_at,
-                }
-            },
-        )
-
     def get_withdrawal_state(
         self,
         project_id: str = "progresseye-49244",
@@ -475,11 +462,88 @@ class DeviceManager:
                 f"withdrawnUsers delete failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
             )
 
-        # RTDB withdrawal 상태 제거
-        try:
-            self._db.delete(f"users/{self._uid}/withdrawal")
-        except Exception as exc:
-            log.debug("RTDB withdrawal 삭제 실패(무시): %s", exc)
+    def debug_mark_withdrawal_expired(
+        self,
+        project_id: str = "progresseye-49244",
+        grace_days: int = 7,
+        rejoin_days: int = 30,
+    ) -> None:
+        """디버그: 탈퇴 후 grace_days가 지난 상태를 강제로 만든다."""
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            raise RuntimeError("id_token unavailable")
+
+        now = int(time.time() * 1000)
+        requested_at = now - grace_days * 24 * 60 * 60 * 1000
+        delete_at = now - 60 * 1000
+        rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000
+        if rejoin_allowed_at <= now:
+            rejoin_allowed_at = now + 24 * 60 * 60 * 1000
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        user_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/users/{self._uid}"
+        )
+        user_body = {
+            "fields": {
+                "withdrawalStatus": {"stringValue": "pending"},
+                "withdrawalRequestedAt": {"integerValue": str(requested_at)},
+                "deleteAt": {"integerValue": str(delete_at)},
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+                "updatedAt": {"integerValue": str(now)},
+            }
+        }
+        user_mask = [
+            "withdrawalStatus",
+            "withdrawalRequestedAt",
+            "deleteAt",
+            "rejoinAllowedAt",
+            "updatedAt",
+        ]
+        resp_user = _requests.patch(
+            user_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": user_mask},
+            json=user_body,
+            timeout=5,
+        )
+        if resp_user.status_code not in (200, 201):
+            raise RuntimeError(
+                f"users doc debug update failed: {resp_user.status_code} {resp_user.text[:200]}"
+            )
+
+        tomb_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
+        )
+        tomb_body = {
+            "fields": {
+                "uid": {"stringValue": self._uid},
+                "status": {"stringValue": "pending"},
+                "requestedAt": {"integerValue": str(requested_at)},
+                "deleteAt": {"integerValue": str(delete_at)},
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+            }
+        }
+        tomb_mask = ["uid", "status", "requestedAt", "deleteAt", "rejoinAllowedAt"]
+        resp_tomb = _requests.patch(
+            tomb_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": tomb_mask},
+            json=tomb_body,
+            timeout=5,
+        )
+        if resp_tomb.status_code not in (200, 201):
+            raise RuntimeError(
+                f"withdrawnUsers doc debug update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
+            )
 
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""

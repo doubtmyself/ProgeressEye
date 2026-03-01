@@ -137,6 +137,8 @@ dependencies {
     // Splash Screen
     implementation(libs.core.splashscreen)
     implementation(libs.play.services.ads)
+    // Pin WorkManager runtime (transitive from Ads/Messaging) to avoid old Room DB init issues
+    implementation(libs.androidx.work.runtime.ktx)
     // Play In-App Updates
     implementation(libs.play.app.update.ktx)
     // Timber logging

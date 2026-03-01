@@ -408,6 +408,7 @@ class MainWindow(QMainWindow):
     settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
     settings_delete_account_requested = pyqtSignal()
+    settings_withdrawal_expired_test_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
@@ -444,12 +445,18 @@ class MainWindow(QMainWindow):
         self._setup_ui()
 
         # ── Settings overlay ──
-        self._settings_overlay = SettingsOverlay(self)
+        self._settings_overlay = SettingsOverlay(
+            self,
+            show_debug_buttons=self._show_test_buttons,
+        )
         self._settings_overlay.hide()
         self._settings_overlay.saved.connect(self.settings_saved)
         self._settings_overlay.logout_requested.connect(self.settings_logout_requested)
         self._settings_overlay.delete_account_requested.connect(
             self.settings_delete_account_requested
+        )
+        self._settings_overlay.withdrawal_expired_test_requested.connect(
+            self.settings_withdrawal_expired_test_requested
         )
 
     def _setup_ui(self) -> None:

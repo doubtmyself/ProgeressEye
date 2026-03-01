@@ -107,6 +107,7 @@
     <string name="auth_session_takeover_failed">모바일 세션 전환에 실패했습니다.</string>
     <string name="auth_session_takeover_cancelled">로그인이 취소되었습니다.</string>
     <string name="auth_logged_out_by_other_device">다른 모바일 기기에서 로그인되어 자동 로그아웃되었습니다.</string>
+    <string name="auth_logged_out_by_withdrawal">회원탈퇴 유예기간 상태로 전환되어 자동 로그아웃되었습니다.</string>
 
     <!-- ── Force Update ── -->
     <string name="update_required_title">업데이트 필요</string>

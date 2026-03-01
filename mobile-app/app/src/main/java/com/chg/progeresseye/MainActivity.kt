@@ -16,6 +16,7 @@ import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.UpdateAvailability
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,6 +49,8 @@ class MainActivity : ComponentActivity() {
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null
     private var isHandlingSessionConflict: Boolean = false
+    private var withdrawalStatusListener: ListenerRegistration? = null
+    private var isHandlingWithdrawalLogout: Boolean = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -129,8 +132,10 @@ class MainActivity : ComponentActivity() {
                     val uid = authState.user?.uid
                     if (uid != null) {
                         startSessionConflictListener(uid, authViewModel)
+                        startWithdrawalStatusListener(uid, authViewModel)
                     } else {
                         stopSessionConflictListener()
+                        stopWithdrawalStatusListener()
                     }
                 }
 
@@ -202,6 +207,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopSessionConflictListener()
+        stopWithdrawalStatusListener()
         super.onDestroy()
     }
 
@@ -242,6 +248,34 @@ class MainActivity : ComponentActivity() {
         mobileSessionListener = null
         mobileSessionRef = null
         isHandlingSessionConflict = false
+    }
+
+    private fun startWithdrawalStatusListener(uid: String, authViewModel: AuthViewModel) {
+        stopWithdrawalStatusListener()
+        isHandlingWithdrawalLogout = false
+
+        val listener = FirebaseFirestore.getInstance("progress")
+            .collection("users")
+            .document(uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Timber.w(error, "withdrawal status listener cancelled")
+                    return@addSnapshotListener
+                }
+
+                val status = snapshot?.getString("withdrawalStatus") ?: return@addSnapshotListener
+                if (!isHandlingWithdrawalLogout && status == "pending") {
+                    isHandlingWithdrawalLogout = true
+                    authViewModel.forceSignOutByWithdrawal(this@MainActivity)
+                }
+            }
+        withdrawalStatusListener = listener
+    }
+
+    private fun stopWithdrawalStatusListener() {
+        withdrawalStatusListener?.remove()
+        withdrawalStatusListener = null
+        isHandlingWithdrawalLogout = false
     }
 
     private fun requestNotificationPermission() {

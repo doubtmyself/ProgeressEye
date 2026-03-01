@@ -106,6 +106,7 @@ fun MainScreen(
     val dashboardViewModel: DashboardViewModel = viewModel()
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val userPlan by dashboardViewModel.userPlan.collectAsStateWithLifecycle()
+    val requiresForcedSignOut = dashboardState.requiresForcedSignOut
     val context = LocalContext.current
     val activity = context as? Activity
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -124,6 +125,13 @@ fun MainScreen(
         if (screenshotError != null) {
             snackbarHostState.showSnackbar(screenshotError)
             dashboardViewModel.clearScreenshotError()
+        }
+    }
+
+    LaunchedEffect(requiresForcedSignOut) {
+        if (requiresForcedSignOut) {
+            dashboardViewModel.consumeForcedSignOut()
+            onSignOut()
         }
     }
 

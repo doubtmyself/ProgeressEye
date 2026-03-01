@@ -46,9 +46,9 @@ def _set_dpi_awareness() -> None:
 _set_dpi_awareness()
 
 from PIL import Image as PILImage
-from PyQt6.QtCore import QRect, QTimer
+from PyQt6.QtCore import QRect, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from auth import AuthError  # pyright: ignore[reportImplicitRelativeImport]
 from auth.firebase_auth import FirebaseAuth  # pyright: ignore[reportImplicitRelativeImport]
@@ -78,6 +78,10 @@ from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelative
 _HEARTBEAT_INTERVAL_MS = 60_000
 _STATS_SYNC_INTERVAL_MS = 60_000
 _SAMPLER_START_DELAY_MS = 20_000
+
+
+class _SilentAuthAbort(AuthError):
+    """사용자 선택으로 로그인 흐름을 조용히 종료할 때 사용한다."""
 
 
 class ProgressEyeApp:
@@ -118,6 +122,7 @@ class ProgressEyeApp:
         self._command_queue: queue.Queue[dict[str, object]] = queue.Queue()
         self._processed_command_ids: dict[str, float] = {}
         self._last_command_ts_by_type: dict[str, int] = {}
+        self._silent_auth_abort: bool = False
         self._editing_region_id: str | None = None  # 작업 수정 중인 영역 ID
 
         self._alerted_regions: dict[str, float] = {}  # region_id -> alert progress
@@ -180,6 +185,9 @@ class ProgressEyeApp:
         self._main_window.settings_delete_account_requested.connect(
             self._do_delete_account
         )
+        self._main_window.settings_withdrawal_expired_test_requested.connect(
+            self._on_test_withdrawal_expired
+        )
         self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
@@ -239,6 +247,9 @@ class ProgressEyeApp:
         is_first = not self._config.get("auth.uid", "")
         if not self._try_auto_login():
             self._ensure_login()
+            if self._silent_auth_abort:
+                log.info("탈퇴 유지 선택으로 앱을 종료합니다")
+                return 0
         if is_first and self._config.get("auth.uid", ""):
             self._show_welcome()
         self._main_window.show()
@@ -283,6 +294,10 @@ class ProgressEyeApp:
             try:
                 self._do_login()
                 return
+            except _SilentAuthAbort:
+                log.info("로그인 흐름 조용히 종료")
+                self._do_quit()
+                return
             except AuthError as exc:
                 retry = self._show_login_error(str(exc))
                 if not retry:
@@ -307,7 +322,61 @@ class ProgressEyeApp:
             QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel
         )
         dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
-        return dialog.exec() == QMessageBox.StandardButton.Retry
+        return self._exec_foreground_dialog(dialog) == QMessageBox.StandardButton.Retry
+
+    def _exec_foreground_dialog(self, dialog: QMessageBox) -> int:
+        """중요 다이얼로그를 화면 최상단/포커스로 실행한다."""
+        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        dialog.setWindowFlag(Qt.WindowType.Window, True)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        parent = self._main_window
+        if parent is not None:
+            try:
+                if parent.isMinimized():
+                    parent.showNormal()
+                parent.raise_()
+                parent.activateWindow()
+                self._force_foreground_win32(parent)
+            except RuntimeError:
+                pass
+
+        if dialog.isMinimized():
+            dialog.showNormal()
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        self._force_foreground_win32(dialog)
+        self._app.processEvents()
+        return dialog.exec()
+
+    def _force_foreground_win32(self, window: QWidget) -> None:
+        """Windows에서 창을 전면으로 강제한다."""
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = int(window.winId())
+        except Exception:
+            return
+        if hwnd <= 0:
+            return
+
+        try:
+            user32 = ctypes.windll.user32
+            sw_restore = 9
+            hwnd_topmost = -1
+            hwnd_notopmost = -2
+            swp_nosize = 0x0001
+            swp_nomove = 0x0002
+            flags = swp_nosize | swp_nomove
+
+            user32.ShowWindow(hwnd, sw_restore)
+            user32.SetWindowPos(hwnd, hwnd_topmost, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(hwnd, hwnd_notopmost, 0, 0, 0, 0, flags)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        except Exception:
+            return
 
     def _handle_withdrawal_gate(self, uid: str, id_token: str) -> bool:
         """탈퇴 유예/재가입 제한 게이트를 처리한다.
@@ -346,7 +415,7 @@ class ProgressEyeApp:
             dialog.addButton(
                 t("withdrawal_cancel_no"), QMessageBox.ButtonRole.RejectRole
             )
-            dialog.exec()
+            self._exec_foreground_dialog(dialog)
             if dialog.clickedButton() == cancel_btn:
                 try:
                     temp_dm.cancel_account_withdrawal()
@@ -356,6 +425,7 @@ class ProgressEyeApp:
                     log.warning("탈퇴 취소 실패: %s", exc)
                     self._notify(t("withdrawal_cancel_failed").format(error=exc))
                     return False
+            self._silent_auth_abort = True
             return False
 
         # 유예기간이 끝났거나 재가입 제한 tombstone만 남은 경우: 제한 유지
@@ -389,7 +459,7 @@ class ProgressEyeApp:
             t("update_required_detail").format(current=APP_VERSION, minimum=min_version)
         )
         dialog.addButton(t("update_required_quit"), QMessageBox.ButtonRole.AcceptRole)
-        dialog.exec()
+        self._exec_foreground_dialog(dialog)
         self._do_quit()
 
     def _show_device_conflict(self, other_device_id: str) -> None:
@@ -405,7 +475,7 @@ class ProgressEyeApp:
             t("device_conflict_takeover"), QMessageBox.ButtonRole.AcceptRole
         )
         dialog.addButton(t("device_conflict_cancel"), QMessageBox.ButtonRole.RejectRole)
-        dialog.exec()
+        self._exec_foreground_dialog(dialog)
         if dialog.clickedButton() == take_over:
             log.info(
                 "디바이스 강제 전환: %s → %s",
@@ -417,6 +487,7 @@ class ProgressEyeApp:
 
     def _do_login(self) -> None:
         """Google OAuth와 Firebase Auth를 통해 로그인한다."""
+        self._silent_auth_abort = False
         google_result = self._google_oauth.sign_in()
         firebase_result = self._firebase_auth.sign_in_with_google(
             google_result["id_token"]
@@ -428,6 +499,8 @@ class ProgressEyeApp:
         email = firebase_result["email"]
 
         if not self._handle_withdrawal_gate(uid, firebase_result["id_token"]):
+            if self._silent_auth_abort:
+                raise _SilentAuthAbort("withdrawal gate closed by user")
             raise AuthError(t("withdrawal_gate_blocked"))
 
         device_id = str(self._config.get("auth.device_id", ""))
@@ -632,6 +705,11 @@ class ProgressEyeApp:
                         target,
                     )
                     continue
+            if cmd_type == "forceLogout" and bool(cmd.get("fromInitialSnapshot")):
+                uid = str(self._config.get("auth.uid", ""))
+                self._cleanup_force_logout_command(uid)
+                log.info("[CMD] 초기 스냅샷 forceLogout 정리 후 무시")
+                continue
             if not self._is_fresh_command(cmd_type, cmd.get("data")):
                 continue
             log.info("[CMD] mobile command received: type=%s", cmd_type)
@@ -648,6 +726,8 @@ class ProgressEyeApp:
                         self._toggle_monitoring()
             elif cmd_type == "forceLogout":
                 log.info("[CMD] 원격 강제 로그아웃 수신 — 앱을 종료합니다.")
+                uid = str(self._config.get("auth.uid", ""))
+                self._cleanup_force_logout_command(uid)
                 self._do_logout()
 
     def _is_fresh_command(self, cmd_type: str, data_obj: object) -> bool:
@@ -790,6 +870,14 @@ class ProgressEyeApp:
                 self._realtime_db.delete(f"users/{uid}/commands/screenshot")
         except Exception as exc:
             log.debug("스크린샷 명령 삭제 실패: %s", exc)
+
+    def _cleanup_force_logout_command(self, uid: str) -> None:
+        """강제 로그아웃 명령을 RTDB에서 삭제한다."""
+        try:
+            if self._realtime_db and uid:
+                self._realtime_db.delete(f"users/{uid}/commands/forceLogout")
+        except Exception as exc:
+            log.debug("forceLogout 명령 삭제 실패: %s", exc)
 
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""
@@ -1187,6 +1275,24 @@ class ProgressEyeApp:
         except Exception as exc:
             log.warning("회원탈퇴 실패: %s", exc)
             self._notify(t("delete_account_failed").format(error=exc))
+
+    def _on_test_withdrawal_expired(self) -> None:
+        """디버그: 탈퇴 후 7일 경과 시나리오를 강제로 적용한다."""
+        if not self._debug_mode:
+            return
+        dm = self._device_manager
+        try:
+            if dm is None:
+                raise RuntimeError("device manager unavailable")
+            dm.debug_mark_withdrawal_expired(grace_days=7, rejoin_days=30)
+            log.info(
+                "디버그 탈퇴+7일 시나리오 적용: uid=%s",
+                self._config.get("auth.uid", ""),
+            )
+            self._notify(t("withdrawal_scenario_applied"))
+        except Exception as exc:
+            log.warning("디버그 탈퇴+7일 시나리오 적용 실패: %s", exc)
+            self._notify(t("withdrawal_scenario_failed").format(error=exc))
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""

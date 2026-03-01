@@ -105,7 +105,7 @@ fun SplashScreen(
         ) {
             // App icon
             Image(
-                painter = painterResource(id = R.mipmap.ic_launcher),
+                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                 contentDescription = "ProgressEye",
                 modifier = Modifier
                     .size(96.dp)

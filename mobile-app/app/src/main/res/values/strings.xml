@@ -112,6 +112,7 @@ Grace end date: %1$s</string>
     <string name="auth_session_takeover_failed">Failed to switch active mobile session.</string>
     <string name="auth_session_takeover_cancelled">Sign-in cancelled.</string>
     <string name="auth_logged_out_by_other_device">You were logged out because this account signed in on another mobile device.</string>
+    <string name="auth_logged_out_by_withdrawal">This account has entered withdrawal grace period, so you have been logged out.</string>
 
     <!-- ── Force Update ── -->
     <string name="update_required_title">Update Required</string>
