@@ -82,8 +82,16 @@
     <string name="settings_cancel">Cancel</string>
     <string name="settings_delete_account">Delete Account</string>
     <string name="settings_delete_account_title">Delete account?</string>
-    <string name="settings_delete_account_message">This will permanently delete your account and all associated data. All connected devices will be logged out. This action cannot be undone.</string>
+    <string name="settings_delete_account_message">After requesting withdrawal, a 7-day grace period applies. Data is deleted after the grace period, and rejoin is restricted for 30 days from request date.</string>
     <string name="settings_delete_account_confirm">Delete</string>
+    <string name="settings_delete_account_requested">Withdrawal request received. Data will be deleted after 7 days, and rejoin is restricted for 30 days.</string>
+    <string name="auth_withdrawal_rejoin_blocked">Rejoin is restricted by withdrawal policy. You can sign in again after %1$s.</string>
+    <string name="withdrawal_pending_title">Withdrawal Grace Period</string>
+    <string name="withdrawal_pending_message">You signed in during the withdrawal grace period. Do you want to cancel withdrawal?
+Grace end date: %1$s</string>
+    <string name="withdrawal_cancel_yes">Cancel withdrawal and sign in</string>
+    <string name="withdrawal_cancel_no">Keep withdrawal</string>
+    <string name="auth_withdrawal_cancel_failed">Failed to cancel withdrawal: %1$s</string>
 
     <!-- ── Login ── -->
     <string name="cd_app_logo">ProgressEye logo</string>

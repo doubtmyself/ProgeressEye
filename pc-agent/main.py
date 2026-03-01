@@ -268,14 +268,10 @@ class ProgressEyeApp:
             self._config.set("auth.email", email)
         device_id = str(self._config.get("auth.device_id", ""))
         if uid and device_id:
-            block_until = self._get_rejoin_block_until(uid, result["id_token"])
-            if block_until > int(time.time() * 1000):
+            if not self._handle_withdrawal_gate(uid, result["id_token"]):
                 self._token_manager.clear()
                 self._config.set("auth.uid", "")
                 self._config.set("auth.email", "")
-                log.warning(
-                    "자동 로그인 차단(재가입 유예): uid=%s until=%d", uid, block_until
-                )
                 return False
             self._init_firebase(uid, device_id, result["id_token"])
         log.info("자동 로그인 성공")
@@ -313,35 +309,62 @@ class ProgressEyeApp:
         dialog.setDefaultButton(QMessageBox.StandardButton.Retry)
         return dialog.exec() == QMessageBox.StandardButton.Retry
 
-    def _get_rejoin_block_until(self, uid: str, id_token: str) -> int:
-        """회원탈퇴 유예/재가입 제한 상태를 조회한다.
+    def _handle_withdrawal_gate(self, uid: str, id_token: str) -> bool:
+        """탈퇴 유예/재가입 제한 게이트를 처리한다.
 
         Returns:
-            재가입 가능 시각(epoch ms). 제한이 없으면 0.
+            로그인 진행 가능하면 True, 차단하면 False.
         """
-        import requests as _requests
-
         if not uid or not id_token:
-            return 0
+            return True
 
-        base = "https://firestore.googleapis.com/v1/projects/progresseye-49244/databases/progress/documents"
-        headers = {"Authorization": f"Bearer {id_token}"}
-        block_until = 0
+        # 임시 DB/DM으로 withdrawal 상태 조회 및 취소 처리
+        temp_db = RealtimeDB(
+            db_url="https://progresseye-49244-default-rtdb.firebaseio.com",
+            get_id_token=lambda: id_token,
+        )
+        temp_dm = DeviceManager(
+            temp_db, uid, str(self._config.get("auth.device_id", ""))
+        )
+        state = temp_dm.get_withdrawal_state()
 
-        # withdrawnUsers/{uid} 우선 조회 (데이터 삭제 후에도 재가입 제한 유지)
-        for path in (f"withdrawnUsers/{uid}", f"users/{uid}"):
-            try:
-                resp = _requests.get(f"{base}/{path}", headers=headers, timeout=5)
-                if resp.status_code != 200:
-                    continue
-                fields = resp.json().get("fields", {})
-                rejoin_raw = fields.get("rejoinAllowedAt", {}).get("integerValue")
-                if rejoin_raw is not None:
-                    block_until = max(block_until, int(rejoin_raw))
-            except Exception as exc:
-                log.debug("재가입 제한 조회 실패(%s): %s", path, exc)
+        now = int(time.time() * 1000)
+        pending = bool(state.get("pending", False))
+        delete_at = int(state.get("deleteAt", 0))
+        rejoin_at = int(state.get("rejoinAllowedAt", 0))
 
-        return block_until
+        # 유예기간(pending, deleteAt 전)에는 로그인 시 탈퇴 취소 안내
+        if pending and delete_at > now:
+            date_text = time.strftime("%Y-%m-%d", time.localtime(delete_at / 1000))
+            dialog = QMessageBox(self._main_window)
+            dialog.setWindowTitle(t("withdrawal_pending_title"))
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setText(t("withdrawal_pending_message").format(date=date_text))
+            cancel_btn = dialog.addButton(
+                t("withdrawal_cancel_yes"), QMessageBox.ButtonRole.AcceptRole
+            )
+            dialog.addButton(
+                t("withdrawal_cancel_no"), QMessageBox.ButtonRole.RejectRole
+            )
+            dialog.exec()
+            if dialog.clickedButton() == cancel_btn:
+                try:
+                    temp_dm.cancel_account_withdrawal()
+                    self._notify(t("withdrawal_cancelled"))
+                    return True
+                except Exception as exc:
+                    log.warning("탈퇴 취소 실패: %s", exc)
+                    self._notify(t("withdrawal_cancel_failed").format(error=exc))
+                    return False
+            return False
+
+        # 유예기간이 끝났거나 재가입 제한 tombstone만 남은 경우: 제한 유지
+        if rejoin_at > now:
+            dt = time.strftime("%Y-%m-%d", time.localtime(rejoin_at / 1000))
+            self._notify(t("withdrawal_rejoin_blocked").format(date=dt))
+            return False
+
+        return True
 
     @staticmethod
     def _is_outdated(current: str, minimum: str) -> bool:
@@ -404,10 +427,8 @@ class ProgressEyeApp:
         uid = firebase_result["uid"]
         email = firebase_result["email"]
 
-        block_until = self._get_rejoin_block_until(uid, firebase_result["id_token"])
-        if block_until > int(time.time() * 1000):
-            dt = time.strftime("%Y-%m-%d", time.localtime(block_until / 1000))
-            raise AuthError(t("withdrawal_rejoin_blocked").format(date=dt))
+        if not self._handle_withdrawal_gate(uid, firebase_result["id_token"]):
+            raise AuthError(t("withdrawal_gate_blocked"))
 
         device_id = str(self._config.get("auth.device_id", ""))
         if not device_id:

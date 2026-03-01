@@ -92,18 +92,29 @@ class MainActivity : ComponentActivity() {
                 // Target destination after splash, driven by AuthUiState.
                 // This prevents auto-navigation to main while takeover confirmation is pending.
                 val authTarget = if (
-                    authState.user != null && !authState.requiresSessionTakeover
+                    authState.user != null &&
+                        !authState.requiresSessionTakeover &&
+                        !authState.requiresWithdrawalCancel
                 ) {
                     "main"
                 } else {
                     "login"
                 }
 
-                LaunchedEffect(authState.user, authState.requiresSessionTakeover) {
+                LaunchedEffect(
+                    authState.user,
+                    authState.requiresSessionTakeover,
+                    authState.requiresWithdrawalCancel,
+                ) {
                     val currentRoute = navController.currentDestination?.route
                     // Don't auto-navigate while splash animation is running
                     if (currentRoute == "splash") return@LaunchedEffect
-                    if (authState.user != null && !authState.requiresSessionTakeover && currentRoute != "main") {
+                    if (
+                        authState.user != null &&
+                            !authState.requiresSessionTakeover &&
+                            !authState.requiresWithdrawalCancel &&
+                            currentRoute != "main"
+                    ) {
                         navController.navigate("main") {
                             popUpTo("login") { inclusive = true }
                         }
@@ -152,10 +163,18 @@ class MainActivity : ComponentActivity() {
                             onCancelSessionTakeover = {
                                 authViewModel.cancelSessionTakeover(this@MainActivity)
                             },
+                            onConfirmWithdrawalCancel = {
+                                authViewModel.confirmWithdrawalCancellation(this@MainActivity)
+                            },
+                            onKeepWithdrawal = {
+                                authViewModel.keepWithdrawalAndCancelLogin(this@MainActivity)
+                            },
                             isLoading = authState.isLoading,
                             error = authState.error,
                             requiresSessionTakeover = authState.requiresSessionTakeover,
                             existingDeviceName = authState.existingDeviceName,
+                            requiresWithdrawalCancel = authState.requiresWithdrawalCancel,
+                            withdrawalGraceEndDate = authState.withdrawalGraceEndDate,
                         )
                     }
                     composable("main") {

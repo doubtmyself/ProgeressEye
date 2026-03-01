@@ -358,6 +358,129 @@ class DeviceManager:
             },
         )
 
+    def get_withdrawal_state(
+        self,
+        project_id: str = "progresseye-49244",
+    ) -> dict[str, int | str | bool]:
+        """회원탈퇴 상태를 조회한다.
+
+        Returns keys:
+          - pending: bool
+          - deleteAt: int
+          - rejoinAllowedAt: int
+        """
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            return {"pending": False, "deleteAt": 0, "rejoinAllowedAt": 0}
+
+        headers = {"Authorization": f"Bearer {token}"}
+        base = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents"
+        )
+
+        pending = False
+        delete_at = 0
+        rejoin_allowed_at = 0
+
+        for path in (f"users/{self._uid}", f"withdrawnUsers/{self._uid}"):
+            try:
+                resp = _requests.get(f"{base}/{path}", headers=headers, timeout=5)
+                if resp.status_code != 200:
+                    continue
+                fields = resp.json().get("fields", {})
+                status = fields.get("withdrawalStatus", {}).get("stringValue")
+                if status is None:
+                    status = fields.get("status", {}).get("stringValue")
+                if status == "pending":
+                    pending = True
+                raw_delete = fields.get("deleteAt", {}).get("integerValue")
+                raw_rejoin = fields.get("rejoinAllowedAt", {}).get("integerValue")
+                if raw_delete is not None:
+                    delete_at = max(delete_at, int(raw_delete))
+                if raw_rejoin is not None:
+                    rejoin_allowed_at = max(rejoin_allowed_at, int(raw_rejoin))
+            except Exception as exc:
+                log.debug("withdrawal state 조회 실패(%s): %s", path, exc)
+
+        return {
+            "pending": pending,
+            "deleteAt": delete_at,
+            "rejoinAllowedAt": rejoin_allowed_at,
+        }
+
+    def cancel_account_withdrawal(
+        self,
+        project_id: str = "progresseye-49244",
+    ) -> None:
+        """탈퇴 유예(pending) 상태를 취소한다."""
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            raise RuntimeError("id_token unavailable")
+
+        now = int(time.time() * 1000)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        user_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/users/{self._uid}"
+        )
+        # restore active state and clear timers
+        body = {
+            "fields": {
+                "withdrawalStatus": {"stringValue": "active"},
+                "updatedAt": {"integerValue": str(now)},
+                "withdrawalRequestedAt": {"nullValue": None},
+                "deleteAt": {"nullValue": None},
+                "rejoinAllowedAt": {"nullValue": None},
+            }
+        }
+        mask = [
+            "withdrawalStatus",
+            "updatedAt",
+            "withdrawalRequestedAt",
+            "deleteAt",
+            "rejoinAllowedAt",
+        ]
+        resp_user = _requests.patch(
+            user_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": mask},
+            json=body,
+            timeout=5,
+        )
+        if resp_user.status_code not in (200, 201):
+            raise RuntimeError(
+                f"users doc cancel failed: {resp_user.status_code} {resp_user.text[:200]}"
+            )
+
+        tomb_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
+        )
+        resp_tomb = _requests.delete(
+            tomb_url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        if resp_tomb.status_code not in (200, 204, 404):
+            raise RuntimeError(
+                f"withdrawnUsers delete failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
+            )
+
+        # RTDB withdrawal 상태 제거
+        try:
+            self._db.delete(f"users/{self._uid}/withdrawal")
+        except Exception as exc:
+            log.debug("RTDB withdrawal 삭제 실패(무시): %s", exc)
+
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""
         data = self._db.get(f"{self._user_path}/activeDevice")

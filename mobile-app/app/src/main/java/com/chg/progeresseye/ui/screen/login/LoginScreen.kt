@@ -96,10 +96,14 @@ fun LoginScreen(
     onSignInClick: () -> Unit = {},
     onConfirmSessionTakeover: () -> Unit = {},
     onCancelSessionTakeover: () -> Unit = {},
+    onConfirmWithdrawalCancel: () -> Unit = {},
+    onKeepWithdrawal: () -> Unit = {},
     isLoading: Boolean = false,
     error: String? = null,
     requiresSessionTakeover: Boolean = false,
     existingDeviceName: String? = null,
+    requiresWithdrawalCancel: Boolean = false,
+    withdrawalGraceEndDate: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // Track the logo circle's center in root coordinates
@@ -131,7 +135,30 @@ fun LoginScreen(
                 )
             },
     ) {
-        if (requiresSessionTakeover) {
+        if (requiresWithdrawalCancel) {
+            AlertDialog(
+                onDismissRequest = onKeepWithdrawal,
+                title = { Text(text = stringResource(R.string.withdrawal_pending_title)) },
+                text = {
+                    Text(
+                        text = stringResource(
+                            R.string.withdrawal_pending_message,
+                            withdrawalGraceEndDate ?: "-",
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = onConfirmWithdrawalCancel) {
+                        Text(text = stringResource(R.string.withdrawal_cancel_yes))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onKeepWithdrawal) {
+                        Text(text = stringResource(R.string.withdrawal_cancel_no))
+                    }
+                },
+            )
+        } else if (requiresSessionTakeover) {
             AlertDialog(
                 onDismissRequest = onCancelSessionTakeover,
                 title = { Text(text = stringResource(R.string.session_takeover_title)) },

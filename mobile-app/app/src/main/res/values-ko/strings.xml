@@ -74,8 +74,16 @@
     <string name="settings_cancel">취소</string>
     <string name="settings_delete_account">회원 탈퇴</string>
     <string name="settings_delete_account_title">회원 탈퇴 하시겠습니까?</string>
-    <string name="settings_delete_account_message">계정과 모든 관련 데이터가 영구적으로 삭제됩니다. 연결된 모든 기기에서 로그아웃됩니다. 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="settings_delete_account_message">탈퇴 요청 후 7일 유예기간이 적용됩니다. 유예기간 종료 시 정보가 삭제되며, 요청일로부터 30일간 재가입이 제한됩니다.</string>
     <string name="settings_delete_account_confirm">탈퇴</string>
+    <string name="settings_delete_account_requested">회원탈퇴 요청이 접수되었습니다. 7일 후 정보가 삭제되고, 30일간 재가입이 제한됩니다.</string>
+    <string name="auth_withdrawal_rejoin_blocked">회원탈퇴 유예 정책에 따라 %1$s 이후 재가입 가능합니다.</string>
+    <string name="withdrawal_pending_title">회원탈퇴 유예기간</string>
+    <string name="withdrawal_pending_message">탈퇴 유예기간 중 로그인하셨습니다. 탈퇴를 취소하시겠습니까?
+유예 만료일: %1$s</string>
+    <string name="withdrawal_cancel_yes">탈퇴 취소 후 로그인</string>
+    <string name="withdrawal_cancel_no">계속 탈퇴 유지</string>
+    <string name="auth_withdrawal_cancel_failed">탈퇴 취소 처리에 실패했습니다: %1$s</string>
 
     <!-- ── Login ── -->
     <string name="cd_app_logo">ProgressEye 로고</string>
