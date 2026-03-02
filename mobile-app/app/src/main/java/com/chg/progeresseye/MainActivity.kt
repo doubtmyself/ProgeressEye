@@ -22,7 +22,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
@@ -34,7 +33,6 @@ import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
-import com.chg.progeresseye.ui.screen.splash.SplashScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
 import com.google.firebase.database.DatabaseReference
@@ -49,6 +47,9 @@ class MainActivity : ComponentActivity() {
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null
     private var isHandlingSessionConflict: Boolean = false
+    private var forceLogoutRef: DatabaseReference? = null
+    private var forceLogoutListener: ValueEventListener? = null
+    private var handledForceLogoutCmdId: String? = null
     private var withdrawalStatusListener: ListenerRegistration? = null
     private var isHandlingWithdrawalLogout: Boolean = false
 
@@ -70,8 +71,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // installSplashScreen() MUST be called BEFORE super.onCreate()
-        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -84,15 +83,7 @@ class MainActivity : ComponentActivity() {
                 val authState by authViewModel.uiState.collectAsStateWithLifecycle()
                 val navController = rememberNavController()
 
-                // Keep splash visible until auth state is determined
-                // Firebase AuthStateListener fires synchronously, so this resolves fast
-                splashScreen.setKeepOnScreenCondition {
-                    // Show splash while initial auth check hasn't completed
-                    // Once authViewModel is initialized, isSignedIn is available immediately
-                    false // Firebase currentUser is synchronous — no async wait needed
-                }
-
-                // Target destination after splash, driven by AuthUiState.
+                // Target destination driven by AuthUiState.
                 // This prevents auto-navigation to main while takeover confirmation is pending.
                 val authTarget = if (
                     authState.user != null &&
@@ -110,8 +101,6 @@ class MainActivity : ComponentActivity() {
                     authState.requiresWithdrawalCancel,
                 ) {
                     val currentRoute = navController.currentDestination?.route
-                    // Don't auto-navigate while splash animation is running
-                    if (currentRoute == "splash") return@LaunchedEffect
                     if (
                         authState.user != null &&
                             !authState.requiresSessionTakeover &&
@@ -132,26 +121,19 @@ class MainActivity : ComponentActivity() {
                     val uid = authState.user?.uid
                     if (uid != null) {
                         startSessionConflictListener(uid, authViewModel)
+                        startForceLogoutCommandListener(uid, authViewModel)
                         startWithdrawalStatusListener(uid, authViewModel)
                     } else {
                         stopSessionConflictListener()
+                        stopForceLogoutCommandListener()
                         stopWithdrawalStatusListener()
                     }
                 }
 
                 NavHost(
                     navController = navController,
-                    startDestination = "splash",
+                    startDestination = authTarget,
                 ) {
-                    composable("splash") {
-                        SplashScreen(
-                            onFinished = {
-                                navController.navigate(authTarget) {
-                                    popUpTo("splash") { inclusive = true }
-                                }
-                            },
-                        )
-                    }
                     composable("login") {
                         val webClientId = getString(R.string.default_web_client_id)
 
@@ -207,6 +189,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopSessionConflictListener()
+        stopForceLogoutCommandListener()
         stopWithdrawalStatusListener()
         super.onDestroy()
     }
@@ -248,6 +231,51 @@ class MainActivity : ComponentActivity() {
         mobileSessionListener = null
         mobileSessionRef = null
         isHandlingSessionConflict = false
+    }
+
+    private fun startForceLogoutCommandListener(uid: String, authViewModel: AuthViewModel) {
+        stopForceLogoutCommandListener()
+        handledForceLogoutCmdId = null
+
+        val ref = FirebaseDatabase.getInstance()
+            .getReference("users")
+            .child(uid)
+            .child("commands")
+            .child("forceLogout")
+
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+
+                val cmdId = snapshot.child("cmdId").getValue(String::class.java).orEmpty()
+                if (cmdId.isNotBlank() && cmdId == handledForceLogoutCmdId) return
+                handledForceLogoutCmdId = cmdId
+
+                if (!isHandlingWithdrawalLogout) {
+                    isHandlingWithdrawalLogout = true
+                    authViewModel.forceSignOutByWithdrawal(this@MainActivity)
+                }
+
+                ref.removeValue()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Timber.w(error.toException(), "forceLogout listener cancelled")
+            }
+        }
+
+        ref.addValueEventListener(listener)
+        forceLogoutRef = ref
+        forceLogoutListener = listener
+    }
+
+    private fun stopForceLogoutCommandListener() {
+        forceLogoutListener?.let { listener ->
+            forceLogoutRef?.removeEventListener(listener)
+        }
+        forceLogoutListener = null
+        forceLogoutRef = null
+        handledForceLogoutCmdId = null
     }
 
     private fun startWithdrawalStatusListener(uid: String, authViewModel: AuthViewModel) {

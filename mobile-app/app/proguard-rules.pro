@@ -19,3 +19,30 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 -renamesourcefileattribute SourceFile
+
+# Keep rules for identity/auth stack used during sign-in.
+# This app relies on Credential Manager + GoogleId + Firebase Auth.
+-keep class androidx.credentials.** { *; }
+-keep interface androidx.credentials.** { *; }
+
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-keep class com.google.android.gms.auth.api.identity.** { *; }
+
+# Firebase auth/runtime classes referenced across reflection/service boundaries.
+-keep class com.google.firebase.auth.** { *; }
+-keep class com.google.firebase.database.** { *; }
+-keep class com.google.firebase.firestore.** { *; }
+
+# Keep Play Core update classes used by in-app update flow.
+-keep class com.google.android.play.core.** { *; }
+
+# WorkManager + Room (WorkDatabase is created via reflection by Room runtime).
+# Prevent stripping/renaming of generated Room implementations.
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class * extends androidx.room.RoomDatabase
+-keep class **_Impl { *; }
+
+# Keep app entry points and ViewModel used by Compose/lifecycle reflection paths.
+-keep class com.chg.progeresseye.MainActivity { *; }
+-keep class com.chg.progeresseye.auth.AuthViewModel { *; }

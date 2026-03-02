@@ -11,6 +11,13 @@
 - `onAlertCreated`
   - RTDB alerts 생성 트리거
   - FCM 발송 + stale token 정리
+- `requestWithdrawal` (HTTPS)
+  - 클라이언트 탈퇴 요청 정책 쓰기 일원화
+  - `users/{uid}`, `withdrawnUsers/{uid}`, `withdrawnEmails/{emailKey}` 기록
+  - RTDB `users/{uid}/commands/forceLogout` 발행
+- `cancelWithdrawal` (HTTPS)
+  - 탈퇴 취소 정책 쓰기 일원화
+  - `users/{uid}` active 복원, tombstone 삭제
 - `onUserWithdrawalChanged`
   - Firestore `users/{uid}` 변경 감지
   - `withdrawalStatus == pending` 전환 시 `processWithdrawalCleanup` 작업 예약
@@ -30,6 +37,7 @@
   - `rejoinAllowedAt <= now` 인 만료 tombstone을 재수집해 cleanup task 재예약
 
 ## 탈퇴 정리 아키텍처
+- 클라이언트는 정책 데이터 직접 쓰기를 피하고, Functions HTTPS API를 호출한다.
 - 기존 5분 배치 스캔 대신, 사용자 단위 지연 Task를 생성한다.
 - 최소 저장 필드
   - `users/{uid}`: `withdrawalStatus`, `deleteAt`, `rejoinAllowedAt`

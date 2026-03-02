@@ -13,6 +13,7 @@
 - 세션 takeover 확인 다이얼로그
 - 탈퇴 유예기간 로그인 시 탈퇴 취소 다이얼로그
 - 로그인 상태에서 Firestore `users/{uid}.withdrawalStatus == pending` 수신 시 자동 로그아웃
+- 탈퇴 요청/취소 정책 쓰기는 Functions HTTPS API(`requestWithdrawal`, `cancelWithdrawal`) 호출로 일원화
 
 ## 관련 문서
 - 요구사항: `docs/mobile-app/requirements.md`

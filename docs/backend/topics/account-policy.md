@@ -10,8 +10,8 @@
 - `docs/privacy-policy-ko.md`
 
 ## 구현 분담
-- 클라이언트(PC/모바일): 안내/확인 UX, 취소 요청
-- 서버(Functions): Cloud Tasks 기반 유예 만료 삭제/정리 작업
+- 클라이언트(PC/모바일): 안내/확인 UX, 서버 API 호출
+- 서버(Functions): 탈퇴 요청/취소 정책 쓰기 + Cloud Tasks 기반 유예 만료 삭제/정리 작업
 
 ## 데이터 기준(SoT)
 - 탈퇴/재가입 제한 정책의 기준 데이터는 Firestore(`users/{uid}`, `withdrawnUsers/{uid}`)로 단일화한다.

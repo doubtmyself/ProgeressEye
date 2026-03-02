@@ -134,8 +134,6 @@ dependencies {
     // Image loading (Coil 3)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    // Splash Screen
-    implementation(libs.core.splashscreen)
     implementation(libs.play.services.ads)
     // Pin WorkManager runtime (transitive from Ads/Messaging) to avoid old Room DB init issues
     implementation(libs.androidx.work.runtime.ktx)
@@ -162,12 +160,11 @@ play {
     // App Bundle(.aab) 사용
     defaultToAppBundles.set(true)
 
-    // 배포 트랙: internal (내부테스트)
+    // 배포 트랙: internal (비공개 테스트)
     track.set("internal")
 
-    // 앱이 draft 상태일 때는 release도 DRAFT만 허용된다.
-    // 첫 심사/게시 완료 후에만 COMPLETED 등으로 전환 가능.
-    releaseStatus.set(ReleaseStatus.DRAFT)
+    // publishBundle 실행 시 즉시 배포
+    releaseStatus.set(ReleaseStatus.COMPLETED)
 
     // 100% 배포
     userFraction.set(1.0)

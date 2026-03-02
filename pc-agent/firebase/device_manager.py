@@ -29,6 +29,35 @@ class DeviceManager:
             return ""
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _withdrawal_api_url(project_id: str, action: str) -> str:
+        return f"https://us-central1-{project_id}.cloudfunctions.net/{action}"
+
+    def _call_withdrawal_api(
+        self,
+        action: str,
+        project_id: str,
+        email: str = "",
+    ) -> None:
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            raise RuntimeError("id_token unavailable")
+
+        url = self._withdrawal_api_url(project_id, action)
+        resp = _requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"email": email.strip().lower()},
+            timeout=10,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"{action} failed: {resp.status_code} {resp.text[:200]}")
+
     def register(self, device_name: str = "") -> None:
         """기기를 등록하고 online 상태를 기록한다."""
         now = int(time.time() * 1000)
@@ -281,102 +310,21 @@ class DeviceManager:
         즉시 삭제하지 않고 탈퇴 유예기간(grace_days) 후 데이터 삭제 대상이 되며,
         rejoin_days 동안 재가입 제한을 적용한다.
         """
-        import requests as _requests
+        _ = grace_days
+        _ = rejoin_days
+        self._call_withdrawal_api(
+            action="requestWithdrawal",
+            project_id=project_id,
+            email=email,
+        )
 
-        token = self._db.get_id_token()
-        if not token:
-            raise RuntimeError("id_token unavailable")
-
-        now = int(time.time() * 1000)
-        delete_at = now + grace_days * 24 * 60 * 60 * 1000
-        rejoin_allowed_at = now + rejoin_days * 24 * 60 * 60 * 1000
-        email_lower = email.strip().lower()
-        email_key = self._email_key(email_lower)
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
+    def send_force_logout_command(self) -> None:
+        """모든 연결 기기에 강제 로그아웃 명령을 브로드캐스트한다."""
+        payload = {
+            "ts": int(time.time()),
+            "cmdId": str(uuid.uuid4()),
         }
-
-        user_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/users/{self._uid}"
-        )
-        user_body = {
-            "fields": {
-                "withdrawalStatus": {"stringValue": "pending"},
-                "deleteAt": {"integerValue": str(delete_at)},
-                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-            }
-        }
-        user_mask = ["withdrawalStatus", "deleteAt", "rejoinAllowedAt"]
-        if email_lower:
-            user_body["fields"]["emailLower"] = {"stringValue": email_lower}
-            user_mask.append("emailLower")
-        if email_key:
-            user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
-            user_mask.append("withdrawalEmailKey")
-        resp_user = _requests.patch(
-            user_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": user_mask},
-            json=user_body,
-            timeout=5,
-        )
-        if resp_user.status_code not in (200, 201):
-            raise RuntimeError(
-                f"users doc update failed: {resp_user.status_code} {resp_user.text[:200]}"
-            )
-
-        tomb_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
-        )
-        tomb_body = {
-            "fields": {
-                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-            }
-        }
-        tomb_mask = ["rejoinAllowedAt"]
-        if email_key:
-            tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
-            tomb_mask.append("emailKey")
-        resp_tomb = _requests.patch(
-            tomb_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": tomb_mask},
-            json=tomb_body,
-            timeout=5,
-        )
-        if resp_tomb.status_code not in (200, 201):
-            raise RuntimeError(
-                f"withdrawnUsers doc update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
-            )
-
-        if email_key:
-            email_tomb_url = (
-                f"https://firestore.googleapis.com/v1/projects/{project_id}"
-                f"/databases/progress/documents/withdrawnEmails/{email_key}"
-            )
-            email_tomb_body = {
-                "fields": {
-                    "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-                    "uid": {"stringValue": self._uid},
-                }
-            }
-            email_tomb_mask = ["rejoinAllowedAt", "uid"]
-            resp_email_tomb = _requests.patch(
-                email_tomb_url,
-                headers=headers,
-                params={"updateMask.fieldPaths": email_tomb_mask},
-                json=email_tomb_body,
-                timeout=5,
-            )
-            if resp_email_tomb.status_code not in (200, 201):
-                raise RuntimeError(
-                    "withdrawnEmails doc update failed: "
-                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
-                )
+        self._db.put(f"users/{self._uid}/commands/forceLogout", payload)
 
     def get_withdrawal_state(
         self,
@@ -452,77 +400,11 @@ class DeviceManager:
         email: str = "",
     ) -> None:
         """탈퇴 유예(pending) 상태를 취소한다."""
-        import requests as _requests
-
-        token = self._db.get_id_token()
-        if not token:
-            raise RuntimeError("id_token unavailable")
-
-        now = int(time.time() * 1000)
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        user_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/users/{self._uid}"
+        self._call_withdrawal_api(
+            action="cancelWithdrawal",
+            project_id=project_id,
+            email=email,
         )
-        # restore active state and clear timers
-        body = {
-            "fields": {
-                "withdrawalStatus": {"stringValue": "active"},
-                "deleteAt": {"nullValue": None},
-                "rejoinAllowedAt": {"nullValue": None},
-            }
-        }
-        mask = [
-            "withdrawalStatus",
-            "deleteAt",
-            "rejoinAllowedAt",
-        ]
-        resp_user = _requests.patch(
-            user_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": mask},
-            json=body,
-            timeout=5,
-        )
-        if resp_user.status_code not in (200, 201):
-            raise RuntimeError(
-                f"users doc cancel failed: {resp_user.status_code} {resp_user.text[:200]}"
-            )
-
-        tomb_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
-        )
-        resp_tomb = _requests.delete(
-            tomb_url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=5,
-        )
-        if resp_tomb.status_code not in (200, 204, 404):
-            raise RuntimeError(
-                f"withdrawnUsers delete failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
-            )
-
-        email_key = self._email_key(email)
-        if email_key:
-            email_tomb_url = (
-                f"https://firestore.googleapis.com/v1/projects/{project_id}"
-                f"/databases/progress/documents/withdrawnEmails/{email_key}"
-            )
-            resp_email_tomb = _requests.delete(
-                email_tomb_url,
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5,
-            )
-            if resp_email_tomb.status_code not in (200, 204, 404):
-                raise RuntimeError(
-                    "withdrawnEmails delete failed: "
-                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
-                )
 
     def debug_mark_withdrawal_expired(
         self,

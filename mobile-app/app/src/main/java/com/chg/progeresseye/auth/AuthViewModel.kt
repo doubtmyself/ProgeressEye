@@ -14,9 +14,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.security.MessageDigest
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 // ═════════════════════════════════════════════════════════
 // Auth UI state
@@ -39,6 +45,10 @@ data class AuthUiState(
 class AuthViewModel(
     private val repository: GoogleAuthRepository = GoogleAuthRepository(),
 ) : ViewModel() {
+    private companion object {
+        private const val FUNCTIONS_BASE_URL = "https://us-central1-progresseye-49244.cloudfunctions.net"
+    }
+
     private val db = FirebaseDatabase.getInstance()
     private val firestore = FirebaseFirestore.getInstance("progress")
     private var pendingUser: FirebaseUser? = null
@@ -59,7 +69,15 @@ class AuthViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            when (val result = repository.signInWithGoogle(context, webClientId)) {
+            val signInResult = try {
+                withTimeout(20000L) {
+                    repository.signInWithGoogle(context, webClientId)
+                }
+            } catch (_: TimeoutCancellationException) {
+                GoogleSignInResult.Error(context.getString(R.string.auth_sign_in_timeout))
+            }
+
+            when (val result = signInResult) {
                 is GoogleSignInResult.Success -> {
                     val uid = result.user.uid
                     val now = System.currentTimeMillis()
@@ -171,7 +189,7 @@ class AuthViewModel(
 
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                cancelWithdrawal(uid)
+                cancelWithdrawal(user.email)
                 pendingWithdrawalUser = null
                 pendingWithdrawalUid = null
                 proceedSessionCheck(context, user, uid)
@@ -212,60 +230,10 @@ class AuthViewModel(
     fun deleteAccount(context: Context) {
         viewModelScope.launch {
             val user = repository.getCurrentUser() ?: return@launch
-            val uid = user.uid
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // 1. Send forceLogout command to all connected PCs
-                db.reference.child("users").child(uid).child("commands")
-                    .child("forceLogout")
-                    .setValue(mapOf("ts" to (System.currentTimeMillis() / 1000), "cmdId" to java.util.UUID.randomUUID().toString()))
-                    .await()
-
-                // 2. Wait for PC to receive the command via SSE
-                delay(2000)
-
-                val now = System.currentTimeMillis()
-                val deleteAt = now + 7L * 24 * 60 * 60 * 1000
-                val rejoinAllowedAt = now + 30L * 24 * 60 * 60 * 1000
-
-                // 3. Mark withdrawal policy in Firestore users/{uid}
-                firestore.collection("users").document(uid)
-                    .set(
-                        mapOf(
-                            "withdrawalStatus" to "pending",
-                            "deleteAt" to deleteAt,
-                            "rejoinAllowedAt" to rejoinAllowedAt,
-                            "emailLower" to (user.email?.trim()?.lowercase() ?: ""),
-                            "withdrawalEmailKey" to emailKey(user.email),
-                        ),
-                        SetOptions.merge(),
-                    )
-                    .await()
-
-                // 4. Keep tombstone for rejoin restriction (even after data purge)
-                firestore.collection("withdrawnUsers").document(uid)
-                    .set(
-                        mapOf(
-                            "rejoinAllowedAt" to rejoinAllowedAt,
-                            "emailKey" to emailKey(user.email),
-                        ),
-                        SetOptions.merge(),
-                    )
-                    .await()
-
-                val emailKey = emailKey(user.email)
-                if (emailKey.isNotBlank()) {
-                    firestore.collection("withdrawnEmails").document(emailKey)
-                        .set(
-                            mapOf(
-                                "rejoinAllowedAt" to rejoinAllowedAt,
-                                "uid" to uid,
-                            ),
-                            SetOptions.merge(),
-                        )
-                        .await()
-                }
+                callWithdrawalApi(action = "requestWithdrawal", email = user.email)
 
             } catch (e: Exception) {
                 // withdrawal mark failed — still sign out locally
@@ -332,22 +300,42 @@ class AuthViewModel(
         )
     }
 
-    private suspend fun cancelWithdrawal(uid: String) {
-        val userDoc = firestore.collection("users").document(uid).get().await()
-        val emailKey = userDoc.getString("withdrawalEmailKey") ?: emailKey(userDoc.getString("email"))
-        firestore.collection("users").document(uid)
-            .set(
-                mapOf(
-                    "withdrawalStatus" to "active",
-                    "deleteAt" to null,
-                    "rejoinAllowedAt" to null,
-                ),
-                SetOptions.merge(),
-            )
-            .await()
-        firestore.collection("withdrawnUsers").document(uid).delete().await()
-        if (!emailKey.isNullOrBlank()) {
-            firestore.collection("withdrawnEmails").document(emailKey).delete().await()
+    private suspend fun cancelWithdrawal(email: String?) {
+        callWithdrawalApi(action = "cancelWithdrawal", email = email)
+    }
+
+    private suspend fun callWithdrawalApi(action: String, email: String?) {
+        val user = repository.getCurrentUser() ?: throw IllegalStateException("Not signed in")
+        val idToken = user.getIdToken(true).await().token ?: throw IllegalStateException("idToken unavailable")
+        val url = URL("$FUNCTIONS_BASE_URL/$action")
+
+        withContext(Dispatchers.IO) {
+            val conn = (url.openConnection() as HttpURLConnection)
+            try {
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.doOutput = true
+                conn.setRequestProperty("Authorization", "Bearer $idToken")
+                conn.setRequestProperty("Content-Type", "application/json")
+
+                val payload = JSONObject()
+                    .put("email", email?.trim()?.lowercase().orEmpty())
+                    .toString()
+
+                conn.outputStream.use { output ->
+                    output.write(payload.toByteArray(Charsets.UTF_8))
+                }
+
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    val errorText = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                        ?: "HTTP $code"
+                    throw IllegalStateException("$action failed: $code $errorText")
+                }
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 
@@ -366,7 +354,7 @@ class AuthViewModel(
             .child("mobileSession")
 
         try {
-            val snapshot = sessionRef.get().await()
+            val snapshot = withTimeout(10000L) { sessionRef.get().await() }
             val existingDeviceId = snapshot.child("deviceId").getValue(String::class.java)
             val existingDeviceName = snapshot.child("deviceName").getValue(String::class.java)
 

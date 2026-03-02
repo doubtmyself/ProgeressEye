@@ -2,6 +2,11 @@ package com.chg.progeresseye.ui.screen.login
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -36,10 +41,15 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -55,6 +65,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -76,6 +87,8 @@ import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.ProgressTrack
 import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 import com.chg.progeresseye.ui.theme.SurfaceDark
+import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 // ── Local palette (not in theme) ──
 private val Slate400 = Color(0xFF94A3B8)
@@ -86,6 +99,98 @@ private val GoogleBlue = Color(0xFF4285F4)
 private val GoogleRed = Color(0xFFEA4335)
 private val GoogleYellow = Color(0xFFFBBC05)
 private val GoogleGreen = Color(0xFF34A853)
+
+private data class TaskTemplate(
+    val labelRes: Int,
+    val icon: ImageVector,
+    val iconTint: Color,
+    val iconBackground: Color,
+    val barColor: Color,
+)
+
+private data class AnimatedTaskRow(
+    val id: Int,
+    val template: TaskTemplate,
+    val rowAlpha: Float,
+    val targetFraction: Float,
+    val exiting: Boolean,
+    val progressStep: Float,
+)
+
+private fun randomProgressStep(): Float = Random.nextFloat() * (0.024f - 0.010f) + 0.010f
+
+private val TaskTemplates = listOf(
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_01,
+        icon = Icons.Outlined.ViewInAr,
+        iconTint = Primary,
+        iconBackground = Primary.copy(alpha = 0.20f),
+        barColor = Primary,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_02,
+        icon = Icons.Outlined.Memory,
+        iconTint = Indigo400,
+        iconBackground = Indigo500.copy(alpha = 0.20f),
+        barColor = Indigo500,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_03,
+        icon = Icons.Outlined.RemoveRedEye,
+        iconTint = Primary,
+        iconBackground = Primary.copy(alpha = 0.18f),
+        barColor = Primary,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_04,
+        icon = Icons.Outlined.ViewInAr,
+        iconTint = Indigo400,
+        iconBackground = Indigo500.copy(alpha = 0.20f),
+        barColor = Indigo500,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_05,
+        icon = Icons.Outlined.Memory,
+        iconTint = Primary,
+        iconBackground = Primary.copy(alpha = 0.16f),
+        barColor = Primary,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_06,
+        icon = Icons.Outlined.RemoveRedEye,
+        iconTint = Indigo400,
+        iconBackground = Indigo500.copy(alpha = 0.18f),
+        barColor = Indigo500,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_07,
+        icon = Icons.Outlined.ViewInAr,
+        iconTint = Primary,
+        iconBackground = Primary.copy(alpha = 0.20f),
+        barColor = Primary,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_08,
+        icon = Icons.Outlined.Memory,
+        iconTint = Indigo400,
+        iconBackground = Indigo500.copy(alpha = 0.20f),
+        barColor = Indigo500,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_09,
+        icon = Icons.Outlined.RemoveRedEye,
+        iconTint = Primary,
+        iconBackground = Primary.copy(alpha = 0.18f),
+        barColor = Primary,
+    ),
+    TaskTemplate(
+        labelRes = R.string.login_task_sample_10,
+        icon = Icons.Outlined.ViewInAr,
+        iconTint = Indigo400,
+        iconBackground = Indigo500.copy(alpha = 0.20f),
+        barColor = Indigo500,
+    ),
+)
 
 // ═════════════════════════════════════════════════════════
 // LoginScreen
@@ -319,6 +424,90 @@ private fun TextSection() {
 
 @Composable
 private fun PreviewCard() {
+    val rows = remember {
+        mutableStateListOf(
+            AnimatedTaskRow(
+                id = 1,
+                template = TaskTemplates[0],
+                rowAlpha = 1f,
+                targetFraction = 0.10f,
+                exiting = false,
+                progressStep = randomProgressStep(),
+            ),
+            AnimatedTaskRow(
+                id = 2,
+                template = TaskTemplates[1],
+                rowAlpha = 0.6f,
+                targetFraction = 0.06f,
+                exiting = false,
+                progressStep = randomProgressStep(),
+            ),
+        )
+    }
+    var nextId by remember { mutableIntStateOf(3) }
+    var nextTemplateIndex by remember { mutableIntStateOf(2) }
+    val removalDeadlines = remember { mutableStateMapOf<Int, Long>() }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            while (rows.size < 2) {
+                rows += AnimatedTaskRow(
+                    id = nextId,
+                    template = TaskTemplates[nextTemplateIndex % TaskTemplates.size],
+                    rowAlpha = if (rows.isEmpty()) 1f else 0.6f,
+                    targetFraction = 0f,
+                    exiting = false,
+                    progressStep = randomProgressStep(),
+                )
+                nextId += 1
+                nextTemplateIndex += 1
+            }
+
+            val now = System.currentTimeMillis()
+            val dueIds = removalDeadlines
+                .filterValues { deadline -> deadline <= now }
+                .keys
+                .toList()
+            dueIds.forEach { rowId ->
+                removalDeadlines.remove(rowId)
+                rows.removeAll { it.id == rowId }
+                rows += AnimatedTaskRow(
+                    id = nextId,
+                    template = TaskTemplates[nextTemplateIndex % TaskTemplates.size],
+                    rowAlpha = 0.6f,
+                    targetFraction = 0f,
+                    exiting = false,
+                    progressStep = randomProgressStep(),
+                )
+                nextId += 1
+                nextTemplateIndex += 1
+            }
+
+            for (index in rows.indices) {
+                val current = rows[index]
+                if (current.exiting) {
+                    continue
+                }
+                val nextFraction = (current.targetFraction + current.progressStep).coerceAtMost(1f)
+                if (nextFraction >= 1f) {
+                    rows[index] = current.copy(targetFraction = 1f, exiting = true)
+                    removalDeadlines[current.id] = now + 520L
+                } else {
+                    rows[index] = current.copy(targetFraction = nextFraction)
+                }
+            }
+
+            if (rows.isNotEmpty()) {
+                rows[0] = rows[0].copy(rowAlpha = 1f)
+            }
+            if (rows.size >= 2) {
+                rows[1] = rows[1].copy(rowAlpha = 0.6f)
+            }
+
+            delay(140)
+        }
+    }
+
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = SurfaceDark.copy(alpha = 0.50f),
@@ -329,30 +518,34 @@ private fun PreviewCard() {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Row 1 — Rendering Scene 04 (78%)
-            TaskProgressRow(
-                iconContent = {
-                    TaskIcon(Icons.Outlined.ViewInAr, Primary, Primary.copy(alpha = 0.20f))
-                },
-                label = "Rendering Scene 04",
-                percent = "78%",
-                percentColor = Primary,
-                fraction = 0.78f,
-                barColor = Primary,
-                rowAlpha = 1f,
-            )
-            // Row 2 — Training Epoch 12 (42%, dimmed)
-            TaskProgressRow(
-                iconContent = {
-                    TaskIcon(Icons.Outlined.Memory, Indigo400, Indigo500.copy(alpha = 0.20f))
-                },
-                label = "Training Epoch 12",
-                percent = "42%",
-                percentColor = Indigo400,
-                fraction = 0.42f,
-                barColor = Indigo500,
-                rowAlpha = 0.6f,
-            )
+            rows.forEach { row ->
+                key(row.id) {
+                    AnimatedVisibility(
+                        visible = !row.exiting,
+                        enter = fadeIn(animationSpec = tween(260)) +
+                            slideInVertically(
+                                initialOffsetY = { it / 3 },
+                                animationSpec = tween(260),
+                            ),
+                        exit = fadeOut(animationSpec = tween(420)) +
+                            slideOutVertically(
+                                targetOffsetY = { it / 2 },
+                                animationSpec = tween(420),
+                            ),
+                    ) {
+                        TaskProgressRow(
+                            icon = row.template.icon,
+                            iconTint = row.template.iconTint,
+                            iconBackground = row.template.iconBackground,
+                            label = stringResource(row.template.labelRes),
+                            percentColor = row.template.barColor,
+                            fraction = row.targetFraction,
+                            barColor = row.template.barColor,
+                            rowAlpha = row.rowAlpha,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -381,14 +574,22 @@ private fun TaskIcon(
 
 @Composable
 private fun TaskProgressRow(
-    iconContent: @Composable () -> Unit,
+    icon: ImageVector,
+    iconTint: Color,
+    iconBackground: Color,
     label: String,
-    percent: String,
     percentColor: Color,
     fraction: Float,
     barColor: Color,
     rowAlpha: Float,
 ) {
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 420),
+        label = "task_row_progress",
+    )
+    val percent = "${(animatedFraction * 100f).toInt()}%"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -396,7 +597,7 @@ private fun TaskProgressRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        iconContent()
+        TaskIcon(icon = icon, tint = iconTint, background = iconBackground)
 
         Column(
             modifier = Modifier.weight(1f),
@@ -418,7 +619,7 @@ private fun TaskProgressRow(
                 )
             }
             MiniProgressBar(
-                fraction = fraction,
+                fraction = animatedFraction,
                 fillColor = barColor,
                 modifier = Modifier
                     .fillMaxWidth()

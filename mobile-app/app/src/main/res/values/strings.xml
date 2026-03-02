@@ -98,10 +98,21 @@ Grace end date: %1$s</string>
     <string name="login_subtitle">Monitor your progress anywhere, safely.</string>
     <string name="login_signing_in">Signing in…</string>
     <string name="login_sign_in_google">Sign in with Google</string>
+    <string name="login_task_sample_01">Rendering 4K timeline preview</string>
+    <string name="login_task_sample_02">Exporting motion graphics sequence</string>
+    <string name="login_task_sample_03">Simulating cloth and particle cache</string>
+    <string name="login_task_sample_04">Baking global illumination lightmaps</string>
+    <string name="login_task_sample_05">Training diffusion model checkpoint</string>
+    <string name="login_task_sample_06">Running multi-GPU hyperparameter search</string>
+    <string name="login_task_sample_07">Ingesting large parquet batch</string>
+    <string name="login_task_sample_08">Executing long-running SQL analytics query</string>
+    <string name="login_task_sample_09">Uploading raw footage archive</string>
+    <string name="login_task_sample_10">Downloading model dataset snapshot</string>
     <string name="login_terms_prefix">I agree to the </string>
     <string name="login_terms_link">Terms of Service</string>
     <string name="login_terms_suffix"></string>
     <string name="auth_session_check_failed">Session check failed</string>
+    <string name="auth_sign_in_timeout">Sign-in timed out. Please try again.</string>
 
     <!-- ── Mobile Session ── -->
     <string name="session_takeover_title">Another mobile is already logged in</string>

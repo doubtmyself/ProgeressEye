@@ -12,6 +12,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { getFunctions } = require("firebase-admin/functions");
 const { getMessaging } = require("firebase-admin/messaging");
 const crypto = require("crypto");
+const { onRequest } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onValueCreated } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -41,6 +42,35 @@ function computeEmailKey(email) {
     return "";
   }
   return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
+}
+
+async function verifyBearerUser(req) {
+  const header = String(req.get("authorization") || "");
+  if (!header.startsWith("Bearer ")) {
+    return null;
+  }
+  const idToken = header.slice("Bearer ".length).trim();
+  if (!idToken) {
+    return null;
+  }
+  return getAuth().verifyIdToken(idToken);
+}
+
+function resolveEmail(decodedToken, requestBody) {
+  const bodyEmail = String((requestBody && requestBody.email) || "")
+    .trim()
+    .toLowerCase();
+  if (bodyEmail) {
+    return bodyEmail;
+  }
+  return String(decodedToken.email || "").trim().toLowerCase();
+}
+
+function createForceLogoutPayload() {
+  return {
+    ts: Math.floor(Date.now() / 1000),
+    cmdId: crypto.randomUUID(),
+  };
 }
 
 async function enqueueQueueTask(queueName, payload, targetTimeMs, taskId) {
@@ -195,6 +225,157 @@ exports.onAlertCreated = onValueCreated(
     }
 
     return null;
+  }
+);
+
+/**
+ * 탈퇴 요청 정책 쓰기를 서버에서 일원화한다.
+ * - users/{uid} 정책 필드 기록
+ * - withdrawnUsers/{uid}, withdrawnEmails/{emailKey} tombstone 기록
+ * - RTDB forceLogout 명령 발행
+ */
+exports.requestWithdrawal = onRequest(
+  {
+    region: CLEANUP_REGION,
+    cors: true,
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, error: "method_not_allowed" });
+      return;
+    }
+
+    try {
+      const decoded = await verifyBearerUser(req);
+      if (!decoded || !decoded.uid) {
+        res.status(401).json({ ok: false, error: "unauthorized" });
+        return;
+      }
+
+      const uid = decoded.uid;
+      const now = Date.now();
+      const deleteAt = now + 7 * 24 * 60 * 60 * 1000;
+      const rejoinAllowedAt = now + 30 * 24 * 60 * 60 * 1000;
+      const emailLower = resolveEmail(decoded, req.body || {});
+      const emailKey = computeEmailKey(emailLower);
+
+      const db = getFirestore(FIRESTORE_DB_ID);
+      const rtdb = getDatabase();
+
+      await db
+        .collection("users")
+        .doc(uid)
+        .set(
+          {
+            withdrawalStatus: "pending",
+            deleteAt,
+            rejoinAllowedAt,
+            ...(emailLower ? { emailLower } : {}),
+            ...(emailKey ? { withdrawalEmailKey: emailKey } : {}),
+          },
+          { merge: true }
+        );
+
+      await db
+        .collection("withdrawnUsers")
+        .doc(uid)
+        .set(
+          {
+            rejoinAllowedAt,
+            ...(emailKey ? { emailKey } : {}),
+          },
+          { merge: true }
+        );
+
+      if (emailKey) {
+        await db
+          .collection("withdrawnEmails")
+          .doc(emailKey)
+          .set(
+            {
+              rejoinAllowedAt,
+              uid,
+            },
+            { merge: true }
+          );
+      }
+
+      await rtdb.ref(`users/${uid}/commands/forceLogout`).set(createForceLogoutPayload());
+
+      res.status(200).json({ ok: true, deleteAt, rejoinAllowedAt });
+    } catch (err) {
+      logger.error("requestWithdrawal failed", { error: String(err) });
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  }
+);
+
+/**
+ * 탈퇴 취소 정책 쓰기를 서버에서 일원화한다.
+ * - users/{uid} active 복원
+ * - withdrawnUsers/withdrawnEmails tombstone 삭제
+ */
+exports.cancelWithdrawal = onRequest(
+  {
+    region: CLEANUP_REGION,
+    cors: true,
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, error: "method_not_allowed" });
+      return;
+    }
+
+    try {
+      const decoded = await verifyBearerUser(req);
+      if (!decoded || !decoded.uid) {
+        res.status(401).json({ ok: false, error: "unauthorized" });
+        return;
+      }
+
+      const uid = decoded.uid;
+      const db = getFirestore(FIRESTORE_DB_ID);
+      const rtdb = getDatabase();
+      const userRef = db.collection("users").doc(uid);
+      const userSnap = await userRef.get();
+      const userData = userSnap.exists ? userSnap.data() || {} : {};
+      const emailLower = String(
+        userData.emailLower || resolveEmail(decoded, req.body || {}) || ""
+      )
+        .trim()
+        .toLowerCase();
+      const emailKey = String(userData.withdrawalEmailKey || computeEmailKey(emailLower));
+
+      await userRef.set(
+        {
+          withdrawalStatus: "active",
+          deleteAt: null,
+          rejoinAllowedAt: null,
+          withdrawalEmailKey: null,
+        },
+        { merge: true }
+      );
+
+      await db.collection("withdrawnUsers").doc(uid).delete();
+
+      if (emailKey) {
+        await db.collection("withdrawnEmails").doc(emailKey).delete();
+      }
+
+      try {
+        await rtdb.ref(`users/${uid}/commands/forceLogout`).remove();
+      } catch (err) {
+        logger.warn("cancelWithdrawal forceLogout cleanup failed", {
+          uid,
+          error: String(err),
+        });
+      }
+
+      res.status(200).json({ ok: true });
+    } catch (err) {
+      logger.error("cancelWithdrawal failed", { error: String(err) });
+      res.status(500).json({ ok: false, error: "internal_error" });
+    }
   }
 );
 

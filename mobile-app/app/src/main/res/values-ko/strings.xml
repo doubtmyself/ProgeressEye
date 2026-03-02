@@ -90,10 +90,21 @@
     <string name="login_subtitle">어디서나 안전하게 진행 상황을 모니터링하세요.</string>
     <string name="login_signing_in">로그인 중…</string>
     <string name="login_sign_in_google">Google로 로그인</string>
+    <string name="login_task_sample_01">4K 타임라인 프리뷰 렌더링 중</string>
+    <string name="login_task_sample_02">모션 그래픽 시퀀스 내보내는 중</string>
+    <string name="login_task_sample_03">천/파티클 캐시 시뮬레이션 중</string>
+    <string name="login_task_sample_04">전역 조명 라이트맵 베이킹 중</string>
+    <string name="login_task_sample_05">디퓨전 모델 체크포인트 학습 중</string>
+    <string name="login_task_sample_06">멀티 GPU 하이퍼파라미터 탐색 중</string>
+    <string name="login_task_sample_07">대용량 파케이 배치 적재 중</string>
+    <string name="login_task_sample_08">장시간 SQL 분석 쿼리 실행 중</string>
+    <string name="login_task_sample_09">원본 영상 아카이브 업로드 중</string>
+    <string name="login_task_sample_10">모델 데이터셋 스냅샷 다운로드 중</string>
     <string name="login_terms_prefix"></string>
     <string name="login_terms_link">이용약관</string>
     <string name="login_terms_suffix">에 동의합니다</string>
     <string name="auth_session_check_failed">세션 확인에 실패했습니다.</string>
+    <string name="auth_sign_in_timeout">로그인 시간이 초과되었습니다. 다시 시도해주세요.</string>
 
     <string name="dashboard_status_standby">대기</string>
     <string name="dashboard_task_idle">대기 중</string>

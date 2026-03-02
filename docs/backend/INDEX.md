@@ -17,6 +17,8 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
 - 배포 방법: `docs/backend/topics/deploy.md`
 - 현재 핵심 함수
   - `onAlertCreated`: RTDB alerts 트리거 -> FCM 발송
+  - `requestWithdrawal`: 탈퇴 정책 쓰기 HTTPS API
+  - `cancelWithdrawal`: 탈퇴 취소 정책 쓰기 HTTPS API
   - `onUserWithdrawalChanged`: users 문서 변화 감지 후 탈퇴 정리 Task 예약
   - `onWithdrawnUserChanged`: withdrawnUsers 문서 변화 감지 후 tombstone 정리 Task 예약
   - `processWithdrawalCleanup`: Cloud Tasks로 유예 만료 사용자 정리

@@ -19,6 +19,7 @@ PC 앱의 로그인, 자동 로그인, 토큰 갱신, 로그아웃/탈퇴 연관
 - 로그아웃: `_do_logout()`
 - 탈퇴 유예 로그인 안내 다이얼로그: `_handle_withdrawal_gate()` (전면 포커스 표시)
 - 탈퇴 유예 안내에서 "계속 탈퇴 유지" 선택 시 로그인 에러 재시도 창 없이 앱을 조용히 종료
+- 탈퇴 요청/취소 정책 쓰기는 Functions HTTPS API(`requestWithdrawal`, `cancelWithdrawal`)로 일원화
 - 디버그(`-d`) 전용 설정 버튼으로 "탈퇴+7일 시나리오"를 강제 적용: `_on_test_withdrawal_expired()`
 - 디버그(`-d`) 전용 설정 버튼으로 "탈퇴+30일 시나리오"를 강제 적용: `_on_test_rejoin_expired()`
 - 재가입 제한 상태(`rejoinAllowedAt > now`)는 로그인 시 날짜 포함 안내 다이얼로그를 표시하고 로그인 차단
