@@ -41,6 +41,7 @@ class SettingsOverlay(QWidget):
     logout_requested = pyqtSignal()
     delete_account_requested = pyqtSignal()
     withdrawal_expired_test_requested = pyqtSignal()
+    rejoin_expired_test_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
     def __init__(self, parent: QWidget, show_debug_buttons: bool = False) -> None:
@@ -283,6 +284,14 @@ class SettingsOverlay(QWidget):
         )
         self._btn_test_withdrawal_expired.setVisible(self._show_debug_buttons)
         account_row.addWidget(self._btn_test_withdrawal_expired)
+        self._btn_test_rejoin_expired = QPushButton(t("btn_test_rejoin_expired"))
+        self._btn_test_rejoin_expired.setStyleSheet(btn_style_withdraw)
+        self._btn_test_rejoin_expired.setToolTip(t("tooltip_test_rejoin_expired"))
+        self._btn_test_rejoin_expired.clicked.connect(
+            self._on_test_rejoin_expired_clicked
+        )
+        self._btn_test_rejoin_expired.setVisible(self._show_debug_buttons)
+        account_row.addWidget(self._btn_test_rejoin_expired)
         acc.addLayout(account_row)
         layout.addWidget(self._account_section)
 
@@ -425,6 +434,7 @@ class SettingsOverlay(QWidget):
             self._btn_logout.hide()  # welcome에서 로그아웃 숨김
             self._btn_delete_account.hide()  # welcome에서 회원탈퇴 숨김
             self._btn_test_withdrawal_expired.hide()
+            self._btn_test_rejoin_expired.hide()
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -441,6 +451,7 @@ class SettingsOverlay(QWidget):
             self._btn_logout.show()
             self._btn_delete_account.show()
             self._btn_test_withdrawal_expired.setVisible(self._show_debug_buttons)
+            self._btn_test_rejoin_expired.setVisible(self._show_debug_buttons)
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -459,6 +470,8 @@ class SettingsOverlay(QWidget):
         self._btn_test_withdrawal_expired.setToolTip(
             t("tooltip_test_withdrawal_expired")
         )
+        self._btn_test_rejoin_expired.setText(t("btn_test_rejoin_expired"))
+        self._btn_test_rejoin_expired.setToolTip(t("tooltip_test_rejoin_expired"))
         self._interval_label.setText(t("settings_interval"))
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_hint.setText(t("settings_interval_hint"))
@@ -511,6 +524,10 @@ class SettingsOverlay(QWidget):
 
     def _on_test_withdrawal_expired_clicked(self) -> None:
         self.withdrawal_expired_test_requested.emit()
+        self.hide()
+
+    def _on_test_rejoin_expired_clicked(self) -> None:
+        self.rejoin_expired_test_requested.emit()
         self.hide()
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802

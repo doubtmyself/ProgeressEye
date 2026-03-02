@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.util.UUID
+import java.security.MessageDigest
 
 // ═════════════════════════════════════════════════════════
 // Auth UI state
@@ -62,7 +63,7 @@ class AuthViewModel(
                 is GoogleSignInResult.Success -> {
                     val uid = result.user.uid
                     val now = System.currentTimeMillis()
-                    val withdrawalState = getWithdrawalState(uid)
+                    val withdrawalState = getWithdrawalState(uid, result.user.email)
                     val deleteAt = withdrawalState.deleteAt
                     val rejoinAllowedAt = withdrawalState.rejoinAllowedAt
                     if (withdrawalState.pending && deleteAt > now) {
@@ -190,12 +191,13 @@ class AuthViewModel(
     fun keepWithdrawalAndCancelLogin(context: Context) {
         viewModelScope.launch {
             val uid = pendingWithdrawalUid
+            val email = pendingWithdrawalUser?.email
             repository.signOut(context)
             MobileSessionManager.clearSession(context)
             pendingWithdrawalUser = null
             pendingWithdrawalUid = null
 
-            val blockUntil = if (uid.isNullOrBlank()) 0L else getWithdrawalState(uid).rejoinAllowedAt
+            val blockUntil = if (uid.isNullOrBlank()) 0L else getWithdrawalState(uid, email).rejoinAllowedAt
             val dateText = java.text.SimpleDateFormat(
                 "yyyy-MM-dd",
                 java.util.Locale.getDefault(),
@@ -232,10 +234,10 @@ class AuthViewModel(
                     .set(
                         mapOf(
                             "withdrawalStatus" to "pending",
-                            "withdrawalRequestedAt" to now,
                             "deleteAt" to deleteAt,
                             "rejoinAllowedAt" to rejoinAllowedAt,
-                            "updatedAt" to now,
+                            "emailLower" to (user.email?.trim()?.lowercase() ?: ""),
+                            "withdrawalEmailKey" to emailKey(user.email),
                         ),
                         SetOptions.merge(),
                     )
@@ -245,15 +247,25 @@ class AuthViewModel(
                 firestore.collection("withdrawnUsers").document(uid)
                     .set(
                         mapOf(
-                            "uid" to uid,
-                            "status" to "pending",
-                            "requestedAt" to now,
-                            "deleteAt" to deleteAt,
                             "rejoinAllowedAt" to rejoinAllowedAt,
+                            "emailKey" to emailKey(user.email),
                         ),
                         SetOptions.merge(),
                     )
                     .await()
+
+                val emailKey = emailKey(user.email)
+                if (emailKey.isNotBlank()) {
+                    firestore.collection("withdrawnEmails").document(emailKey)
+                        .set(
+                            mapOf(
+                                "rejoinAllowedAt" to rejoinAllowedAt,
+                                "uid" to uid,
+                            ),
+                            SetOptions.merge(),
+                        )
+                        .await()
+                }
 
             } catch (e: Exception) {
                 // withdrawal mark failed — still sign out locally
@@ -274,20 +286,12 @@ class AuthViewModel(
         val rejoinAllowedAt: Long,
     )
 
-    private suspend fun getWithdrawalState(uid: String): WithdrawalState {
+    private suspend fun getWithdrawalState(uid: String, email: String?): WithdrawalState {
         var pending = false
         var deleteAt = 0L
         var rejoinAllowedAt = 0L
         try {
             val tomb = firestore.collection("withdrawnUsers").document(uid).get().await()
-            val status = tomb.getString("status")
-            if (status == "pending") {
-                pending = true
-            }
-            val delete = tomb.getLong("deleteAt")
-            if (delete != null) {
-                deleteAt = maxOf(deleteAt, delete)
-            }
             val rejoin = tomb.getLong("rejoinAllowedAt")
             if (rejoin != null) {
                 rejoinAllowedAt = maxOf(rejoinAllowedAt, rejoin)
@@ -310,6 +314,17 @@ class AuthViewModel(
             }
         } catch (_: Exception) {
         }
+        val emailKey = emailKey(email)
+        if (emailKey.isNotBlank()) {
+            try {
+                val emailDoc = firestore.collection("withdrawnEmails").document(emailKey).get().await()
+                val rejoin = emailDoc.getLong("rejoinAllowedAt")
+                if (rejoin != null) {
+                    rejoinAllowedAt = maxOf(rejoinAllowedAt, rejoin)
+                }
+            } catch (_: Exception) {
+            }
+        }
         return WithdrawalState(
             pending = pending,
             deleteAt = deleteAt,
@@ -318,20 +333,29 @@ class AuthViewModel(
     }
 
     private suspend fun cancelWithdrawal(uid: String) {
-        val now = System.currentTimeMillis()
+        val userDoc = firestore.collection("users").document(uid).get().await()
+        val emailKey = userDoc.getString("withdrawalEmailKey") ?: emailKey(userDoc.getString("email"))
         firestore.collection("users").document(uid)
             .set(
                 mapOf(
                     "withdrawalStatus" to "active",
-                    "withdrawalRequestedAt" to null,
                     "deleteAt" to null,
                     "rejoinAllowedAt" to null,
-                    "updatedAt" to now,
                 ),
                 SetOptions.merge(),
             )
             .await()
         firestore.collection("withdrawnUsers").document(uid).delete().await()
+        if (!emailKey.isNullOrBlank()) {
+            firestore.collection("withdrawnEmails").document(emailKey).delete().await()
+        }
+    }
+
+    private fun emailKey(email: String?): String {
+        val normalized = email?.trim()?.lowercase().orEmpty()
+        if (normalized.isBlank()) return ""
+        val digest = MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {

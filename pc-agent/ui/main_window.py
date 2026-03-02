@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from utils.logger import log
 from utils.i18n import t
+from ui.login_start_dialog import LoginStartDialog
 from ui.settings_dialog import SettingsOverlay
 
 # ── Color Palette ──────────────────────────────────────────────
@@ -409,10 +410,13 @@ class MainWindow(QMainWindow):
     settings_logout_requested = pyqtSignal()
     settings_delete_account_requested = pyqtSignal()
     settings_withdrawal_expired_test_requested = pyqtSignal()
+    settings_rejoin_expired_test_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
+    login_start_requested = pyqtSignal()
+    login_cancel_requested = pyqtSignal()
     close_requested = pyqtSignal()  # 창 닫기 시 cleanup 요청
 
     def __init__(
@@ -439,10 +443,16 @@ class MainWindow(QMainWindow):
         _icon_path = _icon_base / "resources" / "app-icon.png"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))
+        self._app_min_size = (600, 500)
+        self._app_default_size = (630, 700)
+        self._login_min_size = (380, 740)
+        self._login_default_size = (390, 780)
         self.setMinimumSize(600, 500)
         self.resize(630, 700)
 
         self._setup_ui()
+        self._login_panel.login_requested.connect(self.login_start_requested)
+        self._login_panel.cancel_requested.connect(self.login_cancel_requested)
 
         # ── Settings overlay ──
         self._settings_overlay = SettingsOverlay(
@@ -458,6 +468,9 @@ class MainWindow(QMainWindow):
         self._settings_overlay.withdrawal_expired_test_requested.connect(
             self.settings_withdrawal_expired_test_requested
         )
+        self._settings_overlay.rejoin_expired_test_requested.connect(
+            self.settings_rejoin_expired_test_requested
+        )
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -467,6 +480,13 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setSpacing(12)
         layout.setContentsMargins(16, 16, 16, 16)
+        self._root_layout = layout
+
+        self._login_panel = LoginStartDialog(central)
+        self._app_container = QWidget(central)
+        app_layout = QVBoxLayout(self._app_container)
+        app_layout.setSpacing(12)
+        app_layout.setContentsMargins(0, 0, 0, 0)
 
         # ── Header ──
         header_row = QHBoxLayout()
@@ -497,14 +517,14 @@ class MainWindow(QMainWindow):
         self._btn_settings.clicked.connect(lambda: self.settings_requested.emit())
         self._btn_settings.setToolTip(t("tooltip_settings"))
         header_row.addWidget(self._btn_settings)
-        layout.addLayout(header_row)
+        app_layout.addLayout(header_row)
 
         self._subtitle = QLabel(t("progress_monitoring"))
         self._subtitle.setStyleSheet(
             f"color: {SUBTITLE_TEXT}; font-size: 13px;"
             f"margin-bottom: 4px; background: transparent;"
         )
-        layout.addWidget(self._subtitle)
+        app_layout.addWidget(self._subtitle)
 
         # ── Status indicator ──
         self._status_label = QLabel(t("status_standby"))
@@ -512,7 +532,7 @@ class MainWindow(QMainWindow):
             f"color: {STATUS_GRAY}; font-size: 13px;"
             f"font-weight: bold; background: transparent;"
         )
-        layout.addWidget(self._status_label)
+        app_layout.addWidget(self._status_label)
 
         # ── Scroll area for region cards ──
         scroll = QScrollArea()
@@ -561,7 +581,7 @@ class MainWindow(QMainWindow):
 
         self._region_layout.addStretch()
         scroll.setWidget(self._region_container)
-        layout.addWidget(scroll, stretch=1)
+        app_layout.addWidget(scroll, stretch=1)
 
         # ── Bottom button bar ──
         btn_layout = QHBoxLayout()
@@ -614,7 +634,31 @@ class MainWindow(QMainWindow):
         self._btn_toggle.setToolTip(t("tooltip_start"))
         btn_layout.addWidget(self._btn_toggle)
 
-        layout.addLayout(btn_layout)
+        app_layout.addLayout(btn_layout)
+
+        layout.addWidget(self._login_panel, stretch=1)
+        layout.addWidget(self._app_container, stretch=1)
+        self._login_panel.hide()
+
+    def set_login_mode(self, enabled: bool, error: str = "") -> None:
+        """로그인 시작 화면 표시 여부를 전환한다."""
+        if enabled:
+            self._root_layout.setSpacing(0)
+            self._root_layout.setContentsMargins(0, 0, 0, 0)
+            self.setMinimumSize(*self._login_min_size)
+            self.resize(*self._login_default_size)
+            self._login_panel.set_error(error)
+            self._app_container.hide()
+            self._login_panel.show()
+            self._login_panel.raise_()
+            return
+
+        self._root_layout.setSpacing(12)
+        self._root_layout.setContentsMargins(16, 16, 16, 16)
+        self.setMinimumSize(*self._app_min_size)
+        self.resize(*self._app_default_size)
+        self._login_panel.hide()
+        self._app_container.show()
 
     def add_region_display(
         self,

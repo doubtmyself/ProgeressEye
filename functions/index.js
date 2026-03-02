@@ -9,35 +9,80 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getDatabase } = require("firebase-admin/database");
 const { getFirestore } = require("firebase-admin/firestore");
+const { getFunctions } = require("firebase-admin/functions");
 const { getMessaging } = require("firebase-admin/messaging");
+const crypto = require("crypto");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onValueCreated } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onTaskDispatched } = require("firebase-functions/v2/tasks");
 const { logger } = require("firebase-functions");
 
 initializeApp();
 
-const CLEANUP_BATCH_SIZE = 200;
-const TOMBSTONE_BATCH_SIZE = 500;
 const CLEANUP_CONCURRENCY = 10;
+const CLEANUP_REGION = "us-central1";
+const CLEANUP_QUEUE_NAME = "processWithdrawalCleanup";
+const TOMBSTONE_QUEUE_NAME = "processWithdrawnTombstoneCleanup";
+const FIRESTORE_DB_ID = "progress";
+const TOMBSTONE_BACKFILL_BATCH_SIZE = 200;
 
-async function processWithConcurrency(items, concurrency, handler) {
-  const workers = [];
-  let index = 0;
-
-  const runNext = async () => {
-    while (index < items.length) {
-      const current = items[index];
-      index += 1;
-      await handler(current);
-    }
-  };
-
-  const workerCount = Math.min(concurrency, Math.max(items.length, 1));
-  for (let i = 0; i < workerCount; i += 1) {
-    workers.push(runNext());
+function toMsNumber(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
   }
+  return parsed;
+}
 
-  await Promise.all(workers);
+function computeEmailKey(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+  return crypto.createHash("sha256").update(normalized, "utf8").digest("hex");
+}
+
+async function enqueueQueueTask(queueName, payload, targetTimeMs, taskId) {
+  const queue = getFunctions().taskQueue(queueName);
+  const targetMs = toMsNumber(targetTimeMs) || Date.now();
+  const delaySeconds = Math.max(0, Math.ceil((targetMs - Date.now()) / 1000));
+
+  try {
+    await queue.enqueue(payload, {
+      id: taskId,
+      scheduleDelaySeconds: delaySeconds,
+      dispatchDeadlineSeconds: 300,
+    });
+  } catch (err) {
+    const errText = String(err || "");
+    if (
+      errText.includes("ALREADY_EXISTS") ||
+      errText.toLowerCase().includes("already exists")
+    ) {
+      logger.info("Task already exists, skip duplicate enqueue", {
+        queueName,
+        taskId,
+      });
+      return;
+    }
+    throw err;
+  }
+}
+
+async function enqueueWithdrawalCleanupTask(uid, deleteAt) {
+  const taskId = `withdrawal-cleanup-${uid}-${deleteAt}`;
+  await enqueueQueueTask(CLEANUP_QUEUE_NAME, { uid, deleteAt }, deleteAt, taskId);
+}
+
+async function enqueueTombstoneCleanupTask(uid, rejoinAllowedAt) {
+  const taskId = `withdrawn-tombstone-${uid}-${rejoinAllowedAt}`;
+  await enqueueQueueTask(
+    TOMBSTONE_QUEUE_NAME,
+    { uid, rejoinAllowedAt },
+    rejoinAllowedAt,
+    taskId
+  );
 }
 
 /**
@@ -154,123 +199,327 @@ exports.onAlertCreated = onValueCreated(
 );
 
 /**
- * 회원탈퇴 유예 정책 정리 배치 (5분 주기, 배치 제한)
- * - users/{uid}.withdrawalStatus == "pending" && deleteAt <= now: 데이터 삭제
- * - withdrawnUsers/{uid}.rejoinAllowedAt <= now: 재가입 제한 tombstone 삭제
+ * users/{uid} 탈퇴 상태 전환 감지 -> 탈퇴 데이터 삭제 작업을 Cloud Tasks에 예약.
  */
-exports.cleanupWithdrawnUsers = onSchedule(
+exports.onUserWithdrawalChanged = onDocumentWritten(
   {
-    schedule: "every 5 minutes",
-    region: "us-central1",
+    document: "users/{uid}",
+    region: CLEANUP_REGION,
+    database: "progress",
+  },
+  async (event) => {
+    const uid = event.params.uid;
+    const beforeExists = Boolean(event.data.before && event.data.before.exists);
+    const afterExists = Boolean(event.data.after && event.data.after.exists);
+
+    if (!afterExists) {
+      return null;
+    }
+
+    const beforeData = beforeExists ? event.data.before.data() || {} : {};
+    const afterData = event.data.after.data() || {};
+
+    const beforeStatus = beforeData.withdrawalStatus || "";
+    const afterStatus = afterData.withdrawalStatus || "";
+    const beforeDeleteAt = toMsNumber(beforeData.deleteAt);
+    const afterDeleteAt = toMsNumber(afterData.deleteAt);
+
+    if (afterStatus !== "pending" || !afterDeleteAt) {
+      return null;
+    }
+
+    if (beforeStatus === "pending" && beforeDeleteAt === afterDeleteAt) {
+      return null;
+    }
+
+    await enqueueWithdrawalCleanupTask(uid, afterDeleteAt);
+    logger.info("Withdrawal cleanup task enqueued", {
+      uid,
+      deleteAt: afterDeleteAt,
+    });
+    return null;
+  }
+);
+
+/**
+ * withdrawnUsers/{uid} 변경 감지 -> tombstone 정리 작업을 Cloud Tasks에 예약.
+ *
+ * 디버그/레거시 경로에서 users 문서 변경 없이 withdrawnUsers만 갱신되는 경우를 커버한다.
+ */
+exports.onWithdrawnUserChanged = onDocumentWritten(
+  {
+    document: "withdrawnUsers/{uid}",
+    region: CLEANUP_REGION,
+    database: FIRESTORE_DB_ID,
+  },
+  async (event) => {
+    const uid = event.params.uid;
+    const afterExists = Boolean(event.data.after && event.data.after.exists);
+    if (!afterExists) {
+      return null;
+    }
+
+    const afterData = event.data.after.data() || {};
+    const rejoinAllowedAt = toMsNumber(afterData.rejoinAllowedAt);
+    if (!rejoinAllowedAt) {
+      return null;
+    }
+
+    await enqueueTombstoneCleanupTask(uid, rejoinAllowedAt);
+    logger.info("Tombstone cleanup task enqueued from withdrawnUsers change", {
+      uid,
+      rejoinAllowedAt,
+    });
+    return null;
+  }
+);
+
+/**
+ * 탈퇴 유예 만료 사용자 삭제 작업.
+ * - users/{uid}가 아직 pending이고 deleteAt이 만료됐을 때만 삭제 진행
+ * - 작업 완료 후 withdrawnUsers tombstone 정리 작업을 별도 예약
+ */
+exports.processWithdrawalCleanup = onTaskDispatched(
+  {
+    region: CLEANUP_REGION,
+    retryConfig: {
+      maxAttempts: 10,
+      minBackoffSeconds: 30,
+      maxBackoffSeconds: 3600,
+      maxDoublings: 5,
+    },
+    rateLimits: {
+      maxConcurrentDispatches: CLEANUP_CONCURRENCY,
+      maxDispatchesPerSecond: 5,
+    },
+  },
+  async (request) => {
+    const now = Date.now();
+    const uid = request.data && request.data.uid;
+
+    if (!uid || typeof uid !== "string") {
+      logger.warn("Invalid cleanup task payload", { data: request.data || null });
+      return null;
+    }
+
+    const db = getFirestore(FIRESTORE_DB_ID);
+    const rtdb = getDatabase();
+    const auth = getAuth();
+    const userRef = db.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+
+    if (!userSnap.exists) {
+      logger.info("Cleanup skipped: users doc not found", { uid });
+      return null;
+    }
+
+    const data = userSnap.data() || {};
+    const withdrawalStatus = data.withdrawalStatus || "";
+    const deleteAt = toMsNumber(data.deleteAt);
+    const rejoinAllowedAt = toMsNumber(data.rejoinAllowedAt) || now;
+    const emailLower = String(data.emailLower || data.email || "").trim().toLowerCase();
+    const emailKey = String(data.withdrawalEmailKey || computeEmailKey(emailLower));
+
+    if (withdrawalStatus !== "pending") {
+      logger.info("Cleanup skipped: status is not pending", {
+        uid,
+        withdrawalStatus,
+      });
+      return null;
+    }
+
+    if (!deleteAt) {
+      logger.warn("Cleanup skipped: invalid deleteAt", { uid, deleteAt: data.deleteAt });
+      return null;
+    }
+
+    if (deleteAt > now) {
+      await enqueueWithdrawalCleanupTask(uid, deleteAt);
+      logger.info("Cleanup rescheduled: deleteAt not reached", { uid, deleteAt });
+      return null;
+    }
+
+    try {
+      await rtdb.ref(`users/${uid}`).remove();
+    } catch (err) {
+      logger.warn("RTDB user remove failed", { uid, error: String(err) });
+    }
+
+    try {
+      await userRef.delete();
+    } catch (err) {
+      logger.warn("Firestore users doc delete failed", {
+        uid,
+        error: String(err),
+      });
+    }
+
+    try {
+      await db
+        .collection("withdrawnUsers")
+        .doc(uid)
+        .set(
+          {
+            deletedAt: now,
+            rejoinAllowedAt,
+            ...(emailKey ? { emailKey } : {}),
+          },
+          { merge: true }
+        );
+    } catch (err) {
+      logger.warn("withdrawnUsers tombstone upsert failed", {
+        uid,
+        error: String(err),
+      });
+    }
+
+    if (emailKey) {
+      try {
+        await db
+          .collection("withdrawnEmails")
+          .doc(emailKey)
+          .set(
+            {
+              rejoinAllowedAt,
+              uid,
+            },
+            { merge: true }
+          );
+      } catch (err) {
+        logger.warn("withdrawnEmails upsert failed", {
+          uid,
+          emailKey,
+          error: String(err),
+        });
+      }
+    }
+
+    try {
+      await auth.deleteUser(uid);
+    } catch (err) {
+      const code = err && typeof err === "object" ? err.code : undefined;
+      if (code !== "auth/user-not-found") {
+        logger.warn("Auth user delete failed", { uid, error: String(err) });
+      }
+    }
+
+    await enqueueTombstoneCleanupTask(uid, rejoinAllowedAt);
+    logger.info("Withdrawal cleanup completed", {
+      uid,
+      rejoinAllowedAt,
+      scheduledTombstoneCleanup: true,
+    });
+    return null;
+  }
+);
+
+/**
+ * 재가입 제한 기간 만료 시 withdrawnUsers tombstone 삭제.
+ */
+exports.processWithdrawnTombstoneCleanup = onTaskDispatched(
+  {
+    region: CLEANUP_REGION,
+    retryConfig: {
+      maxAttempts: 10,
+      minBackoffSeconds: 60,
+      maxBackoffSeconds: 3600,
+      maxDoublings: 5,
+    },
+    rateLimits: {
+      maxConcurrentDispatches: CLEANUP_CONCURRENCY,
+      maxDispatchesPerSecond: 5,
+    },
+  },
+  async (request) => {
+    const now = Date.now();
+    const uid = request.data && request.data.uid;
+
+    if (!uid || typeof uid !== "string") {
+      logger.warn("Invalid tombstone cleanup payload", { data: request.data || null });
+      return null;
+    }
+
+    const db = getFirestore(FIRESTORE_DB_ID);
+    const tombRef = db.collection("withdrawnUsers").doc(uid);
+    const tombSnap = await tombRef.get();
+
+    if (!tombSnap.exists) {
+      logger.info("Tombstone cleanup skipped: doc not found", { uid });
+      return null;
+    }
+
+    const tombData = tombSnap.data() || {};
+    const rejoinAllowedAt = toMsNumber(tombData.rejoinAllowedAt);
+    const emailKey = String(tombData.emailKey || "").trim();
+
+    if (!rejoinAllowedAt) {
+      logger.warn("Tombstone cleanup skipped: invalid rejoinAllowedAt", {
+        uid,
+        rejoinAllowedAt: tombData.rejoinAllowedAt,
+      });
+      return null;
+    }
+
+    if (rejoinAllowedAt > now) {
+      await enqueueTombstoneCleanupTask(uid, rejoinAllowedAt);
+      logger.info("Tombstone cleanup rescheduled", { uid, rejoinAllowedAt });
+      return null;
+    }
+
+    await tombRef.delete();
+    if (emailKey) {
+      try {
+        await db.collection("withdrawnEmails").doc(emailKey).delete();
+      } catch (err) {
+        logger.warn("withdrawnEmails delete failed", {
+          uid,
+          emailKey,
+          error: String(err),
+        });
+      }
+    }
+    logger.info("Tombstone cleanup completed", { uid });
+    return null;
+  }
+);
+
+/**
+ * 누락된 withdrawnUsers tombstone 백필 예약 스케줄러.
+ *
+ * 이벤트 트리거 누락/배포 공백 기간에 쌓인 만료 tombstone을 주기적으로 재수집한다.
+ */
+exports.backfillWithdrawnTombstoneCleanup = onSchedule(
+  {
+    schedule: "every 10 minutes",
+    region: CLEANUP_REGION,
     timeZone: "Asia/Seoul",
     maxInstances: 1,
   },
   async () => {
     const now = Date.now();
-    const db = getFirestore();
-    const rtdb = getDatabase();
-    const auth = getAuth();
+    const db = getFirestore(FIRESTORE_DB_ID);
 
-    // 1) 유예기간 만료 사용자 데이터 삭제
-    const pendingSnap = await db
-      .collection("users")
-      .where("withdrawalStatus", "==", "pending")
-      .where("deleteAt", "<=", now)
-      .orderBy("deleteAt", "asc")
-      .limit(CLEANUP_BATCH_SIZE)
-      .get();
-
-    let deletedCount = 0;
-    await processWithConcurrency(
-      pendingSnap.docs,
-      CLEANUP_CONCURRENCY,
-      async (doc) => {
-      const uid = doc.id;
-      const data = doc.data() || {};
-      const rejoinAllowedAt = Number(data.rejoinAllowedAt || now);
-
-      try {
-        await rtdb.ref(`users/${uid}`).remove();
-      } catch (err) {
-        logger.warn("RTDB user remove failed", { uid, error: String(err) });
-      }
-
-      try {
-        await doc.ref.delete();
-      } catch (err) {
-        logger.warn("Firestore users doc delete failed", {
-          uid,
-          error: String(err),
-        });
-      }
-
-      try {
-        await db
-          .collection("withdrawnUsers")
-          .doc(uid)
-          .set(
-            {
-              uid,
-              status: "deleted_data",
-              deletedAt: now,
-              rejoinAllowedAt,
-            },
-            { merge: true }
-          );
-      } catch (err) {
-        logger.warn("withdrawnUsers tombstone upsert failed", {
-          uid,
-          error: String(err),
-        });
-      }
-
-      try {
-        await auth.deleteUser(uid);
-      } catch (err) {
-        const code = err && typeof err === "object" ? err.code : undefined;
-        if (code !== "auth/user-not-found") {
-          logger.warn("Auth user delete failed", { uid, error: String(err) });
-        }
-      }
-
-      deletedCount += 1;
-      }
-    );
-
-    // 2) 재가입 제한 기간이 지난 tombstone 정리
-    const expiredTombSnap = await db
+    const dueTombs = await db
       .collection("withdrawnUsers")
       .where("rejoinAllowedAt", "<=", now)
-      .orderBy("rejoinAllowedAt", "asc")
-      .limit(TOMBSTONE_BATCH_SIZE)
+      .limit(TOMBSTONE_BACKFILL_BATCH_SIZE)
       .get();
 
-    let purgedTombCount = 0;
-    await processWithConcurrency(
-      expiredTombSnap.docs,
-      CLEANUP_CONCURRENCY,
-      async (doc) => {
-      try {
-        await doc.ref.delete();
-        purgedTombCount += 1;
-      } catch (err) {
-        logger.warn("withdrawnUsers tombstone delete failed", {
-          uid: doc.id,
-          error: String(err),
-        });
-      }
-      }
-    );
+    let enqueued = 0;
+    for (const doc of dueTombs.docs) {
+      const data = doc.data() || {};
+      const rejoinAllowedAt = toMsNumber(data.rejoinAllowedAt) || now;
+      await enqueueTombstoneCleanupTask(doc.id, rejoinAllowedAt);
+      enqueued += 1;
+    }
 
-    logger.info("cleanupWithdrawnUsers completed", {
-      pendingCandidates: pendingSnap.size,
-      pendingDeleted: deletedCount,
-      tombstoneCandidates: expiredTombSnap.size,
-      tombstonesPurged: purgedTombCount,
-      hasMorePending: pendingSnap.size === CLEANUP_BATCH_SIZE,
-      hasMoreTombstones: expiredTombSnap.size === TOMBSTONE_BATCH_SIZE,
+    logger.info("backfillWithdrawnTombstoneCleanup completed", {
+      scanned: dueTombs.size,
+      enqueued,
+      hasMore: dueTombs.size === TOMBSTONE_BACKFILL_BATCH_SIZE,
       now,
     });
+
     return null;
   }
 );

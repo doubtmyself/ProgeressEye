@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import hashlib
 import time
 import uuid
 from typing import Any
@@ -20,6 +21,13 @@ class DeviceManager:
         self._db = db
         self._uid = uid
         self._device_id = device_id
+
+    @staticmethod
+    def _email_key(email: str) -> str:
+        normalized = email.strip().lower()
+        if not normalized:
+            return ""
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     def register(self, device_name: str = "") -> None:
         """기기를 등록하고 online 상태를 기록한다."""
@@ -266,6 +274,7 @@ class DeviceManager:
         project_id: str = "progresseye-49244",
         grace_days: int = 7,
         rejoin_days: int = 30,
+        email: str = "",
     ) -> None:
         """회원탈퇴 요청을 Firestore에 기록한다.
 
@@ -281,6 +290,8 @@ class DeviceManager:
         now = int(time.time() * 1000)
         delete_at = now + grace_days * 24 * 60 * 60 * 1000
         rejoin_allowed_at = now + rejoin_days * 24 * 60 * 60 * 1000
+        email_lower = email.strip().lower()
+        email_key = self._email_key(email_lower)
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -294,19 +305,17 @@ class DeviceManager:
         user_body = {
             "fields": {
                 "withdrawalStatus": {"stringValue": "pending"},
-                "withdrawalRequestedAt": {"integerValue": str(now)},
                 "deleteAt": {"integerValue": str(delete_at)},
                 "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-                "updatedAt": {"integerValue": str(now)},
             }
         }
-        user_mask = [
-            "withdrawalStatus",
-            "withdrawalRequestedAt",
-            "deleteAt",
-            "rejoinAllowedAt",
-            "updatedAt",
-        ]
+        user_mask = ["withdrawalStatus", "deleteAt", "rejoinAllowedAt"]
+        if email_lower:
+            user_body["fields"]["emailLower"] = {"stringValue": email_lower}
+            user_mask.append("emailLower")
+        if email_key:
+            user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
+            user_mask.append("withdrawalEmailKey")
         resp_user = _requests.patch(
             user_url,
             headers=headers,
@@ -325,14 +334,13 @@ class DeviceManager:
         )
         tomb_body = {
             "fields": {
-                "uid": {"stringValue": self._uid},
-                "status": {"stringValue": "pending"},
-                "requestedAt": {"integerValue": str(now)},
-                "deleteAt": {"integerValue": str(delete_at)},
                 "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
             }
         }
-        tomb_mask = ["uid", "status", "requestedAt", "deleteAt", "rejoinAllowedAt"]
+        tomb_mask = ["rejoinAllowedAt"]
+        if email_key:
+            tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
+            tomb_mask.append("emailKey")
         resp_tomb = _requests.patch(
             tomb_url,
             headers=headers,
@@ -345,9 +353,35 @@ class DeviceManager:
                 f"withdrawnUsers doc update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
             )
 
+        if email_key:
+            email_tomb_url = (
+                f"https://firestore.googleapis.com/v1/projects/{project_id}"
+                f"/databases/progress/documents/withdrawnEmails/{email_key}"
+            )
+            email_tomb_body = {
+                "fields": {
+                    "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+                    "uid": {"stringValue": self._uid},
+                }
+            }
+            email_tomb_mask = ["rejoinAllowedAt", "uid"]
+            resp_email_tomb = _requests.patch(
+                email_tomb_url,
+                headers=headers,
+                params={"updateMask.fieldPaths": email_tomb_mask},
+                json=email_tomb_body,
+                timeout=5,
+            )
+            if resp_email_tomb.status_code not in (200, 201):
+                raise RuntimeError(
+                    "withdrawnEmails doc update failed: "
+                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
+                )
+
     def get_withdrawal_state(
         self,
         project_id: str = "progresseye-49244",
+        email: str = "",
     ) -> dict[str, int | str | bool]:
         """회원탈퇴 상태를 조회한다.
 
@@ -378,19 +412,33 @@ class DeviceManager:
                 if resp.status_code != 200:
                     continue
                 fields = resp.json().get("fields", {})
-                status = fields.get("withdrawalStatus", {}).get("stringValue")
-                if status is None:
-                    status = fields.get("status", {}).get("stringValue")
-                if status == "pending":
-                    pending = True
-                raw_delete = fields.get("deleteAt", {}).get("integerValue")
+                if path.startswith("users/"):
+                    status = fields.get("withdrawalStatus", {}).get("stringValue")
+                    if status == "pending":
+                        pending = True
+                    raw_delete = fields.get("deleteAt", {}).get("integerValue")
+                    if raw_delete is not None:
+                        delete_at = max(delete_at, int(raw_delete))
                 raw_rejoin = fields.get("rejoinAllowedAt", {}).get("integerValue")
-                if raw_delete is not None:
-                    delete_at = max(delete_at, int(raw_delete))
                 if raw_rejoin is not None:
                     rejoin_allowed_at = max(rejoin_allowed_at, int(raw_rejoin))
             except Exception as exc:
                 log.debug("withdrawal state 조회 실패(%s): %s", path, exc)
+
+        email_key = self._email_key(email)
+        if email_key:
+            email_tomb_path = f"withdrawnEmails/{email_key}"
+            try:
+                resp = _requests.get(
+                    f"{base}/{email_tomb_path}", headers=headers, timeout=5
+                )
+                if resp.status_code == 200:
+                    fields = resp.json().get("fields", {})
+                    raw_rejoin = fields.get("rejoinAllowedAt", {}).get("integerValue")
+                    if raw_rejoin is not None:
+                        rejoin_allowed_at = max(rejoin_allowed_at, int(raw_rejoin))
+            except Exception as exc:
+                log.debug("withdrawal state 조회 실패(%s): %s", email_tomb_path, exc)
 
         return {
             "pending": pending,
@@ -401,6 +449,7 @@ class DeviceManager:
     def cancel_account_withdrawal(
         self,
         project_id: str = "progresseye-49244",
+        email: str = "",
     ) -> None:
         """탈퇴 유예(pending) 상태를 취소한다."""
         import requests as _requests
@@ -423,16 +472,12 @@ class DeviceManager:
         body = {
             "fields": {
                 "withdrawalStatus": {"stringValue": "active"},
-                "updatedAt": {"integerValue": str(now)},
-                "withdrawalRequestedAt": {"nullValue": None},
                 "deleteAt": {"nullValue": None},
                 "rejoinAllowedAt": {"nullValue": None},
             }
         }
         mask = [
             "withdrawalStatus",
-            "updatedAt",
-            "withdrawalRequestedAt",
             "deleteAt",
             "rejoinAllowedAt",
         ]
@@ -462,11 +507,29 @@ class DeviceManager:
                 f"withdrawnUsers delete failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
             )
 
+        email_key = self._email_key(email)
+        if email_key:
+            email_tomb_url = (
+                f"https://firestore.googleapis.com/v1/projects/{project_id}"
+                f"/databases/progress/documents/withdrawnEmails/{email_key}"
+            )
+            resp_email_tomb = _requests.delete(
+                email_tomb_url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if resp_email_tomb.status_code not in (200, 204, 404):
+                raise RuntimeError(
+                    "withdrawnEmails delete failed: "
+                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
+                )
+
     def debug_mark_withdrawal_expired(
         self,
         project_id: str = "progresseye-49244",
         grace_days: int = 7,
         rejoin_days: int = 30,
+        email: str = "",
     ) -> None:
         """디버그: 탈퇴 후 grace_days가 지난 상태를 강제로 만든다."""
         import requests as _requests
@@ -481,6 +544,8 @@ class DeviceManager:
         rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000
         if rejoin_allowed_at <= now:
             rejoin_allowed_at = now + 24 * 60 * 60 * 1000
+        email_lower = email.strip().lower()
+        email_key = self._email_key(email_lower)
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -494,19 +559,17 @@ class DeviceManager:
         user_body = {
             "fields": {
                 "withdrawalStatus": {"stringValue": "pending"},
-                "withdrawalRequestedAt": {"integerValue": str(requested_at)},
                 "deleteAt": {"integerValue": str(delete_at)},
                 "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-                "updatedAt": {"integerValue": str(now)},
             }
         }
-        user_mask = [
-            "withdrawalStatus",
-            "withdrawalRequestedAt",
-            "deleteAt",
-            "rejoinAllowedAt",
-            "updatedAt",
-        ]
+        user_mask = ["withdrawalStatus", "deleteAt", "rejoinAllowedAt"]
+        if email_lower:
+            user_body["fields"]["emailLower"] = {"stringValue": email_lower}
+            user_mask.append("emailLower")
+        if email_key:
+            user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
+            user_mask.append("withdrawalEmailKey")
         resp_user = _requests.patch(
             user_url,
             headers=headers,
@@ -525,14 +588,13 @@ class DeviceManager:
         )
         tomb_body = {
             "fields": {
-                "uid": {"stringValue": self._uid},
-                "status": {"stringValue": "pending"},
-                "requestedAt": {"integerValue": str(requested_at)},
-                "deleteAt": {"integerValue": str(delete_at)},
                 "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
             }
         }
-        tomb_mask = ["uid", "status", "requestedAt", "deleteAt", "rejoinAllowedAt"]
+        tomb_mask = ["rejoinAllowedAt"]
+        if email_key:
+            tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
+            tomb_mask.append("emailKey")
         resp_tomb = _requests.patch(
             tomb_url,
             headers=headers,
@@ -544,6 +606,136 @@ class DeviceManager:
             raise RuntimeError(
                 f"withdrawnUsers doc debug update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
             )
+
+        if email_key:
+            email_tomb_url = (
+                f"https://firestore.googleapis.com/v1/projects/{project_id}"
+                f"/databases/progress/documents/withdrawnEmails/{email_key}"
+            )
+            email_tomb_body = {
+                "fields": {
+                    "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+                    "uid": {"stringValue": self._uid},
+                }
+            }
+            email_tomb_mask = ["rejoinAllowedAt", "uid"]
+            resp_email_tomb = _requests.patch(
+                email_tomb_url,
+                headers=headers,
+                params={"updateMask.fieldPaths": email_tomb_mask},
+                json=email_tomb_body,
+                timeout=5,
+            )
+            if resp_email_tomb.status_code not in (200, 201):
+                raise RuntimeError(
+                    "withdrawnEmails doc debug update failed: "
+                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
+                )
+
+    def debug_mark_rejoin_expired(
+        self,
+        project_id: str = "progresseye-49244",
+        rejoin_days: int = 30,
+        email: str = "",
+    ) -> None:
+        """디버그: 탈퇴 후 rejoin_days가 지난 상태를 강제로 만든다."""
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            raise RuntimeError("id_token unavailable")
+
+        now = int(time.time() * 1000)
+        requested_at = now - (rejoin_days + 1) * 24 * 60 * 60 * 1000
+        delete_at = requested_at + 7 * 24 * 60 * 60 * 1000
+        rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000
+        email_lower = email.strip().lower()
+        email_key = self._email_key(email_lower)
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        user_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/users/{self._uid}"
+        )
+        user_body = {
+            "fields": {
+                "withdrawalStatus": {"stringValue": "pending"},
+                "deleteAt": {"integerValue": str(delete_at)},
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+            }
+        }
+        user_mask = ["withdrawalStatus", "deleteAt", "rejoinAllowedAt"]
+        if email_lower:
+            user_body["fields"]["emailLower"] = {"stringValue": email_lower}
+            user_mask.append("emailLower")
+        if email_key:
+            user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
+            user_mask.append("withdrawalEmailKey")
+        resp_user = _requests.patch(
+            user_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": user_mask},
+            json=user_body,
+            timeout=5,
+        )
+        if resp_user.status_code not in (200, 201):
+            raise RuntimeError(
+                f"users doc debug rejoin update failed: {resp_user.status_code} {resp_user.text[:200]}"
+            )
+
+        tomb_url = (
+            f"https://firestore.googleapis.com/v1/projects/{project_id}"
+            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
+        )
+        tomb_body = {
+            "fields": {
+                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+            }
+        }
+        tomb_mask = ["rejoinAllowedAt"]
+        if email_key:
+            tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
+            tomb_mask.append("emailKey")
+        resp_tomb = _requests.patch(
+            tomb_url,
+            headers=headers,
+            params={"updateMask.fieldPaths": tomb_mask},
+            json=tomb_body,
+            timeout=5,
+        )
+        if resp_tomb.status_code not in (200, 201):
+            raise RuntimeError(
+                f"withdrawnUsers doc debug rejoin update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
+            )
+
+        if email_key:
+            email_tomb_url = (
+                f"https://firestore.googleapis.com/v1/projects/{project_id}"
+                f"/databases/progress/documents/withdrawnEmails/{email_key}"
+            )
+            email_tomb_body = {
+                "fields": {
+                    "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
+                    "uid": {"stringValue": self._uid},
+                }
+            }
+            email_tomb_mask = ["rejoinAllowedAt", "uid"]
+            resp_email_tomb = _requests.patch(
+                email_tomb_url,
+                headers=headers,
+                params={"updateMask.fieldPaths": email_tomb_mask},
+                json=email_tomb_body,
+                timeout=5,
+            )
+            if resp_email_tomb.status_code not in (200, 201):
+                raise RuntimeError(
+                    "withdrawnEmails doc debug rejoin update failed: "
+                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
+                )
 
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""
