@@ -106,7 +106,10 @@ $removePatterns = @(
     "numpy.libs\libscipy_openblas*.dll",  # OpenBLAS BLAS (19 MB) — no linalg usage
     "numpy\_core\_multiarray_tests.pyd",  # numpy test module — not needed in production
     "qt6pdf.dll",                          # Qt PDF module (5 MB) — not used
-    "tesseract\tessdata\osd.traineddata"   # Tesseract OSD (10 MB) — digit OCR only
+    "qtwebengine_devtools_resources.debug.pak",
+    "qtwebengine_resources.debug.pak",
+    "qtwebengine_resources_100p.debug.pak",
+    "qtwebengine_resources_200p.debug.pak"
 )
 $removedMB = 0
 foreach ($pattern in $removePatterns) {
@@ -125,7 +128,10 @@ $directRemove = @(
     (Join-Path $StagingRoot "numpy.libs\libscipy_openblas*.dll"),
     (Join-Path $StagingRoot "numpy\_core\_multiarray_tests.pyd"),
     (Join-Path $StagingRoot "qt6pdf.dll"),
-    (Join-Path $StagingRoot "tesseract\tessdata\osd.traineddata")
+    (Join-Path $StagingRoot "qtwebengine_devtools_resources.debug.pak"),
+    (Join-Path $StagingRoot "qtwebengine_resources.debug.pak"),
+    (Join-Path $StagingRoot "qtwebengine_resources_100p.debug.pak"),
+    (Join-Path $StagingRoot "qtwebengine_resources_200p.debug.pak")
 )
 foreach ($glob in $directRemove) {
     Get-Item $glob -ErrorAction SilentlyContinue | ForEach-Object {

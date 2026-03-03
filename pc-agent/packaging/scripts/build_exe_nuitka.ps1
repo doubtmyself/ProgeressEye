@@ -1,6 +1,9 @@
 Param(
     [string]$PythonExe = "",
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$EnableUpx,
+    [switch]$SkipBundleVCRuntime,
+    [string]$UpxExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,14 +22,198 @@ if (-not $PythonExe) {
 Write-Host "[build_exe_nuitka] Python: $PythonExe"
 Write-Host "[build_exe_nuitka] Root:   $PcAgentRoot"
 
+function Remove-PathWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetPath,
+        [int]$MaxRetries = 5
+    )
+
+    if (-not (Test-Path $TargetPath)) {
+        return
+    }
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        try {
+            # Clear read-only attributes recursively first
+            Get-ChildItem -Path $TargetPath -Recurse -Force -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    try { $_.IsReadOnly = $false } catch {}
+                }
+
+            Remove-Item $TargetPath -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -ge $MaxRetries) {
+                throw
+            }
+            Start-Sleep -Milliseconds (300 * $attempt)
+        }
+    }
+}
+
+function Remove-UnusedPayloadFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DistRoot
+    )
+
+    $removedMB = 0
+    $removeFilePatterns = @(
+        "cv2\opencv_videoio_ffmpeg*.dll",    # video I/O runtime, unused by image-only capture
+        "numpy.libs\libscipy_openblas*.dll",  # heavy BLAS payload, not required for current usage
+        "numpy\_core\_multiarray_tests.pyd",  # numpy test extension
+        "qt6pdf.dll",                          # Qt PDF module not used by app
+        "qtwebengine_devtools_resources.debug.pak",
+        "qtwebengine_resources.debug.pak",
+        "qtwebengine_resources_100p.debug.pak",
+        "qtwebengine_resources_200p.debug.pak"
+    )
+
+    foreach ($pattern in $removeFilePatterns) {
+        $glob = Join-Path $DistRoot $pattern
+        Get-Item $glob -ErrorAction SilentlyContinue | ForEach-Object {
+            $sizeMB = [math]::Round($_.Length / 1MB, 1)
+            Write-Host "[build_exe_nuitka] Removing $($_.Name) ($sizeMB MB)"
+            $removedMB += $sizeMB
+            Remove-Item $_.FullName -Force
+        }
+    }
+
+    $removeDirs = @(
+        (Join-Path $DistRoot "numpy\tests"),
+        (Join-Path $DistRoot "PIL\Tests"),
+        (Join-Path $DistRoot "__pycache__")
+    )
+
+    foreach ($dir in $removeDirs) {
+        Get-Item $dir -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "[build_exe_nuitka] Removing directory $($_.FullName)"
+            Remove-Item $_.FullName -Recurse -Force
+        }
+    }
+
+    Get-ChildItem -Path $DistRoot -Recurse -Filter "*.pyi" -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Remove-Item $_.FullName -Force
+        }
+
+    Write-Host "[build_exe_nuitka] Removed unused payload (~$removedMB MB + metadata files)"
+}
+
+function Resolve-UpxExecutable {
+    param([string]$ExplicitPath)
+
+    if ($ExplicitPath -and (Test-Path $ExplicitPath)) {
+        return (Resolve-Path $ExplicitPath).Path
+    }
+
+    $upxCmd = Get-Command "upx" -ErrorAction SilentlyContinue
+    if ($upxCmd) {
+        return $upxCmd.Source
+    }
+
+    return $null
+}
+
+function Compress-WithUpx {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DistRoot,
+        [string]$UpxPath
+    )
+
+    if (-not $UpxPath) {
+        Write-Host "[build_exe_nuitka] UPX not found. Skipping binary compression."
+        return
+    }
+
+    Write-Host "[build_exe_nuitka] UPX compression started: $UpxPath"
+    $targets = Get-ChildItem -Path $DistRoot -Recurse -Include "*.exe", "*.pyd", "*.dll" -File -ErrorAction SilentlyContinue
+    foreach ($file in $targets) {
+        & $UpxPath --best --lzma --quiet $file.FullName
+    }
+    Write-Host "[build_exe_nuitka] UPX compression completed"
+}
+
+function Copy-VcRuntimeDlls {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DistRoot
+    )
+
+    $requiredDlls = @(
+        "msvcp140.dll",
+        "vcomp140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll",
+        "concrt140.dll"
+    )
+
+    $searchRoots = @(
+        $env:SystemRoot,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)} + "\Microsoft Visual Studio",
+        $env:ProgramFiles + "\Microsoft Visual Studio"
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+    $bundledCount = 0
+    $missing = @()
+    foreach ($dll in $requiredDlls) {
+        $dest = Join-Path $DistRoot $dll
+        if (Test-Path $dest) {
+            continue
+        }
+
+        $candidates = @()
+        foreach ($root in $searchRoots) {
+            $direct1 = Join-Path $root "System32\$dll"
+            $direct2 = Join-Path $root "SysWOW64\$dll"
+            if (Test-Path $direct1) { $candidates += $direct1 }
+            if (Test-Path $direct2) { $candidates += $direct2 }
+
+            try {
+                $found = Get-ChildItem -Path $root -Filter $dll -File -Recurse -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty FullName
+                if ($found) { $candidates += $found }
+            } catch {
+            }
+        }
+
+        $source = $candidates | Select-Object -First 1
+        if ($source) {
+            Copy-Item $source $dest -Force
+            Write-Host "[build_exe_nuitka] Bundled VC runtime: $dll"
+            $bundledCount += 1
+        } else {
+            $missing += $dll
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        Write-Warning "[build_exe_nuitka] Missing VC runtime DLLs: $($missing -join ', ')"
+        Write-Warning "[build_exe_nuitka] Install Microsoft Visual C++ Redistributable 2015-2022 (x64) on target machines if these are not bundled."
+    } else {
+        Write-Host "[build_exe_nuitka] VC runtime bundling complete ($bundledCount copied)"
+    }
+}
+
 Push-Location $PcAgentRoot
 try {
     if ($Clean) {
+        # Stop possibly running app/processes that can lock dist artifacts (.exe/.pyd)
+        foreach ($proc in @("ProgressEye", "main")) {
+            Get-Process -Name $proc -ErrorAction SilentlyContinue |
+                Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+
         foreach ($dir in @("build", "dist", "main.build", "main.dist", "main.onefile-build")) {
             $p = Join-Path $PcAgentRoot $dir
             if (Test-Path $p) {
                 Write-Host "[build_exe_nuitka] Removing $dir"
-                Remove-Item $p -Recurse -Force
+                Remove-PathWithRetry -TargetPath $p
             }
         }
     }
@@ -35,28 +222,34 @@ try {
     & $PythonExe -m pip install --upgrade nuitka ordered-set
 
     # Run Nuitka standalone build
-    & $PythonExe -m nuitka `
-        --standalone `
-        --output-filename=ProgressEye.exe `
-        --output-dir=dist `
-        --windows-console-mode=disable `
-        --windows-icon-from-ico=resources/app-icon.ico `
-        --enable-plugin=pyqt6 `
-        --include-package=google.auth `
-        --include-package=google.oauth2 `
-        --include-package=google_auth_oauthlib `
-        --include-package-data=google.auth `
-        --include-package-data=google_auth_oauthlib `
-        --include-data-dir="tesseract=tesseract" `
-        --include-data-dir="templates=templates" `
-        --include-data-dir="resources=resources" `
-        --nofollow-import-to=tkinter `
-        --nofollow-import-to=matplotlib `
-        --nofollow-import-to=pytest `
-        --nofollow-import-to=unittest `
-        --nofollow-import-to=test `
-        --nofollow-import-to=tests `
-        main.py
+    $nuitkaArgs = @(
+        "-m", "nuitka",
+        "--standalone",
+        "--output-filename=ProgressEye.exe",
+        "--output-dir=dist",
+        "--windows-console-mode=disable",
+        "--windows-icon-from-ico=resources/app-icon.ico",
+        "--enable-plugin=pyqt6",
+        "--python-flag=no_docstrings",
+        "--include-package=google.auth",
+        "--include-package=google.oauth2",
+        "--include-package=google_auth_oauthlib",
+        "--include-package=rapidocr_onnxruntime",
+        "--include-package=onnxruntime",
+        "--include-package-data=google.auth",
+        "--include-package-data=google_auth_oauthlib",
+        "--include-data-dir=templates=templates",
+        "--include-data-dir=resources=resources",
+        "--nofollow-import-to=tkinter",
+        "--nofollow-import-to=matplotlib",
+        "--nofollow-import-to=pytest",
+        "--nofollow-import-to=unittest",
+        "--nofollow-import-to=test",
+        "--nofollow-import-to=tests",
+        "main.py"
+    )
+
+    & $PythonExe @nuitkaArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "Nuitka compilation failed with exit code $LASTEXITCODE"
@@ -85,6 +278,19 @@ try {
     $buildDir = Join-Path $PcAgentRoot "dist\main.build"
     if (Test-Path $buildDir) {
         Remove-Item $buildDir -Recurse -Force
+    }
+
+    Remove-UnusedPayloadFiles -DistRoot $targetDir
+
+    if (-not $SkipBundleVCRuntime) {
+        Copy-VcRuntimeDlls -DistRoot $targetDir
+    } else {
+        Write-Host "[build_exe_nuitka] Skipping VC runtime bundling by request"
+    }
+
+    if ($EnableUpx) {
+        $resolvedUpx = Resolve-UpxExecutable -ExplicitPath $UpxExe
+        Compress-WithUpx -DistRoot $targetDir -UpxPath $resolvedUpx
     }
 
     Write-Host "[build_exe_nuitka] Done: $exePath"
