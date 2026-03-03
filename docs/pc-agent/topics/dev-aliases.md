@@ -32,6 +32,7 @@ PowerShell 프로필(`$PROFILE.CurrentUserAllHosts`)에 아래 1줄을 추가한
 - `pe-exe`: EXE 증분 빌드(기본, 빠름)
 - `pe-exe-clean`: EXE 클린 빌드(느리지만 가장 안전)
 - `pe-exe-fast`: EXE 고속 빌드(PaddleOCR/PyMuPDF fallback 경로 제외)
+- `pe-exe-run`: `pe-exe`로 생성된 EXE 실행(`dist/ProgressEye/ProgressEye.exe`)
 - `pe-msix`: Store MSIX 빌드 스크립트 실행
 - `pe-git ...`: 프로젝트 루트 기준으로 `git` 명령 실행
 - `peh`: PowerShell `Get-Help` 별칭
@@ -45,5 +46,6 @@ pe-ocr-setup
 pe-test detection
 pe-exe
 pe-exe-fast
+pe-exe-run
 pe-git status
 ```

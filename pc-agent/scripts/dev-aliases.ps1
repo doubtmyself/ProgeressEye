@@ -91,6 +91,17 @@ function pe-exe-fast {
     }
 }
 
+function pe-exe-run {
+    $exePath = Join-Path $script:PcAgentRoot "dist\ProgressEye\ProgressEye.exe"
+    if (-not (Test-Path $exePath)) {
+        Write-Warning "EXE not found: $exePath"
+        Write-Host "Run 'pe-exe' (or 'pe-exe-clean') first."
+        return
+    }
+
+    & $exePath
+}
+
 function pe-msix {
     Push-Location $script:PcAgentRoot
     try {
