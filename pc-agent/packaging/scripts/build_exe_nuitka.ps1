@@ -1,6 +1,7 @@
 Param(
     [string]$PythonExe = "",
     [switch]$Clean,
+    [switch]$Fast,
     [switch]$EnableUpx,
     [switch]$SkipBundleVCRuntime,
     [string]$UpxExe = ""
@@ -248,6 +249,17 @@ try {
         "--nofollow-import-to=tests",
         "main.py"
     )
+
+    if ($Fast) {
+        # PaddleOCR fallback chain pulls in heavy PDF modules and slows compile drastically.
+        $nuitkaArgs += @(
+            "--nofollow-import-to=paddleocr",
+            "--nofollow-import-to=pdf2docx",
+            "--nofollow-import-to=pymupdf",
+            "--nofollow-import-to=fitz"
+        )
+        Write-Host "[build_exe_nuitka] Fast mode enabled: excluding PaddleOCR/PyMuPDF fallback path"
+    }
 
     & $PythonExe @nuitkaArgs
 
