@@ -23,9 +23,14 @@ powershell -ExecutionPolicy Bypass -File .\packaging\scripts\build_exe.ps1 -Clea
 ```
 
 선택 옵션:
+- `-Fast`: `paddleocr/pdf2docx/pymupdf` 경로를 제외해 빌드 시간 단축(대신 해당 fallback 미포함)
 - `-EnableUpx`: UPX가 설치된 경우 exe/dll/pyd 압축 시도
 - `-SkipBundleVCRuntime`: VC++ 런타임 DLL 자동 번들링 단계를 건너뜀
 - `-UpxExe "C:\path\to\upx.exe"`: UPX 경로 직접 지정
+
+개발 중 빠른 반복 빌드 권장:
+- `-Clean` 없이 실행해 증분 빌드 사용
+- fallback 경로가 필요 없으면 `-Fast` 사용
 
 출력:
 - `pc-agent/dist/ProgressEye/ProgressEye.exe`
