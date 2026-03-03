@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -36,12 +40,23 @@ class LoginStartDialog(QWidget):
     def _setup_ui(self) -> None:
         self.setStyleSheet(
             """
-            QWidget { background: #101622; color: #f8fafc; }
-            QLabel#title { font-size: 42px; font-weight: 700; }
-            QLabel#subtitle { color: #94a3b8; font-size: 16px; }
-            QLabel#terms { color: #94a3b8; font-size: 12px; }
-            QLabel#error { color: #ef4444; font-size: 12px; }
-            QCheckBox { color: #cbd5e1; font-size: 13px; }
+            QWidget { background: #0f172a; color: #f8fafc; }
+            QLabel#eyeBadge {
+                min-width: 92px; max-width: 92px;
+                min-height: 92px; max-height: 92px;
+                background: transparent;
+            }
+            QLabel#title { font-size: 42px; font-weight: 700; background: transparent; }
+            QLabel#subtitle { color: #9caecb; font-size: 16px; background: transparent; }
+            QLabel#terms { color: #94a3b8; font-size: 12px; background: transparent; }
+            QLabel#termsCheckLabel { color: #cbd5e1; font-size: 13px; background: transparent; }
+            QLabel#error { color: #ef4444; font-size: 12px; background: transparent; }
+            QWidget#termsPanel {
+                background: #111c33;
+                border: 1px solid #28406f;
+                border-radius: 10px;
+            }
+            QCheckBox { background: transparent; }
             QCheckBox::indicator { width: 16px; height: 16px; }
             QPushButton#google {
                 background: #ffffff; color: #111827; border: none;
@@ -58,9 +73,9 @@ class LoginStartDialog(QWidget):
         )
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(48, 36, 48, 36)
+        root.setContentsMargins(48, 24, 48, 32)
         root.setSpacing(14)
-        root.addStretch()
+        root.addSpacing(10)
 
         self._title = QLabel()
         self._title.setObjectName("title")
@@ -73,9 +88,55 @@ class LoginStartDialog(QWidget):
         self._subtitle.setWordWrap(True)
         root.addWidget(self._subtitle)
 
-        self._terms_check = QCheckBox()
+        root.addSpacing(8)
+
+        self._eye_badge = QLabel()
+        self._eye_badge.setObjectName("eyeBadge")
+        self._eye_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_path = (
+            Path(__file__).resolve().parent.parent / "resources" / "app-icon.png"
+        )
+        if icon_path.exists():
+            pix = QPixmap(str(icon_path))
+            if not pix.isNull():
+                self._eye_badge.setPixmap(
+                    pix.scaled(
+                        84,
+                        84,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+        root.addWidget(self._eye_badge, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        root.addStretch()
+
+        self._terms_panel = QWidget()
+        self._terms_panel.setObjectName("termsPanel")
+        terms_layout = QVBoxLayout(self._terms_panel)
+        terms_layout.setContentsMargins(12, 10, 12, 10)
+        terms_layout.setSpacing(6)
+
+        terms_check_row = QWidget()
+        terms_check_row_layout = QHBoxLayout(terms_check_row)
+        terms_check_row_layout.setContentsMargins(0, 0, 0, 0)
+        terms_check_row_layout.setSpacing(8)
+
+        self._terms_check = QCheckBox("")
+        self._terms_check.setStyleSheet("padding-left: 2px;")
         self._terms_check.stateChanged.connect(self._on_terms_changed)
-        root.addWidget(self._terms_check, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._terms_check_label = QLabel()
+        self._terms_check_label.setObjectName("termsCheckLabel")
+        self._terms_check_label.setWordWrap(True)
+        self._terms_check_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        terms_check_row_layout.addWidget(
+            self._terms_check, alignment=Qt.AlignmentFlag.AlignTop
+        )
+        terms_check_row_layout.addWidget(self._terms_check_label, stretch=1)
+        terms_layout.addWidget(terms_check_row)
 
         self._terms_html = QLabel()
         self._terms_html.setObjectName("terms")
@@ -83,7 +144,8 @@ class LoginStartDialog(QWidget):
         self._terms_html.setOpenExternalLinks(True)
         self._terms_html.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._terms_html.setWordWrap(True)
-        root.addWidget(self._terms_html)
+        terms_layout.addWidget(self._terms_html)
+        root.addWidget(self._terms_panel)
 
         self._login_btn = QPushButton()
         self._login_btn.setObjectName("google")
@@ -103,12 +165,12 @@ class LoginStartDialog(QWidget):
         self._error_label.setVisible(False)
         root.addWidget(self._error_label)
 
-        root.addStretch()
+        root.addSpacing(6)
 
     def _refresh_texts(self) -> None:
         self._title.setText("ProgressEye")
         self._subtitle.setText(t("login_start_subtitle"))
-        self._terms_check.setText(t("login_start_message"))
+        self._terms_check_label.setText(t("login_terms_check_label"))
         self._terms_html.setText(t("login_terms_html"))
         self._login_btn.setText(t("login_start_google"))
         self._cancel_btn.setText(t("login_start_cancel"))
