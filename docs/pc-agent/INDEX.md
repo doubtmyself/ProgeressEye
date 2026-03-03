@@ -11,6 +11,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 - 원격 명령: `docs/pc-agent/topics/remote-commands.md`
 - 런타임 운영: `docs/pc-agent/topics/runtime-operations.md`
 - 빌드/배포: `docs/pc-agent/topics/build-deploy.md`
+- 개발용 터미널 축약어: `docs/pc-agent/topics/dev-aliases.md`
 - 스토어 등록 문안: `docs/pc-agent/topics/store-listing.md`
 
 ## 1) 개요/구조
@@ -28,6 +29,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 - 영역 선택/바 탐지/OCR 모드: `docs/pc-agent/technical-spec.md` -> 핵심 플로우 3.2~3.5
 - 모니터링 중 분석 경로(bar_analyzer 중심): `docs/pc-agent/technical-spec.md` -> 3.2b
 - 성능/최적화: `docs/pc-agent/topics/monitoring.md`
+- OCR 퍼센트/최대수치 모드 규칙: `docs/pc-agent/topics/monitoring.md`
 
 ## 4) Firebase 연동
 - 인증/토큰/자동로그인: `docs/pc-agent/technical-spec.md` -> 3.1
