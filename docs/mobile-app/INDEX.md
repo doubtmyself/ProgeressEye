@@ -19,6 +19,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 기본 빌드: `docs/mobile-app/topics/build-deploy.md`
 - Play 자동배포(GPP): `docs/mobile-app/topics/build-deploy.md`
 - 비공개 테스트 자동출시(`publishBundle`): `docs/mobile-app/topics/build-deploy.md`
+- 릴리즈 Google 로그인 트러블슈팅(SHA-1/SHA-256): `docs/mobile-app/topics/build-deploy.md`
 - 앱 모듈 설정: `mobile-app/app/build.gradle.kts`
 
 ## 3) 화면/상태 흐름

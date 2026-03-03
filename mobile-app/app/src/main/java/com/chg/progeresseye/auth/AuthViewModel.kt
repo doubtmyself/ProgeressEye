@@ -2,6 +2,7 @@ package com.chg.progeresseye.auth
 
 import android.content.Context
 import com.chg.progeresseye.R
+import com.chg.progeresseye.BuildConfig
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
@@ -118,7 +119,14 @@ class AuthViewModel(
                 }
 
                 is GoogleSignInResult.Cancelled -> {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = if (BuildConfig.DEBUG) {
+                            context.getString(R.string.auth_session_takeover_cancelled)
+                        } else {
+                            context.getString(R.string.auth_google_sign_in_release_hint)
+                        },
+                    )
                 }
 
                 is GoogleSignInResult.Error -> {
