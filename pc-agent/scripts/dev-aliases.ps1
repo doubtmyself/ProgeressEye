@@ -2,40 +2,40 @@
 # Usage (current session):
 #   . C:\ProgressEye\pc-agent\scripts\dev-aliases.ps1
 
-$script:ProgressEyeRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$script:PcAgentRoot = Join-Path $script:ProgressEyeRoot "pc-agent"
-$script:VenvPython = Join-Path $script:PcAgentRoot "venv\Scripts\python.exe"
+$global:ProgressEyeRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$global:PcAgentRoot = Join-Path $global:ProgressEyeRoot "pc-agent"
+$global:VenvPython = Join-Path $global:PcAgentRoot "venv\Scripts\python.exe"
 
 function pe-root {
-    Set-Location $script:ProgressEyeRoot
+    Set-Location $global:ProgressEyeRoot
 }
 
 function pe-pc {
-    Set-Location $script:PcAgentRoot
+    Set-Location $global:PcAgentRoot
 }
 
 function pe-docs {
-    Set-Location (Join-Path $script:ProgressEyeRoot "docs")
+    Set-Location (Join-Path $global:ProgressEyeRoot "docs")
 }
 
 function pe-run {
-    if (Test-Path $script:VenvPython) {
-        & $script:VenvPython (Join-Path $script:PcAgentRoot "main.py")
+    if (Test-Path $global:VenvPython) {
+        & $global:VenvPython (Join-Path $global:PcAgentRoot "main.py")
         return
     }
 
     Write-Warning "venv python not found. Trying 'python' from PATH."
-    & python (Join-Path $script:PcAgentRoot "main.py")
+    & python (Join-Path $global:PcAgentRoot "main.py")
 }
 
 function pe-ocr-setup {
-    if (Test-Path $script:VenvPython) {
-        & $script:VenvPython (Join-Path $script:PcAgentRoot "setup_tesseract.py")
+    if (Test-Path $global:VenvPython) {
+        & $global:VenvPython (Join-Path $global:PcAgentRoot "setup_tesseract.py")
         return
     }
 
     Write-Warning "venv python not found. Trying 'python' from PATH."
-    & python (Join-Path $script:PcAgentRoot "setup_tesseract.py")
+    & python (Join-Path $global:PcAgentRoot "setup_tesseract.py")
 }
 
 function pe-test {
@@ -54,10 +54,10 @@ function pe-test {
     }
 
     foreach ($scriptName in $scripts) {
-        $scriptPath = Join-Path $script:PcAgentRoot $scriptName
+        $scriptPath = Join-Path $global:PcAgentRoot $scriptName
         Write-Host ">> Running $scriptName"
-        if (Test-Path $script:VenvPython) {
-            & $script:VenvPython $scriptPath
+        if (Test-Path $global:VenvPython) {
+            & $global:VenvPython $scriptPath
         } else {
             & python $scriptPath
         }
@@ -65,34 +65,34 @@ function pe-test {
 }
 
 function pe-exe {
-    Push-Location $script:PcAgentRoot
+    Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1"
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -NuitkaJobs 0
     } finally {
         Pop-Location
     }
 }
 
 function pe-exe-clean {
-    Push-Location $script:PcAgentRoot
+    Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -NuitkaJobs 0
     } finally {
         Pop-Location
     }
 }
 
 function pe-exe-fast {
-    Push-Location $script:PcAgentRoot
+    Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast -NuitkaJobs 0
     } finally {
         Pop-Location
     }
 }
 
 function pe-exe-run {
-    $exePath = Join-Path $script:PcAgentRoot "dist\ProgressEye\ProgressEye.exe"
+    $exePath = Join-Path $global:PcAgentRoot "dist\ProgressEye\ProgressEye.exe"
     if (-not (Test-Path $exePath)) {
         Write-Warning "EXE not found: $exePath"
         Write-Host "Run 'pe-exe' (or 'pe-exe-clean') first."
@@ -103,16 +103,25 @@ function pe-exe-run {
 }
 
 function pe-msix {
-    Push-Location $script:PcAgentRoot
+    Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -CleanExe -SkipSign
+        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -FastExe -NuitkaJobs 0 -SkipSign
+    } finally {
+        Pop-Location
+    }
+}
+
+function pe-msix-clean {
+    Push-Location $global:PcAgentRoot
+    try {
+        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -CleanExe -FastExe -NuitkaJobs 0 -SkipSign
     } finally {
         Pop-Location
     }
 }
 
 function pe-git {
-    Push-Location $script:ProgressEyeRoot
+    Push-Location $global:ProgressEyeRoot
     try {
         git @args
     } finally {
@@ -120,10 +129,35 @@ function pe-git {
     }
 }
 
-Set-Alias peh Get-Help
+Set-Alias -Scope Global peh Get-Help
 
 # Backward-compatible aliases
-Set-Alias pc-root pe-root
-Set-Alias pc-agent pe-pc
-Set-Alias pc-docs pe-docs
-Set-Alias pc-run pe-run
+Set-Alias -Scope Global pc-root pe-root
+Set-Alias -Scope Global pc-agent pe-pc
+Set-Alias -Scope Global pc-docs pe-docs
+Set-Alias -Scope Global pc-run pe-run
+
+# Ensure commands remain available even when this script is invoked with '&'
+# (child scope execution). Copy functions to global scope explicitly.
+$script:_peFunctions = @(
+    "pe-root",
+    "pe-pc",
+    "pe-docs",
+    "pe-run",
+    "pe-ocr-setup",
+    "pe-test",
+    "pe-exe",
+    "pe-exe-clean",
+    "pe-exe-fast",
+    "pe-exe-run",
+    "pe-msix",
+    "pe-msix-clean",
+    "pe-git"
+)
+
+foreach ($fn in $script:_peFunctions) {
+    $localDef = Get-Item -Path ("function:" + $fn) -ErrorAction SilentlyContinue
+    if ($null -ne $localDef) {
+        Set-Item -Path ("function:global:" + $fn) -Value $localDef.ScriptBlock
+    }
+}

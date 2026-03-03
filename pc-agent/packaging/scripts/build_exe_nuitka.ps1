@@ -4,6 +4,7 @@ Param(
     [switch]$Fast,
     [switch]$EnableUpx,
     [switch]$SkipBundleVCRuntime,
+    [int]$NuitkaJobs = 0,
     [string]$UpxExe = ""
 )
 
@@ -203,6 +204,12 @@ function Copy-VcRuntimeDlls {
 
 Push-Location $PcAgentRoot
 try {
+    if ($NuitkaJobs -le 0) {
+        $NuitkaJobs = [Environment]::ProcessorCount
+    }
+    $NuitkaJobs = [Math]::Max(1, $NuitkaJobs)
+    Write-Host "[build_exe_nuitka] Nuitka jobs: $NuitkaJobs"
+
     if ($Clean) {
         # Stop possibly running app/processes that can lock dist artifacts (.exe/.pyd)
         foreach ($proc in @("ProgressEye", "main")) {
@@ -226,6 +233,7 @@ try {
     $nuitkaArgs = @(
         "-m", "nuitka",
         "--standalone",
+        "--jobs=$NuitkaJobs",
         "--output-filename=ProgressEye.exe",
         "--output-dir=dist",
         "--windows-console-mode=disable",

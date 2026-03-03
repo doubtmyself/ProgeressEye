@@ -52,6 +52,14 @@ copy .\packaging\msix\partner-center.identity.ps1.example .\packaging\msix\partn
 powershell -ExecutionPolicy Bypass -File .\packaging\msix\build_store_msix.ps1 -BuildExe -CleanExe -SkipSign
 ```
 
+속도 최적화 옵션:
+- `-FastExe`: EXE 단계에서 PaddleOCR/PyMuPDF fallback 경로를 제외해 컴파일 시간을 줄인다.
+- `-NuitkaJobs <N>`: Nuitka 병렬 컴파일 스레드 수를 지정한다(기본값 0 = CPU 코어 수 자동 사용).
+- 개발 중에는 `-CleanExe`를 생략해 증분 빌드를 사용하고, 릴리스 직전에만 `-CleanExe`를 권장한다.
+
+MSIX 패키징 안정성 참고:
+- `make_msix.ps1`는 `MakeAppx 0x8007007b`를 유발할 수 있는 `python-docx` 템플릿 메타데이터 파일들을 스테이징에서 자동 제거한다.
+
 출력:
 - `pc-agent/dist/msix/ProgressEye_<version>_<arch>.msix`
 

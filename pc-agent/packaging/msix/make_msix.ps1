@@ -109,7 +109,8 @@ $removePatterns = @(
     "qtwebengine_devtools_resources.debug.pak",
     "qtwebengine_resources.debug.pak",
     "qtwebengine_resources_100p.debug.pak",
-    "qtwebengine_resources_200p.debug.pak"
+    "qtwebengine_resources_200p.debug.pak",
+    "mupdfcpp64.dll"
 )
 $removedMB = 0
 foreach ($pattern in $removePatterns) {
@@ -131,7 +132,8 @@ $directRemove = @(
     (Join-Path $StagingRoot "qtwebengine_devtools_resources.debug.pak"),
     (Join-Path $StagingRoot "qtwebengine_resources.debug.pak"),
     (Join-Path $StagingRoot "qtwebengine_resources_100p.debug.pak"),
-    (Join-Path $StagingRoot "qtwebengine_resources_200p.debug.pak")
+    (Join-Path $StagingRoot "qtwebengine_resources_200p.debug.pak"),
+    (Join-Path $StagingRoot "mupdfcpp64.dll")
 )
 foreach ($glob in $directRemove) {
     Get-Item $glob -ErrorAction SilentlyContinue | ForEach-Object {
@@ -142,6 +144,38 @@ foreach ($glob in $directRemove) {
     }
 }
 Write-Host "[make_msix] Removed ~$removedMB MB of unused files"
+
+$removeDirs = @(
+    (Join-Path $StagingRoot "pymupdf")
+)
+foreach ($dir in $removeDirs) {
+    Get-Item $dir -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "[make_msix] Removing directory $($_.FullName)"
+        Remove-Item $_.FullName -Recurse -Force
+    }
+}
+
+# Workaround: MakeAppx can fail with 0x8007007b on python-docx template metadata payloads.
+# Keep packaging deterministic by pruning known-incompatible metadata files from staged payload.
+$removeLiteralPaths = @(
+    (Join-Path $StagingRoot "docx\templates\default-comments.xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\[Content_Types].xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\_rels\.rels"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\customXml\_rels\item1.xml.rels"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\customXml\item1.xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\customXml\itemProps1.xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\docProps\app.xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\docProps\core.xml"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\docProps\thumbnail.jpeg"),
+    (Join-Path $StagingRoot "docx\templates\default-docx-template\word\_rels\document.xml.rels")
+)
+foreach ($literalPath in $removeLiteralPaths) {
+    if (Test-Path -LiteralPath $literalPath) {
+        Write-Host "[make_msix] Removing incompatible payload $literalPath"
+        Remove-Item -LiteralPath $literalPath -Force
+    }
+}
+
 New-Item -ItemType Directory -Path $AssetsTarget -Force | Out-Null
 
 $requiredAssets = @(
@@ -179,12 +213,18 @@ if (Test-Path $OutputPath) {
 }
 
 & $makeAppx pack /d $StagingRoot /p $OutputPath
+if ($LASTEXITCODE -ne 0) {
+    throw "makeappx failed with exit code $LASTEXITCODE"
+}
 
 if (-not $SkipSign -and $PfxPath) {
     if (-not (Test-Path $PfxPath)) {
         throw "PFX file not found: $PfxPath"
     }
     & $signTool sign /fd SHA256 /f $PfxPath /p $PfxPassword $OutputPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "signtool failed with exit code $LASTEXITCODE"
+    }
 } else {
     Write-Host "[make_msix] Signing skipped. Use -PfxPath/-PfxPassword for local sideload signing."
 }

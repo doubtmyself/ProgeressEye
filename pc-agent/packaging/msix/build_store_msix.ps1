@@ -2,6 +2,8 @@ Param(
     [string]$IdentityFile = "",
     [switch]$BuildExe,
     [switch]$CleanExe,
+    [switch]$FastExe,
+    [int]$NuitkaJobs = 0,
     [switch]$SkipSign,
     [string]$PfxPath = "",
     [string]$PfxPassword = ""
@@ -31,7 +33,14 @@ foreach ($name in $required) {
 }
 
 if ($BuildExe) {
-    & $BuildExeScript -Clean:$CleanExe
+    $buildExeParams = @{
+        Clean = $CleanExe
+        Fast = $FastExe
+    }
+    if ($NuitkaJobs -gt 0) {
+        $buildExeParams["NuitkaJobs"] = $NuitkaJobs
+    }
+    & $BuildExeScript @buildExeParams
 }
 
 $params = @{
