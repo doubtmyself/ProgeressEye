@@ -148,7 +148,7 @@ class CaptureScheduler:
             if self._stop_event.is_set():
                 return
             try:
-                image = self._capturer.capture(region)
+                image = self._capturer.capture(self._resolve_capture_region(region))
                 self._on_capture(region_id, image)
             except CaptureError as e:
                 log.error("캡처 실패 [%s]: %s", region_id, e)
@@ -175,7 +175,16 @@ class CaptureScheduler:
 
         for region_id, region in regions.items():
             try:
-                image = self._capturer.capture(region)
+                image = self._capturer.capture(self._resolve_capture_region(region))
                 self._on_capture(region_id, image)
             except CaptureError as e:
                 log.error("캡처 실패 [%s]: %s", region_id, e)
+
+    @staticmethod
+    def _resolve_capture_region(region: dict[str, Any]) -> dict[str, Any]:
+        """Return effective capture region.
+
+        Keep full configured region for both bar/OCR so screen-change guard can
+        compare stable context around the dynamic progress area.
+        """
+        return region

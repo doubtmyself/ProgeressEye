@@ -9,14 +9,24 @@
 import os
 import sys
 import time
+import importlib
 from pathlib import Path
+from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
+PIL_Image = importlib.import_module("PIL.Image")
+PIL_ImageDraw = importlib.import_module("PIL.ImageDraw")
+PIL_ImageFont = importlib.import_module("PIL.ImageFont")
+
+Image = PIL_Image
+ImageDraw = PIL_ImageDraw
+ImageFont = PIL_ImageFont
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from core.ocr_reader import OcrReader, OcrResult  # noqa: E402
+ocr_module = importlib.import_module("core.ocr_reader")
+OcrReader = ocr_module.OcrReader
+OcrResult = ocr_module.OcrResult
 
 
 # 기대값 (이미지 파일명 → 기대 퍼센트)
@@ -25,10 +35,11 @@ EXPECTED: dict[str, float] = {
     "image2.png": 68.0,
     "image3.png": 91.0,
     "image4.png": 61.0,
+    "image5.png": 11.0,
 }
 
 
-def get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+def get_font(size: int) -> Any:
     for fp in [
         "C:/Windows/Fonts/malgun.ttf",
         "C:/Windows/Fonts/arial.ttf",
@@ -42,13 +53,13 @@ def get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def draw_result(
-    image: Image.Image,
+    image: Any,
     results: list[OcrResult],
     progress: float | None,
     expected: float,
     elapsed_ms: float,
     filename: str,
-) -> Image.Image:
+) -> Any:
     """OCR 결과를 이미지 위에 표기한다."""
     # 작은 이미지는 확대
     min_width = 600
@@ -80,7 +91,7 @@ def draw_result(
     fb = get_font(11)
 
     # 헤더
-    draw.text((10, 8), f"📄 {filename}", fill=(255, 255, 255), font=ft)
+    draw.text((10, 8), f"File: {filename}", fill=(255, 255, 255), font=ft)
     draw.text(
         (10, 30),
         f"Expected: {expected:.1f}%   |   OCR Time: {elapsed_ms:.1f}ms",
@@ -94,10 +105,10 @@ def draw_result(
     # 탐지 결과 상세
     y = header_h
     if results:
-        draw.text((10, y), "▶ 탐지 결과", fill=(59, 130, 246), font=fs)
+        draw.text((10, y), "Detected candidates", fill=(59, 130, 246), font=fs)
         y += line_h
         for idx, r in enumerate(results):
-            pct_tag = "(%)" if r.has_percent_sign else "(숫자)"
+            pct_tag = "(%)" if r.has_percent_sign else "(number)"
             color = (74, 222, 128) if r.has_percent_sign else (255, 200, 100)
             draw.text(
                 (20, y),
@@ -108,7 +119,7 @@ def draw_result(
             )
             y += line_h
     else:
-        draw.text((10, y), "▶ 탐지 결과: 없음", fill=(239, 68, 68), font=fs)
+        draw.text((10, y), "Detected candidates: none", fill=(239, 68, 68), font=fs)
         y += line_h
 
     # 구분선
@@ -117,24 +128,24 @@ def draw_result(
     y += 8
 
     # 최종 진행률
-    draw.text((10, y), "▶ 최종 결과", fill=(59, 130, 246), font=fs)
+    draw.text((10, y), "Final result", fill=(59, 130, 246), font=fs)
     y += line_h + 2
 
     if progress is not None:
         error = abs(progress - expected)
         is_correct = error < 1.0
         result_color = (74, 222, 128) if is_correct else (239, 68, 68)
-        status = "✅ PASS" if is_correct else "❌ FAIL"
+        status = "PASS" if is_correct else "FAIL"
         draw.text(
             (20, y),
-            f"  read_progress() = {progress:.1f}%   오차: {error:.1f}%   {status}",
+            f"  read_progress() = {progress:.1f}%   error: {error:.1f}%   {status}",
             fill=result_color,
             font=fs,
         )
     else:
         draw.text(
             (20, y),
-            "  read_progress() = None   ❌ FAIL (인식 실패)",
+            "  read_progress() = None   FAIL (no detection)",
             fill=(239, 68, 68),
             font=fs,
         )
@@ -175,12 +186,12 @@ def main() -> None:
 
     image_files = sorted(sample_dir.glob("image*.png"))
     if not image_files:
-        print("테스트 이미지가 없습니다.")
+        print("No test images found.")
         return
 
-    print(f"OCR Accuracy Test — {len(image_files)} images\n")
+    print(f"OCR Accuracy Test - {len(image_files)} images\n")
     print(
-        f"{'파일':<15} {'기대값':>8} {'결과':>8} {'오차':>8} {'시간':>10} {'판정':>8}"
+        f"{'file':<15} {'expected':>8} {'result':>8} {'error':>8} {'time':>10} {'status':>8}"
     )
     print("-" * 65)
 
@@ -211,7 +222,7 @@ def main() -> None:
         if is_pass:
             pass_count += 1
 
-        status = "✅ PASS" if is_pass else "❌ FAIL"
+        status = "PASS" if is_pass else "FAIL"
         prog_str = f"{progress:.1f}%" if progress is not None else "None"
 
         print(
@@ -230,9 +241,9 @@ def main() -> None:
         result_img.save(result_dir / filename)
 
     print(
-        f"\n총 {total_count}개 중 {pass_count}개 통과 ({pass_count / total_count * 100:.0f}%)"
+        f"\nPassed {pass_count}/{total_count} ({pass_count / total_count * 100:.0f}%)"
     )
-    print(f"결과 저장 완료: {result_dir}/")
+    print(f"Saved result images: {result_dir}/")
 
 
 if __name__ == "__main__":
