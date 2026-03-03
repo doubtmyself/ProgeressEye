@@ -42,6 +42,7 @@ class SettingsOverlay(QWidget):
     delete_account_requested = pyqtSignal()
     withdrawal_expired_test_requested = pyqtSignal()
     rejoin_expired_test_requested = pyqtSignal()
+    third_party_licenses_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
     def __init__(self, parent: QWidget, show_debug_buttons: bool = False) -> None:
@@ -255,6 +256,16 @@ class SettingsOverlay(QWidget):
         self._account_label = QLabel(t("settings_account"))
         self._account_label.setStyleSheet(label_style)
         acc.addWidget(self._account_label)
+        self._app_version_label = QLabel()
+        self._app_version_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        )
+        acc.addWidget(self._app_version_label)
+        self._btn_licenses = QPushButton(t("btn_third_party_licenses"))
+        self._btn_licenses.setStyleSheet(btn_style_cancel)
+        self._btn_licenses.setToolTip(t("tooltip_third_party_licenses"))
+        self._btn_licenses.clicked.connect(self._on_third_party_licenses_clicked)
+        acc.addWidget(self._btn_licenses)
         account_row = QHBoxLayout()
         self._email_label = QLabel("")
         self._email_label.setStyleSheet(
@@ -376,6 +387,7 @@ class SettingsOverlay(QWidget):
         email: str,
         freeze_minutes: int = 5,
         welcome_mode: bool = False,
+        app_version: str = "",
     ) -> None:
         """설정값을 세팅하고 오버레이를 표시한다."""
         self._welcome_mode = welcome_mode
@@ -387,6 +399,8 @@ class SettingsOverlay(QWidget):
                 self._lang_combo.setCurrentIndex(i)
                 break
         self._email_label.setText(t("settings_logged_in_as").format(email=email))
+        version_text = app_version.strip() if app_version else "-"
+        self._app_version_label.setText(f"{t('settings_app_version')}: {version_text}")
         self._apply_visibility()
         self.show()
         self.raise_()
@@ -462,6 +476,10 @@ class SettingsOverlay(QWidget):
         """언어 변경 후 다이얼로그 내부 텍스트를 갱신한다."""
         self._lang_label.setText(t("settings_language"))
         self._account_label.setText(t("settings_account"))
+        prefix = t("settings_app_version")
+        current = self._app_version_label.text()
+        value = current.split(":", 1)[1].strip() if ":" in current else "-"
+        self._app_version_label.setText(f"{prefix}: {value}")
         self._btn_logout.setText(t("btn_logout"))
         self._btn_logout.setToolTip(t("tooltip_logout"))
         self._btn_delete_account.setText(t("btn_delete_account"))
@@ -472,6 +490,8 @@ class SettingsOverlay(QWidget):
         )
         self._btn_test_rejoin_expired.setText(t("btn_test_rejoin_expired"))
         self._btn_test_rejoin_expired.setToolTip(t("tooltip_test_rejoin_expired"))
+        self._btn_licenses.setText(t("btn_third_party_licenses"))
+        self._btn_licenses.setToolTip(t("tooltip_third_party_licenses"))
         self._interval_label.setText(t("settings_interval"))
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_hint.setText(t("settings_interval_hint"))
@@ -529,6 +549,9 @@ class SettingsOverlay(QWidget):
     def _on_test_rejoin_expired_clicked(self) -> None:
         self.rejoin_expired_test_requested.emit()
         self.hide()
+
+    def _on_third_party_licenses_clicked(self) -> None:
+        self.third_party_licenses_requested.emit()
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802
         """배경(카드 바깥) 클릭 시 닫기. 웰컴 모드에서는 무시."""

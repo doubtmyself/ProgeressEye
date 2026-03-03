@@ -14,6 +14,7 @@ import pathlib
 import sys
 import uuid
 import ctypes
+import webbrowser
 from typing import Callable
 
 
@@ -199,6 +200,9 @@ class ProgressEyeApp:
         )
         self._main_window.settings_rejoin_expired_test_requested.connect(
             self._on_test_rejoin_expired
+        )
+        self._main_window.settings_third_party_licenses_requested.connect(
+            self._open_third_party_licenses
         )
         self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
@@ -1685,6 +1689,29 @@ class ProgressEyeApp:
         except Exception as exc:
             log.warning("디버그 탈퇴+30일 시나리오 적용 실패: %s", exc)
             self._notify(t("rejoin_scenario_failed").format(error=exc))
+
+    def _open_third_party_licenses(self) -> None:
+        notice_candidates = [
+            pathlib.Path(__file__).resolve().parent / "THIRD_PARTY_NOTICES.txt",
+            pathlib.Path(__file__).resolve().parent.parent
+            / "docs"
+            / "pc-agent"
+            / "topics"
+            / "build-deploy.md",
+        ]
+        notice_path = next((p for p in notice_candidates if p.exists()), None)
+        if notice_path is None:
+            self._notify(t("third_party_licenses_not_found"))
+            return
+
+        try:
+            webbrowser.open(notice_path.resolve().as_uri())
+            self._notify(
+                t("third_party_licenses_opened").format(path=str(notice_path.resolve()))
+            )
+        except Exception as exc:
+            log.warning("서드파티 라이선스 파일 열기 실패: %s", exc)
+            self._notify(t("third_party_licenses_open_failed").format(error=exc))
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
