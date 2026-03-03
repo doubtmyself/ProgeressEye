@@ -340,7 +340,7 @@ class ProgressEyeApp:
         while True:
             action = self._wait_login_action()
             if action != "login":
-                log.info("로그인 시작 취소 - 앱을 종료합니다")
+                log.info("로그인 시작 취소")
                 self._silent_auth_abort = True
                 return
             try:
@@ -1574,7 +1574,7 @@ class ProgressEyeApp:
             log.info("프리징 감지 시간 변경: %d분", new_freeze)
 
     def _do_logout(self) -> None:
-        """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 앱 종료."""
+        """로그아웃: 토큰 삭제 → 모니터링 중지 → Firebase 정리 → 로그인 화면 전환."""
         log.info("로그아웃 시작")
         if self._scheduler.is_running:
             self._scheduler.stop()
@@ -1610,9 +1610,9 @@ class ProgressEyeApp:
             log.warning("토큰 삭제 실패: %s", exc)
         self._config.set("auth.uid", "")
         self._config.set("auth.email", "")
-        log.info("로그아웃 완료 — 앱 종료")
-        # tray는 daemon 스레드 — _app.quit() 시 자동 종료
-        self._do_quit()
+        self._main_window.set_login_mode(True)
+        log.info("로그아웃 완료 — 로그인 화면으로 전환")
+        self._ensure_login()
 
     def _do_delete_account(self) -> None:
         """회원탈퇴 요청: 7일 유예 후 삭제, 30일 재가입 제한."""
@@ -1640,7 +1640,7 @@ class ProgressEyeApp:
             log.info("회원탈퇴 요청 접수: uid=%s", self._config.get("auth.uid", ""))
             self._notify(t("delete_account_requested"))
 
-            # 로컬 로그아웃 + 종료
+            # 로컬 로그아웃 + 로그인 화면 전환
             self._do_logout()
         except Exception as exc:
             log.warning("회원탈퇴 실패: %s", exc)
