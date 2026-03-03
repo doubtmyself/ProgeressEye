@@ -201,6 +201,9 @@ class ProgressEyeApp:
         self._main_window.settings_rejoin_expired_test_requested.connect(
             self._on_test_rejoin_expired
         )
+        self._main_window.settings_privacy_policy_requested.connect(
+            self._open_privacy_policy
+        )
         self._main_window.settings_third_party_licenses_requested.connect(
             self._open_third_party_licenses
         )
@@ -1712,6 +1715,17 @@ class ProgressEyeApp:
         except Exception as exc:
             log.warning("서드파티 라이선스 파일 열기 실패: %s", exc)
             self._notify(t("third_party_licenses_open_failed").format(error=exc))
+
+    def _open_privacy_policy(self) -> None:
+        lang = str(self._config.get("language", "en")).lower()
+        lang = "ko" if lang.startswith("ko") else "en"
+        policy_url = f"https://progresseye-49244.web.app/?lang={lang}"
+        try:
+            webbrowser.open(policy_url)
+            self._notify(t("privacy_policy_opened"))
+        except Exception as exc:
+            log.warning("개인정보처리방침 열기 실패: %s", exc)
+            self._notify(t("privacy_policy_open_failed").format(error=exc))
 
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""

@@ -68,6 +68,7 @@
     <string name="settings_theme">테마</string>
     <string name="settings_theme_dark">다크</string>
     <string name="settings_version">버전</string>
+    <string name="settings_privacy_policy">개인정보처리방침</string>
     <string name="settings_oss_licenses">오픈소스 라이선스</string>
     <string name="settings_logout_title">로그아웃 하시겠습니까?</string>
     <string name="settings_logout_message">다시 로그인해야 합니다.</string>
@@ -105,6 +106,7 @@
     <string name="login_terms_suffix">에 동의합니다</string>
     <string name="auth_session_check_failed">세션 확인에 실패했습니다.</string>
     <string name="auth_sign_in_timeout">로그인 시간이 초과되었습니다. 다시 시도해주세요.</string>
+    <string name="auth_google_sign_in_release_hint">Google 로그인이 완료되지 않았습니다. 릴리즈 빌드에서만 발생하면 Firebase에 릴리즈/Play App Signing SHA-1, SHA-256을 등록하고 google-services.json을 다시 내려받아 교체하세요.</string>
 
     <string name="dashboard_status_standby">대기</string>
     <string name="dashboard_task_idle">대기 중</string>

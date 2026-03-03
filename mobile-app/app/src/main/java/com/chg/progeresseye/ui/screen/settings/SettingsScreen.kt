@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -406,6 +407,15 @@ private fun AppearanceCard(
 
 @Composable
 private fun AboutCard() {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val lang = context.resources.configuration.locales[0]?.language ?: "en"
+    val policyUrl = if (lang.startsWith("ko")) {
+        "https://progresseye-49244.web.app/?lang=ko"
+    } else {
+        "https://progresseye-49244.web.app/?lang=en"
+    }
+
     SettingsCard {
         // Version row
         Row(
@@ -425,6 +435,30 @@ private fun AboutCard() {
                     .getPackageInfo(LocalContext.current.packageName, 0).versionName ?: "?",
                 style = MaterialTheme.typography.bodyMedium,
                 color = OnSurfaceVariantDark,
+            )
+        }
+
+        HorizontalDivider(color = OutlineVariantDark)
+
+        // Privacy policy
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { uriHandler.openUri(policyUrl) }
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.settings_privacy_policy),
+                style = MaterialTheme.typography.bodyLarge,
+                color = OnSurfaceDark,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = OnSurfaceVariantDark,
+                modifier = Modifier.size(20.dp),
             )
         }
 

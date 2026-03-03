@@ -76,6 +76,7 @@
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_version">Version</string>
+    <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_oss_licenses">Open Source Licenses</string>
     <string name="settings_logout_title">Log out?</string>
     <string name="settings_logout_message">You will need to sign in again.</string>
@@ -113,6 +114,7 @@ Grace end date: %1$s</string>
     <string name="login_terms_suffix"></string>
     <string name="auth_session_check_failed">Session check failed</string>
     <string name="auth_sign_in_timeout">Sign-in timed out. Please try again.</string>
+    <string name="auth_google_sign_in_release_hint">Google sign-in did not complete. If this occurs in release builds, add your release and Play App Signing SHA-1/SHA-256 in Firebase, then download and replace google-services.json.</string>
 
     <!-- ── Mobile Session ── -->
     <string name="session_takeover_title">Another mobile is already logged in</string>

@@ -412,6 +412,7 @@ class MainWindow(QMainWindow):
     settings_delete_account_requested = pyqtSignal()
     settings_withdrawal_expired_test_requested = pyqtSignal()
     settings_rejoin_expired_test_requested = pyqtSignal()
+    settings_privacy_policy_requested = pyqtSignal()
     settings_third_party_licenses_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
@@ -472,6 +473,9 @@ class MainWindow(QMainWindow):
         )
         self._settings_overlay.rejoin_expired_test_requested.connect(
             self.settings_rejoin_expired_test_requested
+        )
+        self._settings_overlay.privacy_policy_requested.connect(
+            self.settings_privacy_policy_requested
         )
         self._settings_overlay.third_party_licenses_requested.connect(
             self.settings_third_party_licenses_requested
