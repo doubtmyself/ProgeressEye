@@ -73,6 +73,7 @@ class RegionCard(QFrame):
         region_id: str,
         label: str,
         region_type: str = "bar",
+        progress_unit: str = "%",
         alert_threshold: int = 100,
         alert_delay_minutes: int = 0,
         show_test_buttons: bool = False,
@@ -81,6 +82,7 @@ class RegionCard(QFrame):
         super().__init__(parent)
         self.region_id = region_id
         self._region_type = region_type
+        self._progress_unit = progress_unit
         self._show_test_buttons = show_test_buttons
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setStyleSheet(
@@ -143,7 +145,7 @@ class RegionCard(QFrame):
         self._progress_bar.setValue(0)
         self._progress_bar.setFixedHeight(24)
         self._progress_bar.setTextVisible(True)
-        self._progress_bar.setFormat("0.0%")
+        self._progress_bar.setFormat(f"0.0{self._progress_unit}")
         self._progress_bar.setStyleSheet(
             f"QProgressBar {{"
             f"  text-align: center;"
@@ -164,7 +166,7 @@ class RegionCard(QFrame):
         )
         layout.addWidget(self._progress_bar)
 
-        # ── Alert threshold row: 🔔 완료 알람 [80-100] % (bar 타입만) ──
+        # ── Alert threshold row: 🔔 완료 알람 [80-100] % ──
         self._threshold_widget = QWidget()
         self._threshold_widget.setStyleSheet("background: transparent; border: none;")
         threshold_row = QHBoxLayout(self._threshold_widget)
@@ -201,7 +203,7 @@ class RegionCard(QFrame):
         threshold_row.addStretch()
         layout.addWidget(self._threshold_widget)
 
-        # ── Alert delay row: ⏱ 완료 확인 [0-60] 분 (bar 타입만) ──
+        # ── Alert delay row: ⏱ 완료 확인 [0-60] 분 ──
         self._delay_widget = QWidget()
         self._delay_widget.setStyleSheet("background: transparent; border: none;")
         delay_row = QHBoxLayout(self._delay_widget)
@@ -224,11 +226,6 @@ class RegionCard(QFrame):
         delay_row.addWidget(self._delay_spin)
         delay_row.addStretch()
         layout.addWidget(self._delay_widget)
-
-        # OCR 타입은 완료 알람/확인 지연 불필요 (100% 즉시 알림)
-        if region_type == "ocr":
-            self._threshold_widget.setVisible(False)
-            self._delay_widget.setVisible(False)
 
         # ── Bottom row: timestamp ──
         self._time_label = QLabel(t("card_standby"))
@@ -345,10 +342,14 @@ class RegionCard(QFrame):
     def update_progress(self, progress: float) -> None:
         """진행률을 업데이트한다."""
         self._progress_bar.setValue(int(progress * 10))
-        self._progress_bar.setFormat(f"{progress:.1f}%")
+        self._progress_bar.setFormat(f"{progress:.1f}{self._progress_unit}")
         self._time_label.setText(
             t("card_update").format(time=datetime.now().strftime("%H:%M:%S"))
         )
+
+    def set_progress_unit(self, progress_unit: str) -> None:
+        """진행률 단위를 설정한다."""
+        self._progress_unit = progress_unit
 
     def set_label(self, label: str) -> None:
         """라벨을 변경한다."""
@@ -665,6 +666,7 @@ class MainWindow(QMainWindow):
         region_id: str,
         label: str,
         region_type: str = "bar",
+        progress_unit: str = "%",
         enabled: bool = True,
         alert_threshold: int = 100,
         alert_delay_minutes: int = 0,
@@ -677,6 +679,7 @@ class MainWindow(QMainWindow):
             region_id,
             label,
             region_type=region_type,
+            progress_unit=progress_unit,
             alert_threshold=alert_threshold,
             alert_delay_minutes=alert_delay_minutes,
             show_test_buttons=self._show_test_buttons,
@@ -708,12 +711,20 @@ class MainWindow(QMainWindow):
             self._empty_label.show()
         log.info("영역 카드 제거: %s", region_id)
 
-    def update_progress(self, region_id: str, progress: float, label: str = "") -> None:
+    def update_progress(
+        self,
+        region_id: str,
+        progress: float,
+        label: str = "",
+        progress_unit: str | None = None,
+    ) -> None:
         """영역의 진행률을 업데이트한다."""
         if region_id not in self._region_cards:
             self.add_region_display(region_id, label or region_id)
 
         card = self._region_cards[region_id]
+        if progress_unit is not None:
+            card.set_progress_unit(progress_unit)
         card.update_progress(progress)
         if label:
             card.set_label(label)
@@ -827,6 +838,7 @@ class MainWindow(QMainWindow):
         email: str,
         freeze_minutes: int = 5,
         welcome_mode: bool = False,
+        app_version: str = "",
     ) -> None:
         """설정 오버레이를 표시한다."""
         central = self.centralWidget()
@@ -839,6 +851,7 @@ class MainWindow(QMainWindow):
             email,
             freeze_minutes,
             welcome_mode,
+            app_version,
         )
 
     def resizeEvent(self, a0) -> None:  # noqa: N802

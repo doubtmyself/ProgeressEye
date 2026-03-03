@@ -45,6 +45,7 @@ def _set_dpi_awareness() -> None:
 
 _set_dpi_awareness()
 
+from core.ocr_reader import OcrReader, OcrResult  # pyright: ignore[reportImplicitRelativeImport]
 from PIL import Image as PILImage
 from PyQt6.QtCore import QEventLoop, QRect, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
@@ -67,7 +68,6 @@ from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRel
 from core.system_monitor import collect_stats, warmup_cpu_percent, stop_sampler  # pyright: ignore[reportImplicitRelativeImport]
 from ui.area_selector import AreaSelector  # pyright: ignore[reportImplicitRelativeImport]
 from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
-from core.ocr_reader import OcrReader  # pyright: ignore[reportImplicitRelativeImport]
 from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
@@ -85,18 +85,26 @@ class _SilentAuthAbort(AuthError):
 
 
 class ProgressEyeApp:
+    OCR_AREA_EXPAND_RATIO_X = 0.12
+    OCR_AREA_EXPAND_RATIO_Y = 0.18
+    OCR_AREA_EXPAND_MIN_PX = 8
+    OCR_MAX_INTEGER_DIGITS = 3
+    OCR_ASSUMED_DECIMAL_PLACES = 1
+
     """ProgressEye 메인 애플리케이션.
 
     모든 모듈을 연결하고 전체 파이프라인을 관리한다.
     """
 
     def __init__(self, debug_mode: bool = False) -> None:
+        # Initialize OCR backend before QApplication to avoid Windows DLL
+        # initialization conflicts between Qt runtime and onnxruntime.
+        self._ocr_reader = OcrReader()
         self._app = QApplication(sys.argv)
         self._config = Config()
         self._capturer = ScreenCapturer()
         self._analyzer = BarAnalyzer()
         self._bar_finder = BarFinder()
-        self._ocr_reader = OcrReader()
         self._freeze_detector = FreezeDetector(
             timeout_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
         )
@@ -239,7 +247,7 @@ class ProgressEyeApp:
 
     def run(self) -> int:
         """애플리케이션을 실행한다."""
-        log.info("ProgressEye 시작")
+        log.info("ProgressEye 시작 (python=%s)", sys.executable)
 
         # 최소 버전 체크 (Firestore — 인증 불필요)
         min_ver = get_min_pc_version()
@@ -260,7 +268,28 @@ class ProgressEyeApp:
         if is_first and self._config.get("auth.uid", ""):
             self._show_welcome()
         self._main_window.show()
+        self._maybe_show_ocr_runtime_guide()
         return self._app.exec()
+
+    def _maybe_show_ocr_runtime_guide(self) -> None:
+        if self._ocr_reader.backend != "paddleocr":
+            return
+        if self._config.get("startup.ocr_runtime_guide_ack", False):
+            return
+
+        dialog = QMessageBox(self._main_window)
+        dialog.setWindowTitle(t("ocr_runtime_guide_title"))
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.setText(t("ocr_runtime_guide_summary"))
+        dialog.setInformativeText(t("ocr_runtime_guide_detail"))
+        dialog.addButton(t("ocr_runtime_guide_ok"), QMessageBox.ButtonRole.AcceptRole)
+        never_btn = dialog.addButton(
+            t("ocr_runtime_guide_never"),
+            QMessageBox.ButtonRole.ActionRole,
+        )
+        self._exec_foreground_dialog(dialog)
+        if dialog.clickedButton() is never_btn:
+            self._config.set("startup.ocr_runtime_guide_ack", True)
 
     def _try_auto_login(self) -> bool:
         """저장된 refresh_token으로 자동 로그인을 시도한다."""
@@ -936,10 +965,12 @@ class ProgressEyeApp:
         """설정에 저장된 영역을 복원한다."""
         for region in self._config.regions:
             enabled = region.get("enabled", True)
+            progress_unit = "%"
             self._main_window.add_region_display(
                 region["id"],
                 region.get("label", region["id"]),
                 region_type=region.get("type", "bar"),
+                progress_unit=progress_unit,
                 enabled=enabled,
                 alert_threshold=region.get("alert_threshold", 100),
                 alert_delay_minutes=region.get("alert_delay_minutes", 0),
@@ -1047,14 +1078,13 @@ class ProgressEyeApp:
                 "direction": direction,
                 **bar_crop,
             }
+            region_label = str(region["label"])
             self._config.add_region(region)
             self._main_window.add_region_display(
-                region_id, region["label"], region_type="bar"
+                region_id, region_label, region_type="bar"
             )
             final_progress = dialog.progress
-            self._main_window.update_progress(
-                region_id, final_progress, region["label"]
-            )
+            self._main_window.update_progress(region_id, final_progress, region_label)
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("바 영역 등록: %s (%.1f%%)", region_id, final_progress)
@@ -1063,7 +1093,7 @@ class ProgressEyeApp:
             # Firebase에 라벨 전송 (등록 시 1회)
             if self._device_manager:
                 try:
-                    self._device_manager.set_task_label(region_id, region["label"])
+                    self._device_manager.set_task_label(region_id, region_label)
                 except Exception:
                     pass
         elif dialog.reselect_requested:
@@ -1078,17 +1108,33 @@ class ProgressEyeApp:
             log.error("영역 캐처 실패: %s", e)
             return
 
-        ocr_results = self._ocr_reader.find_percentages(image)
+        mode = "percent"
+        target = 100.0
+        prefer_percent = True
+        ocr_results = self._ocr_reader.find_percentages(
+            image,
+            min_value=0.0,
+            max_value=target,
+        )
         detected_progress = None
+        default_ocr_region = (0, 0, image.width, image.height)
         if ocr_results:
-            best = max(ocr_results, key=lambda r: r.confidence)
+            best = self._ocr_reader.select_best_result(
+                ocr_results,
+                prefer_percent_sign=prefer_percent,
+            )
             detected_progress = best.progress
 
         qimage = self._pil_to_qimage(image)
         dialog = OcrPreviewDialog(
             image=qimage,
+            full_image=image,
+            ocr_reader=self._ocr_reader,
             ocr_results=ocr_results,
             detected_progress=detected_progress,
+            ocr_region=default_ocr_region,
+            detection_mode=mode,
+            target_value=target,
         )
 
         if dialog.exec():
@@ -1106,29 +1152,260 @@ class ProgressEyeApp:
                 "height": area["height"],
                 "abs_x": area.get("abs_x"),
                 "abs_y": area.get("abs_y"),
+                "ocr_left": dialog.ocr_region[0],
+                "ocr_top": dialog.ocr_region[1],
+                "ocr_right": dialog.ocr_region[2],
+                "ocr_bottom": dialog.ocr_region[3],
+                "ocr_mode": dialog.detection_mode,
+                "ocr_target": dialog.target_value,
             }
+            region_label = str(region["label"])
+            progress_unit = "%"
             self._config.add_region(region)
             self._main_window.add_region_display(
-                region_id, region["label"], region_type="ocr"
+                region_id,
+                region_label,
+                region_type="ocr",
+                progress_unit=progress_unit,
             )
             final_progress = dialog.progress
             self._main_window.update_progress(
-                region_id, final_progress, region["label"]
+                region_id,
+                final_progress,
+                region_label,
+                progress_unit=progress_unit,
             )
             if self._scheduler.is_running:
                 self._scheduler.add_region(region)
             log.info("OCR 영역 등록: %s (%.1f%%)", region_id, final_progress)
             # 템플릿 이미지 저장 (이미지 변경 감지용)
-            self._save_template(region_id, image)
+            self._save_template(
+                region_id,
+                self._template_image_for_region(image, region),
+            )
             # Firebase에 라벨 전송 (등록 시 1회)
             if self._device_manager:
                 try:
-                    self._device_manager.set_task_label(region_id, region["label"])
+                    self._device_manager.set_task_label(region_id, region_label)
                 except Exception:
                     pass
         elif dialog.reselect_requested:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_ocr_area_selection)
+
+    def _expand_ocr_area(self, area: dict) -> dict:
+        """OCR 영역에 여유 패딩을 추가해 숫자 폭 변화를 흡수한다."""
+        expanded = dict(area)
+        width = int(expanded.get("width", 0))
+        height = int(expanded.get("height", 0))
+        if width <= 0 or height <= 0:
+            return expanded
+
+        base_pad_x = max(
+            self.OCR_AREA_EXPAND_MIN_PX, int(width * self.OCR_AREA_EXPAND_RATIO_X)
+        )
+        pad_y = max(
+            self.OCR_AREA_EXPAND_MIN_PX, int(height * self.OCR_AREA_EXPAND_RATIO_Y)
+        )
+
+        # 소수점 1자리(예: 11.0)까지를 기준으로 오른쪽 여유를 추가한다.
+        estimated_char_width = max(6, int(height * 0.55))
+        decimal_extra_chars = 1 + self.OCR_ASSUMED_DECIMAL_PLACES  # '.' + 소수 자릿수
+        extra_right_px = estimated_char_width * decimal_extra_chars
+        pad_left = base_pad_x
+        pad_right = base_pad_x + extra_right_px
+
+        monitor_idx = int(expanded.get("monitor", 0))
+        monitors = self._capturer.get_monitors()
+        if monitor_idx < 0 or monitor_idx >= len(monitors):
+            monitor_idx = 0
+        mon = monitors[monitor_idx]
+
+        if expanded.get("abs_x") is not None and expanded.get("abs_y") is not None:
+            abs_left = int(expanded.get("abs_x", 0)) - pad_left
+            abs_top = int(expanded.get("abs_y", 0)) - pad_y
+            abs_right = int(expanded.get("abs_x", 0)) + width + pad_right
+            abs_bottom = int(expanded.get("abs_y", 0)) + height + pad_y
+
+            min_x = int(mon["left"])
+            min_y = int(mon["top"])
+            max_x = int(mon["left"] + mon["width"])
+            max_y = int(mon["top"] + mon["height"])
+
+            abs_left = max(min_x, abs_left)
+            abs_top = max(min_y, abs_top)
+            abs_right = min(max_x, abs_right)
+            abs_bottom = min(max_y, abs_bottom)
+
+            if abs_right <= abs_left:
+                abs_right = min(max_x, abs_left + 1)
+            if abs_bottom <= abs_top:
+                abs_bottom = min(max_y, abs_top + 1)
+
+            expanded["abs_x"] = abs_left
+            expanded["abs_y"] = abs_top
+            expanded["width"] = abs_right - abs_left
+            expanded["height"] = abs_bottom - abs_top
+
+            if monitor_idx > 0:
+                expanded["x"] = abs_left - int(mon["left"])
+                expanded["y"] = abs_top - int(mon["top"])
+            else:
+                expanded["x"] = abs_left
+                expanded["y"] = abs_top
+        else:
+            x = int(expanded.get("x", 0))
+            y = int(expanded.get("y", 0))
+
+            if monitor_idx > 0:
+                min_x = 0
+                min_y = 0
+                max_x = int(mon["width"])
+                max_y = int(mon["height"])
+            else:
+                min_x = int(mon["left"])
+                min_y = int(mon["top"])
+                max_x = int(mon["left"] + mon["width"])
+                max_y = int(mon["top"] + mon["height"])
+
+            left = max(min_x, x - pad_left)
+            top = max(min_y, y - pad_y)
+            right = min(max_x, x + width + pad_right)
+            bottom = min(max_y, y + height + pad_y)
+
+            if right <= left:
+                right = min(max_x, left + 1)
+            if bottom <= top:
+                bottom = min(max_y, top + 1)
+
+            expanded["x"] = left
+            expanded["y"] = top
+            expanded["width"] = right - left
+            expanded["height"] = bottom - top
+
+            if monitor_idx > 0:
+                expanded["abs_x"] = int(mon["left"]) + expanded["x"]
+                expanded["abs_y"] = int(mon["top"]) + expanded["y"]
+
+        log.info(
+            "OCR 영역 자동 확장: (%d,%d,%d,%d) -> (%d,%d,%d,%d)",
+            int(area.get("x", 0)),
+            int(area.get("y", 0)),
+            width,
+            height,
+            int(expanded.get("x", 0)),
+            int(expanded.get("y", 0)),
+            int(expanded.get("width", 0)),
+            int(expanded.get("height", 0)),
+        )
+        return expanded
+
+    def _build_default_ocr_region(
+        self,
+        image: PILImage.Image,
+        ocr_results: list,
+    ) -> tuple[int, int, int, int]:
+        """Build default OCR focus region with 3-digit + 1-decimal width margin."""
+        img_w, img_h = image.size
+        full = (0, 0, img_w, img_h)
+        if not ocr_results:
+            return full
+
+        best = self._ocr_reader.select_best_result(ocr_results)
+        x, y, w, h = best.bbox
+        if w <= 0 or h <= 0:
+            return full
+
+        estimated_char_width = max(6, int(h * 0.55))
+        required_chars = (
+            self.OCR_MAX_INTEGER_DIGITS + 1 + self.OCR_ASSUMED_DECIMAL_PLACES
+        )
+        required_w = max(w, estimated_char_width * required_chars)
+        pad_x = max(self.OCR_AREA_EXPAND_MIN_PX, int(estimated_char_width * 0.8))
+        pad_y = max(self.OCR_AREA_EXPAND_MIN_PX, int(h * 0.2))
+
+        center_x = x + w // 2
+        left = center_x - required_w // 2 - pad_x
+        right = center_x + required_w // 2 + pad_x
+        top = y - pad_y
+        bottom = y + h + pad_y
+
+        return self._normalize_ocr_region((left, top, right, bottom), img_w, img_h)
+
+    @staticmethod
+    def _normalize_ocr_region(
+        region: tuple[int, int, int, int], img_w: int, img_h: int
+    ) -> tuple[int, int, int, int]:
+        left, top, right, bottom = region
+        left = max(0, min(left, img_w - 1))
+        top = max(0, min(top, img_h - 1))
+        right = max(left + 1, min(right, img_w))
+        bottom = max(top + 1, min(bottom, img_h))
+        return left, top, right, bottom
+
+    def _get_ocr_mode_settings(
+        self, region_config: dict
+    ) -> tuple[str, float, str, bool]:
+        mode = "value" if region_config.get("ocr_mode") == "value" else "percent"
+        target_raw = region_config.get("ocr_target", 100.0)
+        try:
+            target = float(target_raw)
+        except (TypeError, ValueError):
+            target = 100.0
+        target = max(1.0, target)
+        unit = "%"
+        prefer_percent = mode == "percent"
+        return mode, target, unit, prefer_percent
+
+    @staticmethod
+    def _normalize_ocr_progress(
+        mode: str, detected_value: float, target: float
+    ) -> float:
+        if mode == "value":
+            if target <= 0:
+                return 0.0
+            return max(0.0, min(100.0, (detected_value / target) * 100.0))
+        return max(0.0, min(100.0, detected_value))
+
+    def _crop_ocr_image_by_config(
+        self,
+        image: PILImage.Image,
+        region_config: dict,
+    ) -> PILImage.Image:
+        left_raw = region_config.get("ocr_left")
+        top_raw = region_config.get("ocr_top")
+        right_raw = region_config.get("ocr_right")
+        bottom_raw = region_config.get("ocr_bottom")
+        if not isinstance(left_raw, (int, float)):
+            return image
+        if not isinstance(top_raw, (int, float)):
+            return image
+        if not isinstance(right_raw, (int, float)):
+            return image
+        if not isinstance(bottom_raw, (int, float)):
+            return image
+        l, t, r, b = self._normalize_ocr_region(
+            (int(left_raw), int(top_raw), int(right_raw), int(bottom_raw)),
+            image.width,
+            image.height,
+        )
+        target_w = r - l
+        target_h = b - t
+        if image.width == target_w and image.height == target_h:
+            return image
+        return image.crop((l, t, r, b))
+
+    def _template_image_for_region(
+        self,
+        image: PILImage.Image,
+        region_config: dict,
+    ) -> PILImage.Image:
+        """Build template image for screen-change guard.
+
+        Keep full region context so dynamic progress text/bar can be masked while
+        surrounding UI still participates in similarity checks.
+        """
+        return image
 
     def _on_area_cancelled(self) -> None:
         """영역 선택 취소."""
@@ -1163,14 +1440,23 @@ class ProgressEyeApp:
 
     def _update_region_area(self, region_id: str, area: dict) -> None:
         """재선택된 영역으로 기존 작업의 좌표를 업데이트하고 프리뷰를 다시 열다."""
+        current_region = next(
+            (r for r in self._config.regions if r["id"] == region_id), None
+        )
+        if current_region is not None and current_region.get("type", "bar") == "ocr":
+            area = dict(area)
+
         try:
             new_image = self._capturer.capture(area)
         except Exception as exc:
             log.warning("재선택 캡처 실패: %s", exc)
             self._do_edit_region(region_id)
             return
-        # bar_finder로 바 오프셋 초기 탐지
-        bar_region = self._bar_finder.find(new_image)
+
+        # bar 타입만 bar_finder 오프셋 갱신
+        bar_region = None
+        if current_region is None or current_region.get("type", "bar") != "ocr":
+            bar_region = self._bar_finder.find(new_image)
         updates: dict = {
             "monitor": area.get("monitor", 0),
             "x": area["x"],
@@ -1180,6 +1466,15 @@ class ProgressEyeApp:
             "abs_x": area.get("abs_x"),
             "abs_y": area.get("abs_y"),
         }
+        if current_region is not None and current_region.get("type", "bar") == "ocr":
+            updates.update(
+                {
+                    "ocr_left": None,
+                    "ocr_top": None,
+                    "ocr_right": None,
+                    "ocr_bottom": None,
+                }
+            )
         if bar_region and bar_region.confidence > 0:
             updates["direction"] = bar_region.direction
             updates["bar_left"] = bar_region.left
@@ -1187,8 +1482,18 @@ class ProgressEyeApp:
             updates["bar_right"] = bar_region.right
             updates["bar_bottom"] = bar_region.bottom
         self._config.update_region(region_id, updates)
-        # 템플릿 = 원본 영역 전체
-        self._save_template(region_id, new_image)
+        # 템플릿 갱신 (영역 타입별 유효 캡처 기준)
+        updated_region = next(
+            (r for r in self._config.regions if r.get("id") == region_id),
+            None,
+        )
+        self._save_template(
+            region_id,
+            self._template_image_for_region(
+                new_image,
+                updated_region if isinstance(updated_region, dict) else updates,
+            ),
+        )
         # 스케줄러 영역도 갱신
         if self._scheduler.is_running:
             self._scheduler.remove_region(region_id)
@@ -1234,6 +1539,7 @@ class ProgressEyeApp:
             language=self._config.get("language", "en"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
+            app_version=APP_VERSION,
         )
 
     def _on_settings_saved(
@@ -1388,6 +1694,7 @@ class ProgressEyeApp:
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
             welcome_mode=True,
+            app_version=APP_VERSION,
         )
 
     def _on_edit_region(self, region_id: str) -> None:
@@ -1419,29 +1726,119 @@ class ProgressEyeApp:
         region_type = area.get("type", "bar")
         current_label = area.get("label", "")
 
+        progress_unit = "%"
         if region_type == "ocr":
             # OCR 타입: OcrPreviewDialog
-            ocr_results = self._ocr_reader.find_percentages(image)
+            mode, target, progress_unit, prefer_percent = self._get_ocr_mode_settings(
+                area
+            )
+            existing_region = None
+            if all(
+                isinstance(area.get(k), (int, float))
+                for k in ("ocr_left", "ocr_top", "ocr_right", "ocr_bottom")
+            ):
+                existing_region = self._normalize_ocr_region(
+                    (
+                        int(area.get("ocr_left", 0)),
+                        int(area.get("ocr_top", 0)),
+                        int(area.get("ocr_right", image.width)),
+                        int(area.get("ocr_bottom", image.height)),
+                    ),
+                    image.width,
+                    image.height,
+                )
+
+            image_for_ocr = image.crop(existing_region) if existing_region else image
+            ocr_results = self._ocr_reader.find_percentages(
+                image_for_ocr,
+                min_value=0.0,
+                max_value=target,
+            )
+            if existing_region is not None:
+                offset_x, offset_y = existing_region[0], existing_region[1]
+                ocr_results = [
+                    OcrResult(
+                        text=r.text,
+                        confidence=r.confidence,
+                        bbox=(
+                            r.bbox[0] + offset_x,
+                            r.bbox[1] + offset_y,
+                            r.bbox[2],
+                            r.bbox[3],
+                        ),
+                        progress=r.progress,
+                        has_percent_sign=r.has_percent_sign,
+                    )
+                    for r in ocr_results
+                ]
             detected_progress = None
+            default_ocr_region = (
+                existing_region
+                if existing_region
+                else self._build_default_ocr_region(image, ocr_results)
+            )
             if ocr_results:
-                best = max(ocr_results, key=lambda r: r.confidence)
+                best = self._ocr_reader.select_best_result(
+                    ocr_results,
+                    prefer_percent_sign=prefer_percent,
+                )
                 detected_progress = best.progress
+            else:
+                last_state = self._last_firebase_state.get(region_id, {})
+                fallback_progress = last_state.get("p")
+                if isinstance(fallback_progress, (int, float)):
+                    detected_progress = float(fallback_progress)
 
             qimage = self._pil_to_qimage(image)
             dialog = OcrPreviewDialog(
                 image=qimage,
+                full_image=image,
+                ocr_reader=self._ocr_reader,
                 ocr_results=ocr_results,
                 detected_progress=detected_progress,
+                ocr_region=default_ocr_region,
+                detection_mode=mode,
+                target_value=target,
             )
             dialog._task_name_input.setText(current_label)
 
             if dialog.exec():
                 new_label = dialog.task_name or current_label
-                self._config.update_region(region_id, {"label": new_label})
-                self._main_window.update_progress(region_id, dialog.progress, new_label)
+                self._config.update_region(
+                    region_id,
+                    {
+                        "label": new_label,
+                        "ocr_left": dialog.ocr_region[0],
+                        "ocr_top": dialog.ocr_region[1],
+                        "ocr_right": dialog.ocr_region[2],
+                        "ocr_bottom": dialog.ocr_region[3],
+                        "ocr_mode": dialog.detection_mode,
+                        "ocr_target": dialog.target_value,
+                    },
+                )
+                updated_unit = "%" if dialog.detection_mode == "percent" else ""
+                self._main_window.update_progress(
+                    region_id,
+                    dialog.progress,
+                    new_label,
+                    progress_unit=updated_unit,
+                )
                 log.info("OCR 영역 수정: %s → %s", region_id, new_label)
                 # 템플릿 이미지 갱신 (수정 시 재캡처된 이미지로)
-                self._save_template(region_id, image)
+                template_region = dict(area)
+                template_region.update(
+                    {
+                        "ocr_left": dialog.ocr_region[0],
+                        "ocr_top": dialog.ocr_region[1],
+                        "ocr_right": dialog.ocr_region[2],
+                        "ocr_bottom": dialog.ocr_region[3],
+                        "type": "ocr",
+                    }
+                )
+                self._save_template(
+                    region_id,
+                    self._template_image_for_region(image, template_region),
+                )
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
@@ -1548,11 +1945,43 @@ class ProgressEyeApp:
         region_type = area.get("type", "bar")
         region_rect = self._mss_to_qt_rect(area)
         bar_qt_rect = None
+        ocr_qt_rect = None
         if region_type == "ocr":
             # OCR: 숫자% 읽기
-            progress_val = self._ocr_reader.read_progress(image)
-            if progress_val is None:
-                progress_val = 0.0
+            mode, target, _, prefer_percent = self._get_ocr_mode_settings(area)
+            detected_value = self._ocr_reader.read_progress(
+                self._crop_ocr_image_by_config(image, area),
+                min_value=0.0,
+                max_value=target,
+                prefer_percent_sign=prefer_percent,
+                allow_percent_sign=prefer_percent,
+            )
+            if detected_value is None:
+                last_state = self._last_firebase_state.get(region_id, {})
+                progress_val = float(last_state.get("p", 0.0))
+            else:
+                progress_val = self._normalize_ocr_progress(
+                    mode, detected_value, target
+                )
+            if all(
+                isinstance(area.get(k), (int, float))
+                for k in ("ocr_left", "ocr_top", "ocr_right", "ocr_bottom")
+            ):
+                ocr_area = {
+                    "monitor": area.get("monitor", 0),
+                    "x": area["x"] + int(area.get("ocr_left", 0)),
+                    "y": area["y"] + int(area.get("ocr_top", 0)),
+                    "width": int(area.get("ocr_right", area["width"]))
+                    - int(area.get("ocr_left", 0)),
+                    "height": int(area.get("ocr_bottom", area["height"]))
+                    - int(area.get("ocr_top", 0)),
+                }
+                if area.get("abs_x") is not None and area.get("abs_y") is not None:
+                    ocr_area["abs_x"] = int(area["abs_x"]) + int(
+                        area.get("ocr_left", 0)
+                    )
+                    ocr_area["abs_y"] = int(area["abs_y"]) + int(area.get("ocr_top", 0))
+                ocr_qt_rect = self._mss_to_qt_rect(ocr_area)
         else:
             # 바 — 원본 영역 내 bar 오프셋으로 크롭하여 분석
             bar_image = image.crop(
@@ -1587,7 +2016,11 @@ class ProgressEyeApp:
                 pass
 
         self._region_viewer = RegionViewer(
-            region_rect, bar_qt_rect, progress_val, region_type=region_type
+            region_rect,
+            bar_qt_rect,
+            progress_val,
+            ocr_qt_rect,
+            region_type,
         )
         self._region_viewer.closed.connect(self._on_region_viewer_closed)
         self._region_viewer.show()
@@ -1662,6 +2095,9 @@ class ProgressEyeApp:
             self._last_firebase_state.clear()
             self._last_synced_firebase_state.clear()
             self._pending_firebase_batch.clear()
+            for r in regions:
+                if r.get("type", "bar") == "ocr":
+                    self._ocr_reader.reset_cache(r["id"])
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True, interval)
             self._set_runtime_hint("ProgressEye - 모니터링 중")
@@ -1682,7 +2118,10 @@ class ProgressEyeApp:
                 if rid not in self._template_images:
                     try:
                         tpl_image = self._capturer.capture(r)
-                        self._save_template(rid, tpl_image)
+                        self._save_template(
+                            rid,
+                            self._template_image_for_region(tpl_image, r),
+                        )
                         log.debug("[모니터링 시작] %s 템플릿 이미지 생성", rid)
                     except Exception as exc:
                         log.debug("[모니터링 시작] %s 템플릿 생성 실패: %s", rid, exc)
@@ -1711,15 +2150,17 @@ class ProgressEyeApp:
         label = region_config.get("label", region_id)
         # 영역 타입에 따라 분석 분기
         region_type = region_config.get("type", "bar")
+        progress_unit = "%"
+        apply_image_change_guard = region_type == "bar"
 
         # ── 이미지 변경 감지 ──
         IMAGE_CHANGE_THRESHOLD = 0.3
-        if region_id not in self._template_images:
+        if apply_image_change_guard and region_id not in self._template_images:
             # 템플릿 없음 (영역 등록 전 복원된 경우) — 유사도 검사 생략
             log.debug("[%s] 템플릿 이미지 없음 — 유사도 검사 생략", region_id)
-        else:
+        elif apply_image_change_guard:
             try:
-                # 바 영역은 게이지 변화로 유사도가 떨어지므로 제외
+                # 동적 진행 영역은 마스킹해서 화면 변경 감지 오탐을 줄인다.
                 bar_bbox = None
                 if region_type == "bar":
                     bl = region_config.get("bar_left")
@@ -1731,6 +2172,28 @@ class ProgressEyeApp:
                             br,
                             region_config.get("bar_bottom", image.height),
                         )
+                elif region_type == "ocr":
+                    left_raw = region_config.get("ocr_left")
+                    top_raw = region_config.get("ocr_top")
+                    right_raw = region_config.get("ocr_right")
+                    bottom_raw = region_config.get("ocr_bottom")
+                    if (
+                        isinstance(left_raw, (int, float))
+                        and isinstance(top_raw, (int, float))
+                        and isinstance(right_raw, (int, float))
+                        and isinstance(bottom_raw, (int, float))
+                    ):
+                        left_n, top_n, right_n, bottom_n = self._normalize_ocr_region(
+                            (
+                                int(left_raw),
+                                int(top_raw),
+                                int(right_raw),
+                                int(bottom_raw),
+                            ),
+                            image.width,
+                            image.height,
+                        )
+                        bar_bbox = (left_n, top_n, right_n, bottom_n)
                 similarity = self._check_image_similarity(
                     self._template_images[region_id],
                     image,
@@ -1766,7 +2229,13 @@ class ProgressEyeApp:
                             "image_change", "ProgressEye", complete_msg
                         )
                     # 완료 처리된 작업은 모니터링 중지 (반복 알림 방지)
+                    self._config.update_region(region_id, {"enabled": False})
                     self._scheduler.remove_region(region_id)
+                    self._action_queue.put(
+                        lambda _id=region_id: self._main_window.set_region_enabled(
+                            _id, False
+                        )
+                    )
                     if self._scheduler.region_count == 0:
                         log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
                         self._action_queue.put(self._auto_stop_monitoring)
@@ -1793,6 +2262,11 @@ class ProgressEyeApp:
                     )
                     self._config.update_region(region_id, {"enabled": False})
                     self._scheduler.remove_region(region_id)
+                    self._action_queue.put(
+                        lambda _id=region_id: self._main_window.set_region_enabled(
+                            _id, False
+                        )
+                    )
                     # 모든 영역이 제외되면 모니터링 자동 정지
                     if self._scheduler.region_count == 0:
                         log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
@@ -1800,10 +2274,21 @@ class ProgressEyeApp:
                 # 템플릿은 작업 삭제 시에만 삭제 — 여기서는 유지
                 return
 
+        progress: float | None = None
         if region_type == "ocr":
             # OCR로 숫자% 읽기
-            progress = self._ocr_reader.read_progress(image, region_id=region_id)
-            if progress is None:
+            mode, target, progress_unit, prefer_percent = self._get_ocr_mode_settings(
+                region_config
+            )
+            detected_value = self._ocr_reader.read_progress(
+                self._crop_ocr_image_by_config(image, region_config),
+                region_id=region_id,
+                min_value=0.0,
+                max_value=target,
+                prefer_percent_sign=prefer_percent,
+                allow_percent_sign=prefer_percent,
+            )
+            if detected_value is None:
                 if region_id in self._alerted_regions:
                     # 완료 후 OCR 실패 → 창 닫힘 감지 (시나리오 2)
                     fails = self._post_completion_fails.get(region_id, 0)
@@ -1830,8 +2315,20 @@ class ProgressEyeApp:
                                 "completion", "ProgressEye", closed_msg
                             )
                 else:
-                    log.warning("[%s] OCR 숫자 인식 실패", region_id)
-                return
+                    last_state = self._last_firebase_state.get(region_id, {})
+                    fallback_progress = last_state.get("p")
+                    if isinstance(fallback_progress, (int, float)):
+                        progress = float(fallback_progress)
+                        log.debug(
+                            "[%s] OCR miss fallback to last progress: %.1f%%",
+                            region_id,
+                            progress,
+                        )
+                    else:
+                        log.warning("[%s] OCR 숫자 인식 실패", region_id)
+                        return
+            else:
+                progress = self._normalize_ocr_progress(mode, detected_value, target)
         else:
             # 바 — 원본 영역에서 bar 오프셋으로 크롭하여 분석 (bar_finder 불필요)
             bar_image = image.crop(
@@ -1845,6 +2342,9 @@ class ProgressEyeApp:
             direction = region_config.get("direction", "horizontal")
             result = self._analyzer.analyze(bar_image, direction=direction)
             progress = result.progress
+
+        if progress is None:
+            return
 
         log.info("[%s] 진행률: %.1f%% (%s)", region_id, progress, region_type)
 
@@ -1878,22 +2378,32 @@ class ProgressEyeApp:
         if self._should_sync_firebase_state(new_state, prev_synced, prev_analyzed):
             self._pending_firebase_batch[region_id] = new_state
             self._last_synced_firebase_state[region_id] = new_state
-        self._set_runtime_hint(f"ProgressEye - {label}: {progress:.1f}%")
+        self._set_runtime_hint(f"ProgressEye - {label}: {progress:.1f}{progress_unit}")
         # UI 업데이트 — 큐로 메인 스레드 전달
         self._action_queue.put(
-            lambda _id=region_id, _p=progress, _l=label: (
-                self._main_window.update_progress(_id, _p, _l)
+            lambda _id=region_id, _p=progress, _l=label, _u=progress_unit: (
+                self._main_window.update_progress(_id, _p, _l, progress_unit=_u)
             )
         )
 
         # ── 완료 후 시나리오 감지 ──
         threshold = region_config.get("alert_threshold", 100)
+        try:
+            threshold_value = float(threshold)
+        except (TypeError, ValueError):
+            threshold_value = 100.0
+        if threshold_value >= 100.0:
+            reached_completion = progress >= 100.0
+            below_completion = progress < 100.0
+        else:
+            reached_completion = progress >= threshold_value
+            below_completion = progress < threshold_value
         if region_id in self._alerted_regions:
             alert_progress = self._alerted_regions[region_id]
             self._post_completion_fails.pop(
                 region_id, None
             )  # OCR 성공 → 실패 카운터 리셋
-            if progress < threshold:
+            if below_completion:
                 # 임계값 아래로 하락 → 재알람 허용 (알림 없이 해제만)
                 log.info(
                     "[완료 시나리오] %s — 진행률 하락 (%.1f%% → %.1f%%), 재알람 대기",
@@ -1908,10 +2418,10 @@ class ProgressEyeApp:
             "[%s] 완료 체크 — progress=%.1f%%, threshold=%d%%, alerted=%s",
             region_id,
             progress,
-            threshold,
+            int(threshold_value),
             region_id in self._alerted_regions,
         )
-        if region_id not in self._alerted_regions and progress >= threshold:
+        if region_id not in self._alerted_regions and reached_completion:
             # 타임스탬프 기반 완료 판정: delay분 동안 threshold 이상 유지 시 완료
             delay_minutes = region_config.get("alert_delay_minutes", 0)
             now = time.time()
@@ -1925,14 +2435,17 @@ class ProgressEyeApp:
                 "[%s] 완료 확인 — %.1f%% >= %d%%, %.1f/%.0f분 경과",
                 region_id,
                 progress,
-                threshold,
+                int(threshold_value),
                 elapsed_min,
                 delay_minutes,
             )
             if elapsed_min >= delay_minutes:
                 self._alerted_regions[region_id] = progress
                 self._completion_first_reached.pop(region_id, None)
-                alert_msg = t("alert_triggered").format(label=label, progress=progress)
+                alert_msg = t("alert_triggered").format(
+                    label=label,
+                    progress=progress,
+                )
                 log.info("[완료 알람] %s", alert_msg)
                 self._action_queue.put(
                     lambda _msg=alert_msg, _l=label: self._notify(_msg)

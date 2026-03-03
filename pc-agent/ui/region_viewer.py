@@ -59,6 +59,19 @@ class _ViewerPane(QWidget):
             painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
             painter.drawRect(local_rr)
 
+        # OCR 사용자 지정 영역 테두리
+        if self._owner._ocr_rect_global is not None:
+            orr = self._owner._ocr_rect_global.intersected(self._geo)
+            if not orr.isEmpty():
+                local_orr = QRect(
+                    orr.x() - self._geo.x(),
+                    orr.y() - self._geo.y(),
+                    orr.width(),
+                    orr.height(),
+                )
+                painter.setPen(QPen(QColor(255, 255, 0), 2))
+                painter.drawRect(local_orr)
+
         # 바 테두리
         if self._owner._bar_rect_global is not None:
             br = self._owner._bar_rect_global.intersected(self._geo)
@@ -104,11 +117,11 @@ class RegionViewer(QWidget):
         region_rect: QRect,
         bar_rect: QRect | None,
         progress: float,
+        ocr_rect: QRect | None = None,
         region_type: str = "bar",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        del progress
         del region_type
 
         primary = QGuiApplication.primaryScreen()
@@ -121,6 +134,10 @@ class RegionViewer(QWidget):
         self._bar_rect_global = (
             bar_rect.translated(virtual_geo.topLeft()) if bar_rect is not None else None
         )
+        self._ocr_rect_global = (
+            ocr_rect.translated(virtual_geo.topLeft()) if ocr_rect is not None else None
+        )
+        self._progress = max(0.0, min(100.0, float(progress)))
         self._hint_geo: QRect | None = None
         self._panes: list[_ViewerPane] = []
 

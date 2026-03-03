@@ -35,6 +35,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "startup": {
         "auto_start": False,
         "start_minimized": True,
+        "ocr_runtime_guide_ack": False,
     },
     "language": "en",
 }

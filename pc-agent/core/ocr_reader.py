@@ -1,295 +1,509 @@
-"""OCR 기반 숫자 인식 모듈.
+"""OCR-based numeric reader powered by ONNX Runtime OCR.
 
-pytesseract를 사용하여 이미지에서 숫자(%) 패턴을 탐지하고
-바운딩 박스와 함께 반환한다.
-
-숫자% (예: "45%") 뾿 아니라 단독 숫자 (예: "45")도 감지한다.
-
-성능 최적화:
-  - --oem 1 (LSTM only) — Legacy+LSTM 대비 가벼움
-  - 변화 감지: 이전 캐콉과 픽셀 차이가 없으면 OCR 스킵
+This module extracts progress numbers (e.g. "45%", "11.0") from cropped UI images.
 """
 
+from __future__ import annotations
+
 import hashlib
-import os
+import importlib
 import re
-import shutil
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Any
 
-import numpy as np
-from PIL import Image as PILImage
+np = importlib.import_module("numpy")
+cv2 = importlib.import_module("cv2")
+PILImage = importlib.import_module("PIL.Image")
+log = importlib.import_module("utils.logger").log
 
-from utils.logger import log
-
-
-def _find_tesseract_cmd() -> str | None:
-    """Tesseract 실행 파일 경로를 탐색한다.
-
-    우선순위:
-    1. 번들된 tesseract (pc-agent/tesseract/tesseract.exe)
-    2. 시스템 PATH
-    3. Windows 기본 설치 경로
-    """
-    # 1. 번들 경로 (Nuitka standalone / PyInstaller / 개발 환경)
-    if getattr(sys, "frozen", False) or "__compiled__" in globals():
-        base = Path(sys.executable).parent
-    else:
-        base = Path(__file__).resolve().parent.parent
-
-    bundled = base / "tesseract" / "tesseract.exe"
-    if bundled.is_file():
-        return str(bundled)
-
-    # 2. 시스템 PATH
-    if shutil.which("tesseract") is not None:
-        return None  # pytesseract 기본값 사용
-
-    # 3. Windows 기본 설치 경로
-    default = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-    if os.path.isfile(default):
-        return default
-
-    return None
-
-
+_rapidocr_import_error: Exception | None = None
 try:
-    import pytesseract
-
-    _cmd = _find_tesseract_cmd()
-    if _cmd is not None:
-        pytesseract.pytesseract.tesseract_cmd = _cmd
-except ImportError:
-    pytesseract = None  # type: ignore[assignment]
-    log.warning(
-        "pytesseract가 설치되지 않았습니다. "
-        "OCR 기능을 사용하려면 'pip install pytesseract'와 "
-        "Tesseract OCR을 설치하세요."
-    )
+    from rapidocr_onnxruntime import RapidOCR as RapidOCREngine
+except ImportError as exc:
+    RapidOCREngine = None  # type: ignore[assignment]
+    _rapidocr_import_error = exc
 
 
 @dataclass
 class OcrResult:
-    """OCR 탐지 결과."""
+    """Single OCR candidate."""
 
     text: str
     confidence: float
     bbox: tuple[int, int, int, int]  # (x, y, width, height)
-    progress: float  # 추출된 퍼센트 값 (0-100)
-    has_percent_sign: bool  # "%" 기호가 포함된 결과인지 여부
+    progress: float
+    has_percent_sign: bool
 
 
 class OcrReader:
-    """OCR 기반 숫자 리더.
+    """ONNX Runtime OCR-based progress reader with lightweight frame caching."""
 
-    pytesseract를 사용하여 이미지에서 숫자(%) 패턴을 찾는다.
-    "%" 기호가 없는 단독 숫자(0~100 범위)도 감지한다.
-
-    성능 최적화:
-      - Tesseract LSTM-only 모드 (프로세스 내 연산 감소)
-      - 변화 감지: 이전 캐콉과 픽셀 차이가 없으면 OCR 스킵
-    """
-
-    _PERCENT_RE = re.compile(r"(\d+\.?\d*)\s*%")
-    _NUMBER_RE = re.compile(r"(\d+\.?\d*)")
-
-    # Tesseract 최적화 설정
-    # --oem 1: LSTM only (Legacy+LSTM 대비 빠르고 가벼움)
-    # --psm 6: 블록 모드 (다양한 레이아웃 호환성 유지)
-    # whitelist 미사용: regex로 숫자+% 필터링 (화면 캐콉에 비숫자 요소 포함 가능)
-    _TESSERACT_CONFIG = "--oem 1 --psm 6"
-
-    # 변화 감지 임계값 (0~255 픽셀 평균 차이)
-    _CHANGE_THRESHOLD = 2.0
+    _PERCENT_RE = re.compile(r"(\d+(?:[\.,]\d+)?)\s*%")
+    _NUMBER_RE = re.compile(r"(\d+(?:[\.,]\d+)?)")
+    _CHAR_FIX_TABLE = str.maketrans(
+        {
+            "O": "0",
+            "D": "0",
+            "I": "1",
+            "L": "1",
+            "|": "1",
+            "S": "5",
+            "B": "8",
+        }
+    )
 
     def __init__(self) -> None:
-        # 변화 감지용 이전 캐콉 해시 (region_id → hash)
         self._prev_hashes: dict[str, str] = {}
-        # 변화 감지용 이전 결과 캐시 (region_id → progress)
         self._prev_results: dict[str, float | None] = {}
-    def find_percentages(self, image: PILImage.Image) -> list[OcrResult]:
-        """이미지에서 숫자(%) 패턴을 찾아 바운딩 박스와 함께 반환한다.
-        앞뒤에 문자가 붙어있어도 숫자(%)를 추출한다.
-        예: '진행률45%완료' → 45%, '45%done' → 45%
-        탐지 우선순위:
-        1. '45%', '진행률45%완료' — 숫자+% 포함 단어 (search)
-        2. '45' + '%' — 분리 인식
-        3. '45', '진행률45' — 단독 숫자 (0~100 범위)
-        """
-        if pytesseract is None:
-            log.error("pytesseract가 설치되지 않아 OCR을 수행할 수 없습니다.")
-            return []
+        self._backend = "none"
+        self._ocr = self._init_ocr()
 
-        # 그레이스케일 변환 — OCR 정확도 향상
-        gray = image.convert("L")
+    @property
+    def backend(self) -> str:
+        return self._backend
 
+    def _init_ocr(self):
+        if RapidOCREngine is not None:
+            try:
+                ocr = RapidOCREngine()
+                self._backend = "rapidocr"
+                log.info("RapidOCR (ONNX Runtime) initialized")
+                return ocr
+            except Exception as exc:
+                log.warning("RapidOCR initialization failed: %s", exc)
+
+        detail = repr(_rapidocr_import_error) if _rapidocr_import_error else "unknown"
+        log.warning(
+            "rapidocr-onnxruntime is unavailable (python=%s, reason=%s) - trying PaddleOCR fallback",
+            sys.executable,
+            detail,
+        )
         try:
-            data = pytesseract.image_to_data(
-                gray,
-                output_type=pytesseract.Output.DICT,
-                config=self._TESSERACT_CONFIG,
+            paddle_mod = importlib.import_module("paddleocr")
+            paddle_cls = getattr(paddle_mod, "PaddleOCR", None)
+            if paddle_cls is None:
+                raise ImportError("PaddleOCR class not found in paddleocr module")
+            ocr = paddle_cls(use_angle_cls=False, lang="en", show_log=False)
+            self._backend = "paddleocr"
+            log.info("PaddleOCR fallback initialized")
+            return ocr
+        except Exception as exc:
+            log.error(
+                "OCR backend init failed (rapid_reason=%s, paddle_reason=%s). Run: %s -m pip install rapidocr-onnxruntime paddleocr paddlepaddle",
+                detail,
+                repr(exc),
+                sys.executable,
             )
-        except Exception as e:
-            log.error("OCR 실행 실패: %s", e)
+            return None
+
+    def _extract_raw_lines(self, image_bgr: Any) -> list[tuple[Any, str, float]]:
+        if self._ocr is None:
+            return []
+        if self._backend == "paddleocr":
+            try:
+                paddle_ocr_call = getattr(self._ocr, "ocr")
+                raw = paddle_ocr_call(image_bgr, cls=False)
+            except Exception as exc:
+                log.error("PaddleOCR execution failed: %s", exc)
+                return []
+            return self._normalize_raw_output(raw)
+        try:
+            raw = self._ocr(image_bgr, use_det=True, use_cls=False, use_rec=True)
+            if isinstance(raw, tuple) and len(raw) >= 1:
+                raw = raw[0]
+        except Exception as exc:
+            try:
+                raw = self._ocr(image_bgr)
+                if isinstance(raw, tuple) and len(raw) >= 1:
+                    raw = raw[0]
+            except Exception as retry_exc:
+                log.error("RapidOCR execution failed: %s", retry_exc)
+                return []
+
+        return self._normalize_raw_output(raw)
+
+    @staticmethod
+    def _normalize_raw_output(raw: Any) -> list[tuple[Any, str, float]]:
+        """Normalize OCR outputs across format variants.
+
+        Supported shapes:
+        - ocr(): [[[points], (text, score)], ...]
+        - predict()/wrapper dict: {"res": {"dt_polys": ..., "rec_texts": ..., "rec_scores": ...}}
+        - direct dict: {"dt_polys": ..., "rec_texts": ..., "rec_scores": ...}
+        """
+
+        def collect_from_dict(payload: Any) -> list[tuple[Any, str, float]]:
+            if not isinstance(payload, dict):
+                return []
+
+            res_obj = payload.get("res")
+            if isinstance(res_obj, dict):
+                res = res_obj
+            else:
+                res = payload
+            dt_polys = res.get("dt_polys")
+            rec_texts = res.get("rec_texts")
+            rec_scores = res.get("rec_scores")
+
+            if not isinstance(dt_polys, list) or not isinstance(rec_texts, list):
+                return []
+
+            rows: list[tuple[Any, str, float]] = []
+            for idx, points in enumerate(dt_polys):
+                if idx >= len(rec_texts):
+                    break
+                text = str(rec_texts[idx]).strip()
+                if not text:
+                    continue
+                score_raw = 0.0
+                if isinstance(rec_scores, list) and idx < len(rec_scores):
+                    score_raw = rec_scores[idx]
+                try:
+                    confidence = float(score_raw)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                rows.append((points, text, confidence))
+            return rows
+
+        normalized: list[tuple[Any, str, float]] = []
+        if raw is None:
+            return normalized
+
+        dict_rows = collect_from_dict(raw)
+        if dict_rows:
+            return dict_rows
+
+        if not isinstance(raw, list):
+            return normalized
+
+        def is_xy_point(value: Any) -> bool:
+            if not isinstance(value, (list, tuple)) or len(value) < 2:
+                return False
+            return isinstance(value[0], (int, float)) and isinstance(
+                value[1], (int, float)
+            )
+
+        # Legacy ocr() result usually wraps per image as [lines].
+        base = raw
+        if raw and isinstance(raw[0], list):
+            first = raw[0]
+            if first and isinstance(first[0], (list, tuple)):
+                maybe_line = first[0]
+                if (
+                    isinstance(maybe_line, (list, tuple))
+                    and len(maybe_line) >= 2
+                    and not is_xy_point(maybe_line[1])
+                ):
+                    base = first
+
+        for item in base:
+            item_dict_rows = collect_from_dict(item)
+            if item_dict_rows:
+                normalized.extend(item_dict_rows)
+                continue
+
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+
+            points = item[0]
+            recog = item[1]
+
+            # RapidOCR common shape: [points, text, score]
+            if isinstance(recog, str):
+                text = recog.strip()
+                if not text:
+                    continue
+                score_raw = item[2] if len(item) >= 3 else 0.0
+                try:
+                    confidence = float(score_raw)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                normalized.append((points, text, confidence))
+                continue
+
+            if not isinstance(recog, (list, tuple)) or len(recog) < 2:
+                continue
+
+            text = str(recog[0]).strip()
+            if not text:
+                continue
+
+            try:
+                confidence = float(recog[1])
+            except (TypeError, ValueError):
+                confidence = 0.0
+            normalized.append((points, text, confidence))
+
+        return normalized
+
+    @staticmethod
+    def _build_variants(image_bgr: Any) -> list[tuple[Any, float]]:
+        variants: list[tuple[Any, float]] = [(image_bgr, 1.0)]
+
+        h, w = image_bgr.shape[:2]
+        if min(h, w) < 220:
+            upscaled = cv2.resize(
+                image_bgr, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
+            )
+            variants.append((upscaled, 2.0))
+
+        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        thresholded = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            9,
+        )
+        variants.append((cv2.cvtColor(thresholded, cv2.COLOR_GRAY2BGR), 1.0))
+
+        return variants
+
+    def find_percentages(
+        self,
+        image: Any,
+        *,
+        min_value: float = 0.0,
+        max_value: float = 100.0,
+    ) -> list[OcrResult]:
+        """Return all numeric OCR candidates from an image."""
+        if self._ocr is None:
             return []
 
-        n_boxes = len(data["text"])
+        rgb = image.convert("RGB")
+        img_np = np.array(rgb)
+
+        # OCR engines here expect OpenCV/BGR ndarray.
+        bgr_np = img_np[:, :, ::-1]
+
         results: list[OcrResult] = []
-        used: set[int] = set()  # 이미 처리된 인덱스
-        i = 0
-
-        while i < n_boxes:
-            text = data["text"][i].strip()
-            conf = float(data["conf"][i])
-
-            if conf < 0 or not text:
-                i += 1
+        for variant, scale in self._build_variants(bgr_np):
+            lines = self._extract_raw_lines(variant)
+            if not lines:
                 continue
 
-            # Case 1: "45%" 또는 "45.5%" 단일 단어
-            match = self._PERCENT_RE.search(text)
-            if match:
-                value = float(match.group(1))
-                results.append(
-                    OcrResult(
-                        text=text,
-                        confidence=conf,
-                        bbox=(
-                            data["left"][i],
-                            data["top"][i],
-                            data["width"][i],
-                            data["height"][i],
-                        ),
-                        progress=value,
-                        has_percent_sign=True,
-                    )
-                )
-                used.add(i)
-                i += 1
-                continue
-
-            # Case 2: "45" + "%" 분리 인식
-            num_match = self._NUMBER_RE.search(text)
-            if num_match and i + 1 < n_boxes:
-                next_text = data["text"][i + 1].strip()
-                if "%" in next_text:
-                    value = float(num_match.group(1))
-                    x1 = data["left"][i]
-                    y1 = min(data["top"][i], data["top"][i + 1])
-                    x2 = max(
-                        data["left"][i] + data["width"][i],
-                        data["left"][i + 1] + data["width"][i + 1],
-                    )
-                    y2 = max(
-                        data["top"][i] + data["height"][i],
-                        data["top"][i + 1] + data["height"][i + 1],
-                    )
-                    next_conf = float(data["conf"][i + 1])
-                    results.append(
-                        OcrResult(
-                            text=f"{text}%",
-                            confidence=min(conf, next_conf if next_conf >= 0 else conf),
-                            bbox=(x1, y1, x2 - x1, y2 - y1),
-                            progress=value,
-                            has_percent_sign=True,
-                        )
-                    )
-                    used.add(i)
-                    used.add(i + 1)
-                    i += 2
+            for points, text, raw_conf in lines:
+                try:
+                    x_vals = [int(float(p[0]) / scale) for p in points]
+                    y_vals = [int(float(p[1]) / scale) for p in points]
+                except Exception:
                     continue
 
-            i += 1
+                conf = raw_conf * 100.0 if raw_conf <= 1.0 else raw_conf
+                x = max(0, min(x_vals))
+                y = max(0, min(y_vals))
+                w = max(1, max(x_vals) - x)
+                h = max(1, max(y_vals) - y)
 
-        # Case 3: 단독 숫자 (0~100 범위) — Case 1, 2에서 처리되지 않은 것만
-        for j in range(n_boxes):
-            if j in used:
-                continue
-            text = data["text"][j].strip()
-            conf = float(data["conf"][j])
-            if conf < 0 or not text:
-                continue
-            num_match = self._NUMBER_RE.search(text)
-            if num_match:
-                value = float(num_match.group(1))
-                if 0.0 <= value <= 100.0:
-                    results.append(
-                        OcrResult(
-                            text=text,
-                            confidence=conf,
-                            bbox=(
-                                data["left"][j],
-                                data["top"][j],
-                                data["width"][j],
-                                data["height"][j],
-                            ),
-                            progress=value,
-                            has_percent_sign=False,
+                extracted = self._extract_progress_values(text)
+                if not extracted:
+                    continue
+
+                for value, has_percent in extracted:
+                    if min_value <= value <= max_value:
+                        results.append(
+                            OcrResult(
+                                text=text,
+                                confidence=conf,
+                                bbox=(x, y, w, h),
+                                progress=value,
+                                has_percent_sign=has_percent,
+                            )
                         )
-                    )
 
-        log.info("OCR 탐지 완료: %d개 숫자 발견", len(results))
+        results = self._dedupe_results(results)
+        log.info("OCR detection complete: %d numeric candidates", len(results))
         return results
 
+    def _dedupe_results(self, results: list[OcrResult]) -> list[OcrResult]:
+        """Remove near-duplicate OCR candidates from multi-variant passes."""
+        if len(results) <= 1:
+            return results
+
+        def score(r: OcrResult) -> tuple[int, int, float]:
+            return (
+                1 if r.has_percent_sign else 0,
+                self._numeric_digit_count(r.text),
+                r.confidence,
+            )
+
+        deduped: list[OcrResult] = []
+        for candidate in sorted(results, key=score, reverse=True):
+            is_duplicate = False
+            for kept in deduped:
+                if abs(candidate.progress - kept.progress) > 0.2:
+                    continue
+
+                iou = self._bbox_iou(candidate.bbox, kept.bbox)
+                center_dist = self._bbox_center_distance(candidate.bbox, kept.bbox)
+
+                # Strong overlap or almost same center means duplicated detection.
+                if iou >= 0.65 or center_dist <= 4.0:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                deduped.append(candidate)
+
+        return deduped
+
     def read_progress(
-        self, image: PILImage.Image, region_id: str = "",
+        self,
+        image: Any,
+        region_id: str = "",
+        *,
+        min_value: float = 0.0,
+        max_value: float = 100.0,
+        prefer_percent_sign: bool = True,
+        allow_percent_sign: bool = True,
     ) -> float | None:
-        """이미지에서 가장 적합한 퍼센트 값을 반환한다.
-
-        변화 감지: region_id가 지정되면 이전 캐콉과 픽셀 비교 후
-        변화가 없으면 OCR을 스킵하고 캐시된 결과를 반환한다.
-
-        Args:
-            image: 캐콉된 PIL 이미지.
-            region_id: 영역 ID (변화 감지용, 비어있으면 항상 OCR 실행).
-
-        Returns:
-            퍼센트 값 (0.0~100.0) 또는 None.
-        """
-        # 변화 감지 (성능 최적화)
+        """Return the best progress value from OCR candidates."""
         if region_id:
             img_hash = self._compute_hash(image)
             prev_hash = self._prev_hashes.get(region_id)
             if prev_hash == img_hash:
-                cached = self._prev_results.get(region_id)
-                log.debug("[%s] OCR 스킵 (변화 없음) → %.1f%%",
-                          region_id, cached if cached is not None else 0.0)
-                return cached
+                prev_result = self._prev_results.get(region_id)
+                if prev_result is not None:
+                    return prev_result
             self._prev_hashes[region_id] = img_hash
 
-        results = self.find_percentages(image)
+        results = self.find_percentages(
+            image,
+            min_value=min_value,
+            max_value=max_value,
+        )
+        if not allow_percent_sign:
+            results = [r for r in results if not r.has_percent_sign]
         if not results:
             if region_id:
                 self._prev_results[region_id] = None
             return None
 
-        # "%" 포함 결과 우선
-        with_pct = [r for r in results if r.has_percent_sign]
-        if with_pct:
-            best = max(with_pct, key=lambda r: r.confidence)
-            progress = best.progress
-        else:
-            # 단독 숫자 중 신뢰도 최고
-            best = max(results, key=lambda r: r.confidence)
-            progress = best.progress
+        best = self.select_best_result(results, prefer_percent_sign=prefer_percent_sign)
+        progress = best.progress
 
         if region_id:
             self._prev_results[region_id] = progress
         return progress
 
+    def select_best_result(
+        self,
+        results: list[OcrResult],
+        *,
+        prefer_percent_sign: bool = True,
+    ) -> OcrResult:
+        """Choose the final OCR result candidate.
+
+        Priority:
+        1) has '%'
+        2) digit count (11 > 1)
+        3) confidence
+        """
+        if not results:
+            raise ValueError("results is empty")
+
+        with_pct = [r for r in results if r.has_percent_sign]
+        pool = with_pct if (prefer_percent_sign and with_pct) else results
+
+        def score(r: OcrResult) -> tuple[int, int, float]:
+            return (
+                1 if r.has_percent_sign else 0,
+                self._numeric_digit_count(r.text),
+                r.confidence,
+            )
+
+        return max(pool, key=score)
+
     def reset_cache(self, region_id: str) -> None:
-        """특정 영역의 변화 감지 캐시를 초기화한다."""
         self._prev_hashes.pop(region_id, None)
         self._prev_results.pop(region_id, None)
 
     @staticmethod
-    def _compute_hash(image: PILImage.Image) -> str:
-        """이미지의 픽셀 기반 해시를 계산한다.
-
-        성능을 위해 이미지를 소형(32x32)으로 축소한 후 해싱한다.
-        미세한 픽셀 노이즈는 무시하고 실제 내용 변화만 감지한다.
-        """
+    def _compute_hash(image: Any) -> str:
         small = image.resize((32, 32), PILImage.Resampling.LANCZOS).convert("L")
         pixels = np.array(small, dtype=np.uint8)
         return hashlib.md5(pixels.tobytes()).hexdigest()
+
+    @staticmethod
+    def _bbox_iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+        ax1, ay1, aw, ah = a
+        bx1, by1, bw, bh = b
+        ax2, ay2 = ax1 + aw, ay1 + ah
+        bx2, by2 = bx1 + bw, by1 + bh
+
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+
+        iw = max(0, ix2 - ix1)
+        ih = max(0, iy2 - iy1)
+        inter = iw * ih
+        if inter <= 0:
+            return 0.0
+
+        area_a = max(1, aw) * max(1, ah)
+        area_b = max(1, bw) * max(1, bh)
+        union = area_a + area_b - inter
+        if union <= 0:
+            return 0.0
+        return inter / union
+
+    @staticmethod
+    def _bbox_center_distance(
+        a: tuple[int, int, int, int], b: tuple[int, int, int, int]
+    ) -> float:
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        acx = ax + aw / 2.0
+        acy = ay + ah / 2.0
+        bcx = bx + bw / 2.0
+        bcy = by + bh / 2.0
+        dx = acx - bcx
+        dy = acy - bcy
+        return (dx * dx + dy * dy) ** 0.5
+
+    @staticmethod
+    def _numeric_digit_count(text: str) -> int:
+        m = re.search(r"(\d+(?:[\.,]\d+)?)", text)
+        if not m:
+            return 0
+        return len(m.group(1).replace(".", "").replace(",", ""))
+
+    @classmethod
+    def _extract_progress_values(cls, text: str) -> list[tuple[float, bool]]:
+        candidates: list[tuple[float, bool]] = []
+        seen: set[tuple[float, bool]] = set()
+
+        base = text.strip()
+        variants = [
+            base,
+            base.upper(),
+            base.upper().translate(cls._CHAR_FIX_TABLE),
+            base.upper().replace(" ", "").translate(cls._CHAR_FIX_TABLE),
+        ]
+
+        for variant in variants:
+            for m in cls._PERCENT_RE.finditer(variant):
+                raw = m.group(1).replace(",", ".")
+                try:
+                    value = float(raw)
+                except ValueError:
+                    continue
+                key = (value, True)
+                if key not in seen:
+                    seen.add(key)
+                    candidates.append(key)
+
+            for m in cls._NUMBER_RE.finditer(variant):
+                raw = m.group(1).replace(",", ".")
+                try:
+                    value = float(raw)
+                except ValueError:
+                    continue
+                key = (value, ("%" in variant))
+                if key not in seen:
+                    seen.add(key)
+                    candidates.append(key)
+
+        return candidates
