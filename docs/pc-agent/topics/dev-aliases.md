@@ -35,6 +35,7 @@ PowerShell 프로필(`$PROFILE.CurrentUserAllHosts`)에 아래 1줄을 추가한
 - `pe-ocr-setup`: Tesseract 초기 설정(`setup_tesseract.py`)
 - `pe-test [suite]`: 테스트 스크립트 실행
   - suite: `detection`, `downscale`, `ocr-accuracy`, `ocr-optimize`, `all`(기본값)
+- `pe-kill`: 실행 중인 `ProgressEye.exe`/관련 프로세스 강제 종료
 - `pe-exe`: EXE 증분 빌드(기본, 빠름)
 - `pe-exe-clean`: EXE 클린 빌드(느리지만 가장 안전)
 - `pe-exe-fast`: EXE 고속 빌드(PaddleOCR/PyMuPDF fallback 경로 제외)
@@ -44,6 +45,10 @@ PowerShell 프로필(`$PROFILE.CurrentUserAllHosts`)에 아래 1줄을 추가한
 - `pe-git ...`: 프로젝트 루트 기준으로 `git` 명령 실행
 - `peh`: PowerShell `Get-Help` 별칭
 
+클린 빌드 참고:
+- `pe-exe-clean`, `pe-msix-clean` 실행 시 빌드 스크립트가 `dist` 잠금 프로세스(실행 중 `ProgressEye.exe`)를 자동 정리하고 삭제를 재시도한다.
+- 잠금이 계속되면 `pe-kill` 후 `pe-msix-clean` 순서로 다시 실행한다.
+
 ## 사용 예시
 
 ```powershell
@@ -51,6 +56,7 @@ pe-pc
 pe-run
 pe-ocr-setup
 pe-test detection
+pe-kill
 pe-exe
 pe-exe-fast
 pe-exe-run

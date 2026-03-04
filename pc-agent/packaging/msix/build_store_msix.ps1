@@ -32,6 +32,15 @@ foreach ($name in $required) {
     }
 }
 
+# Store submission requires MSIX revision (4th part) to be 0.
+if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+    throw "Invalid MSIX version format: $Version. Use x.y.z.0 (for example, 1.0.2.0)."
+}
+$versionParts = $Version.Split(".")
+if ([int]$versionParts[3] -ne 0) {
+    throw "Invalid MSIX version for Store: $Version. The 4th segment must be 0. Use x.y.z.0 and increment z."
+}
+
 if ($BuildExe) {
     $buildExeParams = @{
         Clean = $CleanExe

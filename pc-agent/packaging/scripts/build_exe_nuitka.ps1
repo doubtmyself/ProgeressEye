@@ -24,6 +24,63 @@ if (-not $PythonExe) {
 Write-Host "[build_exe_nuitka] Python: $PythonExe"
 Write-Host "[build_exe_nuitka] Root:   $PcAgentRoot"
 
+function Stop-LockingProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PathPrefix
+    )
+
+    if (-not (Test-Path $PathPrefix)) {
+        return
+    }
+
+    $normalizedPrefix = [System.IO.Path]::GetFullPath($PathPrefix).TrimEnd("\")
+    $killed = $false
+
+    # First, stop well-known names.
+    foreach ($proc in @("ProgressEye", "main")) {
+        $procs = Get-Process -Name $proc -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction Stop
+                Write-Host "[build_exe_nuitka] Stopped process by name: $($p.ProcessName) (PID=$($p.Id))"
+                $killed = $true
+            } catch {
+            }
+        }
+    }
+
+    # Then, stop any process whose executable is under the target path.
+    $candidates = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        if (-not $_.ExecutablePath) { return $false }
+        try {
+            $exePath = [System.IO.Path]::GetFullPath($_.ExecutablePath)
+            return $exePath.StartsWith($normalizedPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+        } catch {
+            return $false
+        }
+    }
+
+    foreach ($proc in $candidates) {
+        try {
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+            Write-Host "[build_exe_nuitka] Stopped locking process: $($proc.Name) (PID=$($proc.ProcessId))"
+            $killed = $true
+        } catch {
+        }
+    }
+
+    # Fallback: kill by image name/process tree (helps when parent/child keeps handle).
+    # Ignore "not found" case and silence taskkill output.
+    foreach ($image in @("ProgressEye.exe", "main.exe")) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "taskkill /F /T /IM $image >nul 2>&1" -NoNewWindow -Wait -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    if ($killed) {
+        Start-Sleep -Milliseconds 600
+    }
+}
+
 function Remove-PathWithRetry {
     param(
         [Parameter(Mandatory = $true)]
@@ -36,6 +93,8 @@ function Remove-PathWithRetry {
     }
 
     for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        Stop-LockingProcesses -PathPrefix $TargetPath
+
         try {
             # Clear read-only attributes recursively first
             Get-ChildItem -Path $TargetPath -Recurse -Force -ErrorAction SilentlyContinue |
@@ -212,10 +271,7 @@ try {
 
     if ($Clean) {
         # Stop possibly running app/processes that can lock dist artifacts (.exe/.pyd)
-        foreach ($proc in @("ProgressEye", "main")) {
-            Get-Process -Name $proc -ErrorAction SilentlyContinue |
-                Stop-Process -Force -ErrorAction SilentlyContinue
-        }
+        Stop-LockingProcesses -PathPrefix (Join-Path $PcAgentRoot "dist")
 
         foreach ($dir in @("build", "dist", "main.build", "main.dist", "main.onefile-build")) {
             $p = Join-Path $PcAgentRoot $dir
@@ -280,7 +336,7 @@ try {
     $targetDir = Join-Path $PcAgentRoot "dist\ProgressEye"
 
     if (Test-Path $targetDir) {
-        Remove-Item $targetDir -Recurse -Force
+        Remove-PathWithRetry -TargetPath $targetDir
     }
 
     if (-not (Test-Path $nuitkaOut)) {

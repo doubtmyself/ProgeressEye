@@ -32,6 +32,10 @@ powershell -ExecutionPolicy Bypass -File .\packaging\scripts\build_exe.ps1 -Clea
 - `-Clean` 없이 실행해 증분 빌드 사용
 - fallback 경로가 필요 없으면 `-Fast` 사용
 
+클린 빌드 잠금 처리:
+- `-Clean` 실행 시 빌드 스크립트가 `dist` 경로를 잠그는 `ProgressEye.exe`(및 관련 프로세스)를 자동 종료 후 삭제를 재시도한다.
+- `Remove-Item ... 다른 프로세스에서 사용 중` 오류가 났던 케이스를 줄이기 위한 동작이다.
+
 출력:
 - `pc-agent/dist/ProgressEye/ProgressEye.exe`
 
@@ -51,6 +55,10 @@ copy .\packaging\msix\partner-center.identity.ps1.example .\packaging\msix\partn
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\msix\build_store_msix.ps1 -BuildExe -CleanExe -SkipSign
 ```
+
+버전 규칙(스토어 제출):
+- `partner-center.identity.ps1`의 `$Version`은 `x.y.z.0` 형식만 사용한다.
+- 릴리스마다 `z`를 1씩 증가시키고, 4번째 자리(Revision)는 항상 `0`으로 유지한다.
 
 속도 최적화 옵션:
 - `-FastExe`: EXE 단계에서 PaddleOCR/PyMuPDF fallback 경로를 제외해 컴파일 시간을 줄인다.

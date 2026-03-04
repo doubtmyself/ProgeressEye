@@ -64,6 +64,32 @@ function pe-test {
     }
 }
 
+function pe-kill {
+    $killed = $false
+
+    foreach ($name in @("ProgressEye", "main")) {
+        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction Stop
+                Write-Host "Stopped: $($p.ProcessName) (PID=$($p.Id))"
+                $killed = $true
+            } catch {
+            }
+        }
+    }
+
+    # Fallback: taskkill can terminate process trees that Stop-Process may miss.
+    # Ignore "not found" case and silence taskkill output.
+    foreach ($image in @("ProgressEye.exe", "main.exe")) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "taskkill /F /T /IM $image >nul 2>&1" -NoNewWindow -Wait -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    if ($killed) {
+        Start-Sleep -Milliseconds 700
+    }
+}
+
 function pe-exe {
     Push-Location $global:PcAgentRoot
     try {
@@ -76,6 +102,7 @@ function pe-exe {
 function pe-exe-clean {
     Push-Location $global:PcAgentRoot
     try {
+        pe-kill
         powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -NuitkaJobs 0
     } finally {
         Pop-Location
@@ -114,6 +141,7 @@ function pe-msix {
 function pe-msix-clean {
     Push-Location $global:PcAgentRoot
     try {
+        pe-kill
         powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -CleanExe -FastExe -NuitkaJobs 0 -SkipSign
     } finally {
         Pop-Location
@@ -146,6 +174,7 @@ $script:_peFunctions = @(
     "pe-run",
     "pe-ocr-setup",
     "pe-test",
+    "pe-kill",
     "pe-exe",
     "pe-exe-clean",
     "pe-exe-fast",
