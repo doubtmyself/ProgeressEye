@@ -5,6 +5,7 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
 ## A) 세분화 항목 문서
 - 데이터 스키마: `docs/backend/topics/data-schema.md`
 - Functions: `docs/backend/topics/functions.md`
+- 구독 서버 검증: `docs/backend/topics/subscription-server-validation.md`
 - 계정/탈퇴 정책: `docs/backend/topics/account-policy.md`
 - 배포 가이드: `docs/backend/topics/deploy.md`
 
@@ -47,3 +48,6 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
 | Firestore users/withdrawnUsers 상태 | Firebase Console Firestore |
 | RTDB users/{uid}/withdrawal 상태 | Firebase Console RTDB |
 | 개인정보처리방침 반영 상태 | `docs/privacy-policy-ko.md` |
+
+## 6) 구독/결제 서버 검증
+- 서버 검증 체크리스트(RTDN + Developer API): `docs/backend/topics/subscription-server-validation.md`

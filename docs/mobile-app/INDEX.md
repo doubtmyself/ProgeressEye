@@ -8,6 +8,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 인증/세션: `docs/mobile-app/topics/auth-session.md`
 - 대시보드/UI: `docs/mobile-app/topics/dashboard-ui.md`
 - 원격명령/스크린샷: `docs/mobile-app/topics/commands-screenshot.md`
+- 구독/결제: `docs/mobile-app/topics/subscription-billing.md`
 - 빌드/배포: `docs/mobile-app/topics/build-deploy.md`
 
 ## 1) 개요/구조
@@ -37,7 +38,11 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 채널/알림 UI 설계: `docs/mobile-app/ui-design.md` -> 6장
 - Cloud Functions 연계: `docs/backend/INDEX.md` -> Functions
 
-## 6) 계정/탈퇴 정책(최신)
+## 6) 구독/과금
+- 구독 결제 + 광고 비표시 모드: `docs/mobile-app/topics/subscription-billing.md`
+- 서버 검증 체크리스트: `docs/backend/topics/subscription-server-validation.md`
+
+## 7) 계정/탈퇴 정책(최신)
 - 모바일 탈퇴 요청(7일 유예, 30일 재가입 제한) + 로그인 시 탈퇴 취소 확인:
   - `mobile-app/app/src/main/java/com/chg/progeresseye/auth/AuthViewModel.kt`
   - `mobile-app/app/src/main/java/com/chg/progeresseye/ui/screen/login/LoginScreen.kt`
@@ -54,3 +59,4 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 | 대시보드 카드/상태 표시 변경 | `docs/mobile-app/ui-design.md` 3.3 |
 | 원격 명령 추가 | `docs/mobile-app/technical-spec.md` 3.4 + `docs/api-spec.md` |
 | 알림 동작 변경 | `docs/mobile-app/ui-design.md` 6장 + Functions 문서 |
+| 구독 결제/Pro 전환 수정 | `docs/mobile-app/topics/subscription-billing.md` |

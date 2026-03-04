@@ -1,5 +1,7 @@
 package com.chg.progeresseye.ui.screen.settings
 
+import android.app.Activity
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +39,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,9 +86,17 @@ fun SettingsContent(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val currentUser = FirebaseAuth.getInstance().currentUser
+    val activity = context as? Activity
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.billingMessage) {
+        val message = state.billingMessage ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        viewModel.clearBillingMessage()
+    }
 
     // ── Logout confirmation dialog ──
     if (showLogoutDialog) {
@@ -121,6 +133,19 @@ fun SettingsContent(
             AccountCard(
                 email = currentUser?.email,
                 photoUrl = currentUser?.photoUrl?.toString(),
+                isProPlan = state.currentPlan == "pro",
+                planLabel = if (state.currentPlan == "pro") {
+                    stringResource(R.string.settings_pro_plan)
+                } else {
+                    stringResource(R.string.settings_free_plan)
+                },
+                subscriptionPrice = state.subscriptionPrice,
+                isAdFreeMode = state.isAdFreeMode,
+                canStartSubscription = activity != null && state.isBillingReady && !state.isPurchaseLoading,
+                isPurchaseLoading = state.isPurchaseLoading,
+                onStartSubscription = {
+                    activity?.let { viewModel.startProSubscription(it) }
+                },
                 onLogout = { showLogoutDialog = true },
                 onDeleteAccount = { showDeleteAccountDialog = true },
             )
@@ -218,6 +243,13 @@ private fun FallbackAvatar(modifier: Modifier = Modifier) {
 private fun AccountCard(
     email: String?,
     photoUrl: String?,
+    isProPlan: Boolean,
+    planLabel: String,
+    subscriptionPrice: String?,
+    isAdFreeMode: Boolean,
+    canStartSubscription: Boolean,
+    isPurchaseLoading: Boolean,
+    onStartSubscription: () -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -256,12 +288,23 @@ private fun AccountCard(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = stringResource(R.string.settings_free_plan),
+                    text = planLabel,
                     style = MaterialTheme.typography.bodySmall,
                     color = OnSurfaceVariantDark,
                 )
             }
         }
+
+        HorizontalDivider(color = OutlineVariantDark)
+
+        SubscriptionSection(
+            isProPlan = isProPlan,
+            subscriptionPrice = subscriptionPrice,
+            isAdFreeMode = isAdFreeMode,
+            canStartSubscription = canStartSubscription,
+            isPurchaseLoading = isPurchaseLoading,
+            onStartSubscription = onStartSubscription,
+        )
 
         HorizontalDivider(color = OutlineVariantDark)
 
@@ -309,6 +352,68 @@ private fun AccountCard(
                 Text(
                     text = stringResource(R.string.settings_delete_account),
                     style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionSection(
+    isProPlan: Boolean,
+    subscriptionPrice: String?,
+    isAdFreeMode: Boolean,
+    canStartSubscription: Boolean,
+    isPurchaseLoading: Boolean,
+    onStartSubscription: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(
+            text = stringResource(R.string.settings_subscription_title),
+            style = MaterialTheme.typography.bodyLarge,
+            color = OnSurfaceDark,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (isProPlan) {
+                stringResource(R.string.settings_subscription_active)
+            } else {
+                subscriptionPrice?.let { price ->
+                    stringResource(R.string.settings_subscription_price_format, price)
+                } ?: stringResource(R.string.settings_subscription_price_fallback)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = OnSurfaceVariantDark,
+        )
+
+        if (!isProPlan) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onStartSubscription,
+                enabled = canStartSubscription,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isPurchaseLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text = stringResource(R.string.settings_subscription_start_button),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+
+            if (isAdFreeMode) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.settings_ad_free_mode_admin_active),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariantDark,
                 )
             }
         }
@@ -605,6 +710,13 @@ private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
             AccountCard(
                 email = "reg13@example.com",
                 photoUrl = null,
+                isProPlan = false,
+                planLabel = stringResource(R.string.settings_free_plan),
+                subscriptionPrice = "\u20a93,000",
+                isAdFreeMode = false,
+                canStartSubscription = true,
+                isPurchaseLoading = false,
+                onStartSubscription = {},
                 onLogout = {},
                 onDeleteAccount = {},
             )

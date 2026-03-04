@@ -243,19 +243,21 @@ PC Agent 강제 업데이트 체크용. 인증 없이 읽기 가능.
 |------|------|------|
 | minVersion | string | PC Agent 최소 허용 버전 (시맨틱 버전) |
 
-### users/{uid} (owner 읽기, 쓰기 불가)
+### users/{uid} (owner 읽기, 일부 필드 제한 쓰기)
 
-사용자 구독 상태. Firebase Console에서만 수정 가능.
+사용자 구독/광고 정책 상태. `plan`, `adFreeMode` 계열은 관리자(Firebase Console/서버)만 수정 가능.
 
 ```json
 {
-  "plan": "free"
+  "plan": "free",
+  "adFreeMode": false
 }
 ```
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | plan | string | "free" / "pro" — 구독 상태 |
+| adFreeMode | boolean | true면 광고 비표시 모드 (관리자 전용) |
 
 ### Firestore 보안 규칙
 
@@ -269,7 +271,16 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;      // Console에서만 plan 변경
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && !('plan' in request.resource.data)
+                    && !('adFreeMode' in request.resource.data)
+                    && !('adFreeModeUpdatedAt' in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                      'plan',
+                      'adFreeMode',
+                      'adFreeModeUpdatedAt',
+                    ]);
     }
   }
 }

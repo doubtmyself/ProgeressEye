@@ -11,6 +11,7 @@
 - RTDB 명령: `users/{uid}/commands/*`
 - RTDB 알림: `users/{uid}/alerts/{alertId}`
 - Firestore 플랜: `users/{uid}.plan`
+- Firestore 광고 정책(관리자 전용): `users/{uid}.adFreeMode`
 - Firestore 탈퇴 정책(기준): `users/{uid}.withdrawalStatus`, `deleteAt`, `rejoinAllowedAt`
 - Firestore 탈퇴 tombstone(최소): `withdrawnUsers/{uid}.rejoinAllowedAt` (`deletedAt`은 운영 추적용 선택)
 - Firestore 이메일 기준 재가입 제한: `withdrawnEmails/{emailKey}.rejoinAllowedAt`

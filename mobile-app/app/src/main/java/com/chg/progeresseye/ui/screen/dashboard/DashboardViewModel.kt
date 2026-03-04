@@ -19,6 +19,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
@@ -49,6 +50,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _userPlan = MutableStateFlow("free")
     val userPlan: StateFlow<String> = _userPlan.asStateFlow()
+    private var isAdFreeMode: Boolean = false
 
     private val _isRewardedAdReady = MutableStateFlow(false)
     val isRewardedAdReady: StateFlow<Boolean> = _isRewardedAdReady.asStateFlow()
@@ -69,6 +71,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Mobile heartbeat job (60초 간격 RTDB 갱신)
     private var mobileHeartbeatJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
+    private var planListener: ListenerRegistration? = null
 
     // Local caches
     private val deviceCache = mutableMapOf<String, DeviceData>()
@@ -181,24 +184,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         statusRef?.addChildEventListener(statusChildListener!!)
 
-        // ── Listener C 최적화: user plan 1회 조회 (Firestore) ──
-        FirebaseFirestore.getInstance("progress")
-            .collection("users").document(uid).get()
-            .addOnSuccessListener { document ->
-                val plan = document.getString("plan")?.lowercase() ?: "free"
-                applyUserPlan(plan)
-            }
-            .addOnFailureListener { error ->
-                Timber.e(error, "firestore:plan:get:onFailure")
-                applyUserPlan("free")
-            }
+        observeUserPlan(uid)
 
         // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
         startMobileHeartbeat(uid)
     }
 
     fun loadRewardedAd(context: Context) {
-        if (_userPlan.value != "free") return
+        if (shouldSkipRewardedAds()) return
         if (isRewardedAdLoading || rewardedAd != null) return
 
         isRewardedAdLoading = true
@@ -224,10 +217,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
-    private fun applyUserPlan(planRaw: String) {
+    private fun applyUserEntitlement(planRaw: String, adFreeModeRaw: Boolean) {
         _userPlan.value = if (planRaw == "pro") "pro" else "free"
+        isAdFreeMode = adFreeModeRaw
 
-        if (_userPlan.value == "pro") {
+        if (shouldSkipRewardedAds()) {
             rewardedAd = null
             _isRewardedAdReady.value = false
             shouldPreloadRewardedAd = false
@@ -236,8 +230,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private fun shouldSkipRewardedAds(): Boolean {
+        return _userPlan.value == "pro" || isAdFreeMode
+    }
+
     fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) {
-        if (_userPlan.value != "free") {
+        if (shouldSkipRewardedAds()) {
             requestScreenshot(deviceId)
             return
         }
@@ -500,6 +498,26 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _isRewardedAdReady.value = false
         isRewardedAdLoading = false
         shouldPreloadRewardedAd = false
+        isAdFreeMode = false
+
+        planListener?.remove()
+        planListener = null
+    }
+
+    private fun observeUserPlan(uid: String) {
+        planListener?.remove()
+        planListener = FirebaseFirestore.getInstance("progress")
+            .collection("users")
+            .document(uid)
+            .addSnapshotListener { document, error ->
+                if (error != null) {
+                    Timber.e(error, "firestore:plan:listen:onFailure")
+                    return@addSnapshotListener
+                }
+                val plan = document?.getString("plan")?.lowercase() ?: "free"
+                val adFreeMode = document?.getBoolean("adFreeMode") == true
+                applyUserEntitlement(plan, adFreeMode)
+            }
     }
 
     override fun onCleared() {

@@ -354,7 +354,7 @@ users/{uid}/
 ### Firestore
 
 ```
-users/{uid}   → { plan: "free" | "pro" }   # 구독 상태 (Firestore로 마이그레이션)
+users/{uid}   → { plan: "free" | "pro", adFreeMode: true | false }   # 구독/광고 정책 상태(관리자 변경)
 ```
 
 ### Firebase Storage 경로
