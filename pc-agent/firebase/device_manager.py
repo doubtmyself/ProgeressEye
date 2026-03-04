@@ -11,7 +11,7 @@ from typing import Any
 from .realtime_db import RealtimeDB
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
-APP_VERSION = "1.0.0"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
+APP_VERSION = "1.0.1"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
 
 
 class DeviceManager:
