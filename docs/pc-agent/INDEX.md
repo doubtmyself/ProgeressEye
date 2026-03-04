@@ -29,6 +29,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 - 영역 선택/바 탐지/OCR 모드: `docs/pc-agent/technical-spec.md` -> 핵심 플로우 3.2~3.5
 - 모니터링 중 분석 경로(bar_analyzer 중심): `docs/pc-agent/technical-spec.md` -> 3.2b
 - 성능/최적화: `docs/pc-agent/topics/monitoring.md`
+- 진행률 바 선택 안내(샘플 이미지/캡처 기준): `docs/pc-agent/topics/monitoring.md`
 - OCR 퍼센트/최대수치 모드 규칙: `docs/pc-agent/topics/monitoring.md`
 
 ## 4) Firebase 연동

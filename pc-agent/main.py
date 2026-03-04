@@ -49,7 +49,7 @@ _set_dpi_awareness()
 from core.ocr_reader import OcrReader, OcrResult  # pyright: ignore[reportImplicitRelativeImport]
 from PIL import Image as PILImage
 from PyQt6.QtCore import QEventLoop, QRect, Qt, QTimer
-from PyQt6.QtGui import QGuiApplication, QImage
+from PyQt6.QtGui import QGuiApplication, QImage, QPixmap
 from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from auth import AuthError  # pyright: ignore[reportImplicitRelativeImport]
@@ -168,6 +168,7 @@ class ProgressEyeApp:
         self._region_viewer: RegionViewer | None = None
         self._task_counter = len(self._config.regions)
         self._selection_mode: str = "bar"  # "bar" 또는 "ocr"
+        self._bar_selection_guide_shown = False
 
         # 크로스-스레드 액션 큐 (pystray/Timer → Qt 메인 스레드)
         self._action_queue: queue.Queue[Callable[[], None]] = queue.Queue()
@@ -1000,7 +1001,43 @@ class ProgressEyeApp:
     def _start_area_selection(self) -> None:
         """프로그래스바 영역 선택을 시작한다."""
         self._selection_mode = "bar"
+        self._show_bar_selection_guide_if_needed()
         QTimer.singleShot(0, self._do_start_area_selection)
+
+    def _show_bar_selection_guide_if_needed(self) -> None:
+        if self._bar_selection_guide_shown or self._editing_region_id is not None:
+            return
+
+        dialog = QMessageBox(self._main_window)
+        dialog.setWindowTitle(t("bar_selection_guide_title"))
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.setText(t("bar_selection_guide_text"))
+
+        sample_pixmap = self._load_bar_selection_guide_pixmap()
+        if sample_pixmap is not None:
+            dialog.setIconPixmap(sample_pixmap)
+
+        dialog.addButton(t("btn_confirm"), QMessageBox.ButtonRole.AcceptRole)
+        self._exec_foreground_dialog(dialog)
+        self._bar_selection_guide_shown = True
+
+    def _load_bar_selection_guide_pixmap(self) -> QPixmap | None:
+        base_dir = pathlib.Path(__file__).resolve().parent
+        candidates = (
+            base_dir / "resources" / "progress-bar-sample.png",
+            base_dir / "sampleBar" / "image3.png",
+        )
+
+        for image_path in candidates:
+            if not image_path.exists():
+                continue
+            pixmap = QPixmap(str(image_path))
+            if pixmap.isNull():
+                continue
+            return pixmap.scaledToWidth(360, Qt.TransformationMode.SmoothTransformation)
+
+        log.warning("진행률 바 가이드 샘플 이미지를 찾지 못함")
+        return None
 
     def _start_ocr_area_selection(self) -> None:
         """숫자(OCR) 영역 선택을 시작한다."""

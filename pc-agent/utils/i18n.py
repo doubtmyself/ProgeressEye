@@ -65,7 +65,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings_freeze_hint": "진행률이 설정 시간 동안 변하지 않으면 멈춤으로 판정합니다.",
         # Tooltips
         "tooltip_settings": "앱 설정 (모니터링 간격, 언어, 알림 등)",
-        "tooltip_add_bar": "화면에서 진행률 바 영역을 선택하여 작업을 추가합니다",
+        "tooltip_add_bar": "진행률 게이지가 조금이라도 찬 화면에서 바 영역을 선택해 작업을 추가합니다",
+        "bar_selection_guide_title": "진행률 바 선택 안내",
+        "bar_selection_guide_text": "정확한 진행률 측정을 위해, 진행률 게이지가 조금이라도 차 있는 화면에서 영역을 선택하세요.\n예시처럼 채워진 구간과 빈 구간이 함께 보이도록 캡처하면 감지 정확도가 높아집니다.",
         "tooltip_add_ocr": "화면에서 숫자(%) 영역을 선택하여 작업을 추가합니다",
         "tooltip_start": "등록된 작업의 모니터링을 시작합니다",
         "tooltip_stop": "모니터링을 정지합니다",
@@ -237,7 +239,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings_freeze_hint": "If progress doesn't change within this time, it's marked as frozen.",
         # Tooltips
         "tooltip_settings": "App settings (interval, language, notifications, etc.)",
-        "tooltip_add_bar": "Select a progress bar area on screen to add a task",
+        "tooltip_add_bar": "Add a task by selecting a progress bar on a screen where the gauge is at least slightly filled",
+        "bar_selection_guide_title": "Progress Bar Selection Guide",
+        "bar_selection_guide_text": "For accurate progress measurement, select the area on a screen where the progress gauge is filled at least a little.\nCapture both filled and empty sections (like the sample) for better detection accuracy.",
         "tooltip_add_ocr": "Select a number (%) area on screen to add a task",
         "tooltip_start": "Start monitoring registered tasks",
         "tooltip_stop": "Stop monitoring",
