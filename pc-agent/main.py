@@ -72,6 +72,7 @@ from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRe
 from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
+from ui.system_notifier import SystemNotifier  # pyright: ignore[reportImplicitRelativeImport]
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
@@ -102,6 +103,7 @@ class ProgressEyeApp:
         # initialization conflicts between Qt runtime and onnxruntime.
         self._ocr_reader = OcrReader()
         self._app = QApplication(sys.argv)
+        self._system_notifier = SystemNotifier(self._app)
         self._config = Config()
         self._capturer = ScreenCapturer()
         self._analyzer = BarAnalyzer()
@@ -747,9 +749,17 @@ class ProgressEyeApp:
         except Exception as exc:
             log.debug("플랜/디바이스 확인 실패: %s", exc)
 
-    def _notify(self, message: str) -> None:
-        """트레이 제거 버전: 알림은 로그로 대체한다."""
+    def _notify(
+        self,
+        message: str,
+        *,
+        system: bool = False,
+        title: str = "ProgressEye",
+    ) -> None:
+        """이벤트 알림을 로그/시스템 알림으로 표시한다."""
         log.info("[알림] %s", message)
+        if system:
+            self._system_notifier.notify(title, message)
 
     def _set_runtime_hint(self, text: str) -> None:
         """트레이 툴팁 제거 버전: 상태 힌트를 로그로 남긴다."""
@@ -2264,7 +2274,12 @@ class ProgressEyeApp:
                     complete_msg = t("image_changed_completed").format(
                         label=label, progress=last_progress
                     )
-                    self._action_queue.put(lambda _msg=complete_msg: self._notify(_msg))
+                    self._action_queue.put(
+                        lambda _msg=complete_msg: self._notify(
+                            _msg,
+                            system=True,
+                        )
+                    )
                     if self._device_manager:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", complete_msg
@@ -2290,7 +2305,13 @@ class ProgressEyeApp:
                     )
                     warn_msg = t("image_changed_warning").format(label=label)
                     stopped_msg = t("image_changed_stopped")
-                    self._action_queue.put(lambda _msg=warn_msg: self._notify(_msg))
+                    self._action_queue.put(
+                        lambda _msg=warn_msg, _title=stopped_msg: self._notify(
+                            _msg,
+                            system=True,
+                            title=_title,
+                        )
+                    )
                     if self._device_manager:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", warn_msg
@@ -2489,7 +2510,10 @@ class ProgressEyeApp:
                 )
                 log.info("[완료 알람] %s", alert_msg)
                 self._action_queue.put(
-                    lambda _msg=alert_msg, _l=label: self._notify(_msg)
+                    lambda _msg=alert_msg: self._notify(
+                        _msg,
+                        system=True,
+                    )
                 )
                 if self._device_manager:
                     self._device_manager.push_alert(
@@ -2522,7 +2546,12 @@ class ProgressEyeApp:
                 stall_msg = t("stall_detected").format(
                     label=label, minutes=freeze_state.frozen_minutes
                 )
-                self._action_queue.put(lambda _msg=stall_msg: self._notify(_msg))
+                self._action_queue.put(
+                    lambda _msg=stall_msg: self._notify(
+                        _msg,
+                        system=True,
+                    )
+                )
                 if self._device_manager:
                     self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
 

@@ -40,6 +40,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 - 명령 수신(SSE): `docs/pc-agent/requirements.md` -> FR-PC-007
 - 스크린샷/모니터링 제어/forceLogout: `docs/pc-agent/topics/remote-commands.md`
 - 알림 구조/FCM: `docs/api-spec.md` -> alerts / Cloud Functions
+- 로컬 Windows 시스템 알림(화면 변경 중지/완료/프리징): `docs/pc-agent/topics/monitoring.md`
 
 ## 6) 계정/탈퇴 정책(최신)
 - PC 탈퇴 요청(7일 유예, 30일 재가입 제한) 구현 기준:
