@@ -92,6 +92,13 @@ fun SettingsContent(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(currentUser?.uid) {
+        if (currentUser == null) {
+            showLogoutDialog = false
+            showDeleteAccountDialog = false
+        }
+    }
+
     LaunchedEffect(state.billingMessage) {
         val message = state.billingMessage ?: return@LaunchedEffect
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
