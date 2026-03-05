@@ -27,6 +27,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 로그인/대시보드/설정 화면 요구사항: `docs/mobile-app/requirements.md`
 - Compose 화면 구조/네비게이션: `docs/mobile-app/ui-design.md` -> 2, 3장
 - 상태관리(ViewModel/UiState): `docs/mobile-app/technical-spec.md` -> 4장
+- 대시보드 첫 설치 PC 앱 설치 가이드: `docs/mobile-app/topics/dashboard-ui.md`
 
 ## 4) 실시간 연동/원격 명령
 - RTDB 리스너/데이터 최적화: `docs/mobile-app/technical-spec.md` -> 3.2

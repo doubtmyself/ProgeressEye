@@ -9,6 +9,16 @@
     <!-- ── Dashboard ── -->
     <string name="dashboard_no_devices_title">No devices registered</string>
     <string name="dashboard_no_devices_body">Connect a PC with ProgressEye agent\nto start monitoring.</string>
+    <string name="dashboard_install_pc_app_button">Install PC app</string>
+    <string name="dashboard_pc_guide_title">Install the PC app first</string>
+    <string name="dashboard_pc_guide_message">To monitor progress on mobile, you need the ProgressEye PC app. Install it from Microsoft Store and sign in on your PC.</string>
+    <string name="dashboard_pc_guide_install">Open Microsoft Store</string>
+    <string name="dashboard_pc_guide_share">Share link</string>
+    <string name="dashboard_pc_guide_copy">Copy link</string>
+    <string name="dashboard_pc_guide_share_chooser">Share PC app install link</string>
+    <string name="dashboard_pc_guide_share_text">Here is the ProgressEye PC app install link. Open it on your PC to install.\n%1$s</string>
+    <string name="dashboard_pc_guide_copied">PC app install link copied.</string>
+    <string name="dashboard_pc_guide_later">Later</string>
     <string name="dashboard_no_tasks">No active tasks</string>
     <string name="dashboard_status_online">Online</string>
     <string name="dashboard_status_offline">Offline</string>

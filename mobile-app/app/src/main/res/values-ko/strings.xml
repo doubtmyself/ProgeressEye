@@ -7,6 +7,16 @@
     <!-- ── Dashboard ── -->
     <string name="dashboard_no_devices_title">등록된 기기가 없습니다</string>
     <string name="dashboard_no_devices_body">PC에 ProgressEye 에이전트를 설치하고\n모니터링을 시작하세요.</string>
+    <string name="dashboard_install_pc_app_button">PC 앱 설치하기</string>
+    <string name="dashboard_pc_guide_title">PC 앱을 먼저 설치해주세요</string>
+    <string name="dashboard_pc_guide_message">모바일에서 진행률을 보려면 PC용 ProgressEye 앱이 필요합니다. Microsoft Store에서 설치 후 PC에서 로그인해 주세요.</string>
+    <string name="dashboard_pc_guide_install">Microsoft Store 열기</string>
+    <string name="dashboard_pc_guide_share">링크 공유</string>
+    <string name="dashboard_pc_guide_copy">링크 복사</string>
+    <string name="dashboard_pc_guide_share_chooser">PC 앱 설치 링크 공유</string>
+    <string name="dashboard_pc_guide_share_text">ProgressEye PC 앱 설치 링크입니다. PC에서 열어 설치해 주세요.\n%1$s</string>
+    <string name="dashboard_pc_guide_copied">PC 앱 설치 링크를 복사했습니다.</string>
+    <string name="dashboard_pc_guide_later">나중에</string>
     <string name="dashboard_no_tasks">진행 중인 작업 없음</string>
     <string name="dashboard_status_online">온라인</string>
     <string name="dashboard_status_offline">오프라인</string>

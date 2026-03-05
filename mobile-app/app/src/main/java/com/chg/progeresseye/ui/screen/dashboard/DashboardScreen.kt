@@ -1,5 +1,10 @@
 package com.chg.progeresseye.ui.screen.dashboard
 
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -39,6 +44,7 @@ import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -107,6 +114,8 @@ private val Amber300 = Color(0xFFFCD34D)
 private val Amber500 = Color(0xFFF59E0B)
 private val Amber600 = Color(0xFFD97706)
 
+private const val PC_APP_STORE_URL = "https://apps.microsoft.com/detail/9NGF92B1BN10"
+
 // ═════════════════════════════════════════════════════════
 // DashboardContent — content only, used by MainScreen
 // ═════════════════════════════════════════════════════════
@@ -120,6 +129,9 @@ fun DashboardContent(
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
     when {
         uiState.isLoading -> {
             Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -161,6 +173,12 @@ fun DashboardContent(
                         color = Slate400,
                         textAlign = TextAlign.Center,
                     )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    PcAppInstallLinkCard(
+                        onInstall = { uriHandler.openUri(PC_APP_STORE_URL) },
+                        onShare = { sharePcAppInstallLink(context) },
+                        onCopy = { copyPcAppInstallLink(context) },
+                    )
                 }
             }
         }
@@ -184,10 +202,91 @@ fun DashboardContent(
                                 onRequestScreenshot = { onRequestScreenshot(device.id) },
                             )
                         }
+                        item(key = "pc-app-install-link") {
+                            PcAppInstallLinkCard(
+                                onInstall = { uriHandler.openUri(PC_APP_STORE_URL) },
+                                onShare = { sharePcAppInstallLink(context) },
+                                onCopy = { copyPcAppInstallLink(context) },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PcAppInstallLinkCard(
+    onInstall: () -> Unit,
+    onShare: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceContainerDark,
+        border = BorderStroke(1.dp, SurfaceContainerHighDark),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.dashboard_pc_guide_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = OnSurfaceDark,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.dashboard_pc_guide_message),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Slate400,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onInstall) {
+                    Text(text = stringResource(R.string.dashboard_pc_guide_install))
+                }
+                Button(onClick = onShare) {
+                    Text(text = stringResource(R.string.dashboard_pc_guide_share))
+                }
+                Button(onClick = onCopy) {
+                    Text(text = stringResource(R.string.dashboard_pc_guide_copy))
+                }
+            }
+        }
+    }
+}
+
+private fun sharePcAppInstallLink(context: android.content.Context) {
+    val message = context.getString(R.string.dashboard_pc_guide_share_text, PC_APP_STORE_URL)
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.dashboard_pc_guide_title))
+        putExtra(Intent.EXTRA_TEXT, message)
+    }
+    val chooser = Intent.createChooser(
+        shareIntent,
+        context.getString(R.string.dashboard_pc_guide_share_chooser),
+    )
+    if (context !is Activity) {
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(chooser)
+}
+
+private fun copyPcAppInstallLink(context: android.content.Context) {
+    val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    if (clipboardManager != null) {
+        clipboardManager.setPrimaryClip(
+            ClipData.newPlainText("ProgressEye PC App", PC_APP_STORE_URL),
+        )
+        Toast.makeText(context, context.getString(R.string.dashboard_pc_guide_copied), Toast.LENGTH_SHORT).show()
     }
 }
 

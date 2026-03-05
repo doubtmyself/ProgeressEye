@@ -200,6 +200,7 @@ LifecycleStartEffect(dashboardViewModel) {
 > - 백그라운드 진입 시 리스너를 해제하여 **heartbeat 등 불필요한 push 수신을 차단**한다.
 > - 완료/프리징 같은 중요 이벤트는 **FCM 푸시 알림**으로 전달 예정 (백그라운드에서도 수신 가능).
 > - 이 구조에서 **모바일 앱이 꺼져 있으면 RTDB 다운로드 비용 = 0**이다.
+> - 대시보드에는 PC 앱 설치/공유/복사 CTA가 상시 노출되며, Microsoft Store 이동 및 공유앱(카카오톡 등) 전달/클립보드 복사를 지원한다.
 >
 > Firebase RTDB Spark(무료) 플랜에서 쓰기(PATCH/PUT)는 과금되지 않으며,
 > 리스너가 받는 push(다운로드)만 전송량에 잡힌다.
