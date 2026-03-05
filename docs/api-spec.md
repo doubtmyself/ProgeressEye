@@ -245,7 +245,7 @@ PC Agent 강제 업데이트 체크용. 인증 없이 읽기 가능.
 
 ### users/{uid} (owner 읽기, 일부 필드 제한 쓰기)
 
-사용자 구독/광고 정책 상태. `plan`, `adFreeMode` 계열은 관리자(Firebase Console/서버)만 수정 가능.
+사용자 구독/광고 정책 상태. `plan`은 신규 문서 생성 시 `free`만 클라이언트 허용, 그 외 변경은 관리자(Firebase Console/서버)만 가능하다. `adFreeMode` 계열은 관리자만 수정 가능.
 
 ```json
 {
@@ -272,7 +272,10 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow create: if request.auth != null && request.auth.uid == uid
-                    && !('plan' in request.resource.data)
+                    && (
+                      !('plan' in request.resource.data)
+                      || request.resource.data.plan == 'free'
+                    )
                     && !('adFreeMode' in request.resource.data)
                     && !('adFreeModeUpdatedAt' in request.resource.data);
       allow update: if request.auth != null && request.auth.uid == uid

@@ -8,11 +8,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // users: owner can read/create/update (plan/adFreeMode 계열은 관리자만 변경 가능)
+    // users: owner can read/create/update
+    // - create: plan 미지정 또는 plan="free"만 허용
+    // - update: plan/adFreeMode 계열은 관리자만 변경 가능
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow create: if request.auth != null && request.auth.uid == uid
-                    && !('plan' in request.resource.data)
+                    && (
+                      !('plan' in request.resource.data)
+                      || request.resource.data.plan == 'free'
+                    )
                     && !('adFreeMode' in request.resource.data)
                     && !('adFreeModeUpdatedAt' in request.resource.data);
       allow update: if request.auth != null && request.auth.uid == uid

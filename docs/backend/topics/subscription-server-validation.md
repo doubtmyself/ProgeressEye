@@ -6,7 +6,7 @@
 ## 전제
 - 앱 패키지명: `com.chg.progeresseye`
 - 구독 상품 ID: `pro_monthly_3000`
-- Firestore Rules에서 `users/{uid}.plan`은 클라이언트 직접 변경 금지 상태를 유지한다 (`firestore.rules`).
+- Firestore Rules에서 `users/{uid}.plan`은 신규 문서 생성 시 `free`만 클라이언트 허용하고, `pro` 변경은 서버 전용으로 유지한다 (`firestore.rules`).
 
 ## 1) Play Console 설정
 - [ ] 구독 상품 `pro_monthly_3000` 생성, 월 베이스 플랜 활성화, 가격 3,000원 설정
@@ -49,7 +49,7 @@
 - [ ] UI는 Firestore `users/{uid}.plan` 리스너 값만 기준으로 광고/Pro 기능 분기
 
 ## 6) 보안 체크
-- [ ] `users/{uid}.plan`은 서버만 변경 가능(현재 규칙 유지)
+- [ ] `users/{uid}.plan`은 신규 `free` 생성 외 서버만 변경 가능(현재 규칙 유지)
 - [ ] 함수 입력 `productId` 화이트리스트 검증 (`pro_monthly_3000`만 허용)
 - [ ] `purchaseToken` 원문 저장 금지, 해시 저장
 - [ ] 모든 entitlement 변경 로그(이유/이전값/새값) 기록
