@@ -27,7 +27,7 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
   - `backfillWithdrawnTombstoneCleanup`: 10분 주기 누락 tombstone 재수집/Task 예약
 
 ## 3) 계정/탈퇴 정책
-- 정책 명시: `docs/privacy-policy-ko.md`
+- 정책 명시: `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md`
 - 현재 정책(운영 기준)
   - 탈퇴 요청 후 7일 유예
   - 유예 만료 시 데이터 삭제
@@ -47,7 +47,7 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
 | Task Queue 동작 로그 | `firebase functions:log` |
 | Firestore users/withdrawnUsers 상태 | Firebase Console Firestore |
 | RTDB users/{uid}/withdrawal 상태 | Firebase Console RTDB |
-| 개인정보처리방침 반영 상태 | `docs/privacy-policy-ko.md` |
+| 개인정보처리방침 반영 상태 | `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md` |
 
 ## 6) 구독/결제 서버 검증
 - 서버 검증 체크리스트(RTDN + Developer API): `docs/backend/topics/subscription-server-validation.md`

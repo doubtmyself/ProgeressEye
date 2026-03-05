@@ -18,4 +18,4 @@
 - 새 기능을 추가하면 아래를 함께 업데이트한다.
   - 해당 플랫폼 `topics/*.md`
   - 해당 플랫폼 `INDEX.md`
-  - 정책 변경 시 `docs/privacy-policy-ko.md`
+  - 정책 변경 시 `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md`

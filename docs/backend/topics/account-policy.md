@@ -8,6 +8,7 @@
 
 ## 정책 기준 문서
 - `docs/privacy-policy-ko.md`
+- `docs/privacy-policy-en.md`
 
 ## 구현 분담
 - 클라이언트(PC/모바일): 안내/확인 UX, 서버 API 호출

@@ -48,7 +48,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
   - `pc-agent/main.py`
   - `pc-agent/firebase/device_manager.py`
   - `pc-agent/utils/i18n.py`
-- 정책 문서: `docs/privacy-policy-ko.md`
+- 정책 문서: `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md`
 
 ## 7) 문제 해결(추천 읽기 순서)
 - 로그인/토큰 문제: `docs/pc-agent/technical-spec.md` -> 3.1, 6
@@ -62,4 +62,4 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 | 새 영역 등록 로직 수정 | `docs/pc-agent/technical-spec.md` 3.2, 3.6 |
 | 진행률 분석 정확도 개선 | `docs/pc-agent/technical-spec.md` 3.3~3.5 |
 | Firebase 경로 변경 | `docs/api-spec.md` + `docs/pc-agent/topics/firebase-sync.md` |
-| 로그인/탈퇴 정책 변경 | `docs/privacy-policy-ko.md` + `pc-agent/main.py` |
+| 로그인/탈퇴 정책 변경 | `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md` + `pc-agent/main.py` |

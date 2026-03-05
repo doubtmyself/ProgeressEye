@@ -29,7 +29,7 @@
 | Firebase 데이터 구조 확인 | `docs/backend/INDEX.md` -> 데이터 스키마 |
 | Cloud Functions 동작 확인 | `docs/backend/INDEX.md` -> Functions |
 | 탈퇴/유예/재가입 정책 확인 | `docs/backend/INDEX.md` -> 계정 정책 |
-| 개인정보처리방침 확인 | `docs/privacy-policy-ko.md` |
+| 개인정보처리방침 확인 | `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md` |
 | 제품 기획/로드맵 확인 | `docs/product-plan.md` |
 | PC 스토어 문안 수정 | `docs/pc-agent/topics/store-listing.md` |
 
@@ -38,6 +38,7 @@
 - 시스템 아키텍처: `docs/architecture.md`
 - API/데이터 구조: `docs/api-spec.md`
 - 작업 분해/WBS: `docs/work-breakdown.md`
-- 개인정보처리방침: `docs/privacy-policy-ko.md`
+- 개인정보처리방침(KO): `docs/privacy-policy-ko.md`
+- 개인정보처리방침(EN): `docs/privacy-policy-en.md`
 - 문서 운영 규칙: `docs/WORKFLOW.md`
 - 제품 기획서: `docs/product-plan.md`
