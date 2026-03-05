@@ -304,16 +304,25 @@ private fun AccountCard(
 
         HorizontalDivider(color = OutlineVariantDark)
 
-        SubscriptionSection(
-            isProPlan = isProPlan,
-            subscriptionPrice = subscriptionPrice,
-            isAdFreeMode = isAdFreeMode,
-            canStartSubscription = canStartSubscription,
-            isPurchaseLoading = isPurchaseLoading,
-            onStartSubscription = onStartSubscription,
-        )
-
-        HorizontalDivider(color = OutlineVariantDark)
+        if (isAdFreeMode && !isProPlan) {
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_ad_free_mode_admin_active),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceVariantDark,
+                )
+            }
+            HorizontalDivider(color = OutlineVariantDark)
+        } else {
+            SubscriptionSection(
+                isProPlan = isProPlan,
+                subscriptionPrice = subscriptionPrice,
+                canStartSubscription = canStartSubscription,
+                isPurchaseLoading = isPurchaseLoading,
+                onStartSubscription = onStartSubscription,
+            )
+            HorizontalDivider(color = OutlineVariantDark)
+        }
 
         // Logout button
         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
@@ -369,7 +378,6 @@ private fun AccountCard(
 private fun SubscriptionSection(
     isProPlan: Boolean,
     subscriptionPrice: String?,
-    isAdFreeMode: Boolean,
     canStartSubscription: Boolean,
     isPurchaseLoading: Boolean,
     onStartSubscription: () -> Unit,
@@ -412,15 +420,6 @@ private fun SubscriptionSection(
                 Text(
                     text = stringResource(R.string.settings_subscription_start_button),
                     style = MaterialTheme.typography.labelLarge,
-                )
-            }
-
-            if (isAdFreeMode) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = stringResource(R.string.settings_ad_free_mode_admin_active),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OnSurfaceVariantDark,
                 )
             }
         }

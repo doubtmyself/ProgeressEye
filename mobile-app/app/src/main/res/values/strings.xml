@@ -18,6 +18,7 @@
     <string name="dashboard_pc_guide_share_chooser">Share PC app install link</string>
     <string name="dashboard_pc_guide_share_text">Here is the ProgressEye PC app install link. Open it on your PC to install.\n%1$s</string>
     <string name="dashboard_pc_guide_copied">PC app install link copied.</string>
+    <string name="dashboard_refresh_done_toast">PC connection status refreshed.</string>
     <string name="dashboard_pc_guide_later">Later</string>
     <string name="dashboard_no_tasks">No active tasks</string>
     <string name="dashboard_status_online">Online</string>

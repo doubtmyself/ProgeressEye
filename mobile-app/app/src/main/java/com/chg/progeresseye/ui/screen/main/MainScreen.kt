@@ -106,6 +106,7 @@ fun MainScreen(
     val dashboardViewModel: DashboardViewModel = viewModel()
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val userPlan by dashboardViewModel.userPlan.collectAsStateWithLifecycle()
+    val isAdFreeModeEnabled by dashboardViewModel.isAdFreeModeEnabled.collectAsStateWithLifecycle()
     val requiresForcedSignOut = dashboardState.requiresForcedSignOut
     val context = LocalContext.current
     val activity = context as? Activity
@@ -113,8 +114,8 @@ fun MainScreen(
     val safeSelectedTab = selectedTab.coerceIn(0, navItems.lastIndex)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(userPlan) {
-        if (userPlan == "free") {
+    LaunchedEffect(userPlan, isAdFreeModeEnabled) {
+        if (userPlan == "free" && !isAdFreeModeEnabled) {
             dashboardViewModel.loadRewardedAd(context.applicationContext)
         }
     }
@@ -182,7 +183,7 @@ fun MainScreen(
                     uiState = dashboardState,
                     userPlan = userPlan,
                     onRequestScreenshot = { deviceId ->
-                        if (userPlan == "free" && activity != null) {
+                        if (userPlan == "free" && !isAdFreeModeEnabled && activity != null) {
                             dashboardViewModel.showRewardedAdThenScreenshot(activity, deviceId)
                         } else {
                             dashboardViewModel.requestScreenshot(deviceId)

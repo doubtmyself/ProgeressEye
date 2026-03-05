@@ -56,6 +56,7 @@ import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,6 +132,15 @@ fun DashboardContent(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    var showRefreshDoneToast by remember { mutableStateOf(false) }
+    val refreshDoneText = stringResource(R.string.dashboard_refresh_done_toast)
+
+    LaunchedEffect(uiState.isRefreshing, showRefreshDoneToast) {
+        if (showRefreshDoneToast && !uiState.isRefreshing) {
+            Toast.makeText(context, refreshDoneText, Toast.LENGTH_SHORT).show()
+            showRefreshDoneToast = false
+        }
+    }
 
     when {
         uiState.isLoading -> {
@@ -186,7 +196,10 @@ fun DashboardContent(
         else -> {
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
-                onRefresh = onRefresh,
+                onRefresh = {
+                    showRefreshDoneToast = true
+                    onRefresh()
+                },
                 modifier = modifier.fillMaxSize(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {

@@ -42,6 +42,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance("progress")
     private var userPlanListener: ListenerRegistration? = null
+    private var globalPolicyListener: ListenerRegistration? = null
     private var billingClient: BillingClient? = null
     private var subscriptionProductDetails: ProductDetails? = null
 
@@ -91,6 +92,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     init {
         observeUserPlan()
+        observeGlobalPolicy()
         setupBillingClient()
     }
 
@@ -111,6 +113,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun startProSubscription(activity: Activity) {
+        if (_uiState.value.isAdFreeMode) {
+            _uiState.update {
+                it.copy(
+                    billingMessage = getApplication<Application>().getString(R.string.settings_ad_free_mode_admin_active),
+                )
+            }
+            return
+        }
+
         val client = billingClient
         if (client == null || !client.isReady) {
             _uiState.update {
@@ -185,12 +196,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     return@addSnapshotListener
                 }
                 val plan = snapshot?.getString("plan")?.lowercase() ?: "free"
-                val adFreeMode = snapshot?.getBoolean("adFreeMode") == true
                 _uiState.update { state ->
                     state.copy(
                         currentPlan = if (plan == "pro") "pro" else "free",
-                        isAdFreeMode = adFreeMode,
                     )
+                }
+            }
+    }
+
+    private fun observeGlobalPolicy() {
+        globalPolicyListener?.remove()
+        globalPolicyListener = firestore.collection("appConfig")
+            .document("policies")
+            .addSnapshotListener { snapshot, _ ->
+                val globalAdFreeMode = snapshot?.getBoolean("adFreeModeGlobal") == true
+                _uiState.update { state ->
+                    state.copy(isAdFreeMode = globalAdFreeMode)
                 }
             }
     }
@@ -407,6 +428,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         super.onCleared()
         userPlanListener?.remove()
         userPlanListener = null
+        globalPolicyListener?.remove()
+        globalPolicyListener = null
         billingClient?.endConnection()
         billingClient = null
     }

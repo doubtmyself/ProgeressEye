@@ -18,16 +18,17 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.UUID
 
 // ═════════════════════════════════════════════════════════
@@ -50,6 +51,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _userPlan = MutableStateFlow("free")
     val userPlan: StateFlow<String> = _userPlan.asStateFlow()
+    private val _isAdFreeModeEnabled = MutableStateFlow(false)
+    val isAdFreeModeEnabled: StateFlow<Boolean> = _isAdFreeModeEnabled.asStateFlow()
     private var isAdFreeMode: Boolean = false
 
     private val _isRewardedAdReady = MutableStateFlow(false)
@@ -72,6 +75,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private var mobileHeartbeatJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
     private var planListener: ListenerRegistration? = null
+    private var globalPolicyListener: ListenerRegistration? = null
+    private var refreshStartedAtMs: Long = 0L
 
     // Local caches
     private val deviceCache = mutableMapOf<String, DeviceData>()
@@ -184,7 +189,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         statusRef?.addChildEventListener(statusChildListener!!)
 
+        // ChildEventListener만 사용하면 노드가 비어 있을 때 콜백이 오지 않아
+        // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
+        bootstrapInitialState(uid)
+
         observeUserPlan(uid)
+        observeGlobalPolicy()
 
         // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
         startMobileHeartbeat(uid)
@@ -217,9 +227,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         )
     }
 
-    private fun applyUserEntitlement(planRaw: String, adFreeModeRaw: Boolean) {
+    private fun applyUserEntitlement(planRaw: String) {
         _userPlan.value = if (planRaw == "pro") "pro" else "free"
-        isAdFreeMode = adFreeModeRaw
+
+        syncAdGateState()
+    }
+
+    private fun applyGlobalAdFreeMode(enabled: Boolean) {
+        _isAdFreeModeEnabled.value = enabled
+        isAdFreeMode = enabled
+
+        syncAdGateState()
+    }
+
+    private fun syncAdGateState() {
 
         if (shouldSkipRewardedAds()) {
             rewardedAd = null
@@ -288,10 +309,79 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ── Heartbeat check (pull-to-refresh 시만) ───────────────
 
+    private fun bootstrapInitialState(uid: String) {
+        var pendingReads = 2
+
+        fun finishRead() {
+            pendingReads -= 1
+            if (
+                pendingReads == 0 &&
+                _uiState.value.isLoading &&
+                !_uiState.value.requiresForcedSignOut
+            ) {
+                emitState()
+            }
+        }
+
+        db.reference.child("users").child(uid).child("devices")
+            .addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (deviceCache.isEmpty()) {
+                        snapshot.children.forEach { child ->
+                            parseDevice(child)?.let { device ->
+                                deviceCache[device.id] = device
+                            }
+                        }
+                    }
+                    finishRead()
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    if (error.code == DatabaseError.PERMISSION_DENIED) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            requiresForcedSignOut = true,
+                            error = null,
+                        )
+                    } else {
+                        Timber.w(error.toException(), "devices bootstrap cancelled")
+                    }
+                    finishRead()
+                }
+            })
+
+        db.reference.child("users").child(uid).child("deviceStatus")
+            .addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (statusCache.isEmpty()) {
+                        snapshot.children.forEach { child ->
+                            val deviceId = child.key ?: return@forEach
+                            val status = child.getValue(String::class.java) ?: "offline"
+                            statusCache[deviceId] = status
+                        }
+                    }
+                    finishRead()
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    if (error.code == DatabaseError.PERMISSION_DENIED) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            requiresForcedSignOut = true,
+                            error = null,
+                        )
+                    } else {
+                        Timber.w(error.toException(), "deviceStatus bootstrap cancelled")
+                    }
+                    finishRead()
+                }
+            })
+    }
+
     private fun checkHeartbeat(uid: String) {
         val deviceIds = deviceCache.keys.toList()
         if (deviceIds.isEmpty()) {
-            _uiState.value = _uiState.value.copy(isRefreshing = false)
+            finishRefreshIfNeeded()
             return
         }
 
@@ -319,11 +409,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         .updateChildren(offlineUpdates)
                 }
                 emitState()
+                finishRefreshIfNeeded()
             }
             .addOnFailureListener { e ->
                 Timber.e(e, "heartbeat batch check failed")
-                _uiState.value = _uiState.value.copy(isRefreshing = false)
+                finishRefreshIfNeeded()
             }
+    }
+
+    private fun finishRefreshIfNeeded() {
+        if (!_uiState.value.isRefreshing) return
+
+        val elapsed = System.currentTimeMillis() - refreshStartedAtMs
+        val remaining = (MIN_REFRESH_DISPLAY_MS - elapsed).coerceAtLeast(0L)
+
+        viewModelScope.launch {
+            if (remaining > 0L) delay(remaining)
+            _uiState.value = _uiState.value.copy(isRefreshing = false)
+        }
     }
 
     // ── State emission ─────────────────────────────────────
@@ -357,7 +460,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             devices = devices,
             screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
             screenshotError = screenshotError,
-            isRefreshing = false,
+            isRefreshing = _uiState.value.isRefreshing,
         )
     }
 
@@ -471,6 +574,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun refresh() {
         val uid = auth.currentUser?.uid ?: return
+        if (_uiState.value.isRefreshing) return
+        refreshStartedAtMs = System.currentTimeMillis()
         _uiState.value = _uiState.value.copy(isRefreshing = true)
         // pull-to-refresh 시에만 heartbeat 확인 → 크래시 감지
         checkHeartbeat(uid)
@@ -498,10 +603,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _isRewardedAdReady.value = false
         isRewardedAdLoading = false
         shouldPreloadRewardedAd = false
+        _isAdFreeModeEnabled.value = false
         isAdFreeMode = false
 
         planListener?.remove()
         planListener = null
+
+        globalPolicyListener?.remove()
+        globalPolicyListener = null
     }
 
     private fun observeUserPlan(uid: String) {
@@ -515,8 +624,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     return@addSnapshotListener
                 }
                 val plan = document?.getString("plan")?.lowercase() ?: "free"
-                val adFreeMode = document?.getBoolean("adFreeMode") == true
-                applyUserEntitlement(plan, adFreeMode)
+                applyUserEntitlement(plan)
+            }
+    }
+
+    private fun observeGlobalPolicy() {
+        globalPolicyListener?.remove()
+        globalPolicyListener = FirebaseFirestore.getInstance("progress")
+            .collection("appConfig")
+            .document("policies")
+            .addSnapshotListener { document, error ->
+                if (error != null) {
+                    Timber.e(error, "firestore:policy:listen:onFailure")
+                    return@addSnapshotListener
+                }
+                applyGlobalAdFreeMode(document?.getBoolean("adFreeModeGlobal") == true)
             }
     }
 
@@ -530,6 +652,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         private const val MOBILE_HEARTBEAT_INTERVAL_MS = 60_000L
         /** Consider device offline if heartbeat > 2 minutes ago. */
         private const val OFFLINE_THRESHOLD_MS = 120_000L
+        /** Keep pull-to-refresh indicator visible long enough for smooth animation. */
+        private const val MIN_REFRESH_DISPLAY_MS = 900L
         /** Screenshot request timeout. */
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
         private const val REWARDED_TEST_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"

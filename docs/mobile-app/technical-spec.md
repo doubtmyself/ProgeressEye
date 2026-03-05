@@ -201,6 +201,9 @@ LifecycleStartEffect(dashboardViewModel) {
 > - 완료/프리징 같은 중요 이벤트는 **FCM 푸시 알림**으로 전달 예정 (백그라운드에서도 수신 가능).
 > - 이 구조에서 **모바일 앱이 꺼져 있으면 RTDB 다운로드 비용 = 0**이다.
 > - 대시보드에는 PC 앱 설치/공유/복사 CTA가 상시 노출되며, Microsoft Store 이동 및 공유앱(카카오톡 등) 전달/클립보드 복사를 지원한다.
+> - Pull-to-refresh는 heartbeat 재검증 후 연결 상태를 보정하며, 새로고침 인디케이터 최소 표시 시간(약 0.9초)으로 끊김을 완화한다.
+> - 대시보드 초기 로딩은 ChildEventListener 외에 초기 1회 스냅샷 조회를 사용해, 디바이스가 0개여도 무한 로딩 없이 빈 상태 UI를 표시한다.
+> - 전역 광고 비표시 모드(`appConfig/policies.adFreeModeGlobal`)가 활성화되면 스크린샷 요청은 항상 광고를 우회하며, 설정 화면 Pro 구독 CTA는 노출하지 않는다.
 >
 > Firebase RTDB Spark(무료) 플랜에서 쓰기(PATCH/PUT)는 과금되지 않으며,
 > 리스너가 받는 push(다운로드)만 전송량에 잡힌다.
@@ -355,7 +358,8 @@ users/{uid}/
 ### Firestore
 
 ```
-users/{uid}   → { plan: "free" | "pro", adFreeMode: true | false }   # 구독/광고 정책 상태(관리자 변경)
+users/{uid}            → { plan: "free" | "pro" }                      # 계정 구독 상태
+appConfig/policies     → { adFreeModeGlobal: true | false }              # 전역 광고 정책(관리자 변경)
 ```
 
 ### Firebase Storage 경로
