@@ -31,7 +31,8 @@
   - 호환 모드 전환 시 앱 시작 후 안내 다이얼로그를 표시하며, 모니터링 기능은 유지된다.
 - 진행률 바 영역 선택 안내
   - 바 영역 선택 시작 시 안내 팝업에서 `게이지가 조금이라도 찬 화면` 기준 캡처를 권장한다.
-  - 예시 이미지는 `pc-agent/resources/progress-bar-sample.png`를 우선 사용하고, 없으면 `pc-agent/sampleBar/image3.png`를 사용한다.
+  - 안내 팝업 레이아웃은 `샘플 이미지(위) -> 설명 문구(아래)` 순서로 표시한다.
+  - 예시 이미지는 `pc-agent/resources/progress-bar-sample.png` + `pc-agent/sampleBar/image*.png`를 불러와 4초 간격으로 순환한다.
 
 ## 관련 문서
 - 요구사항: `docs/pc-agent/requirements.md` (FR-PC-002~005)

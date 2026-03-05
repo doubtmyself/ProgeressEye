@@ -50,7 +50,15 @@ from core.ocr_reader import OcrReader, OcrResult  # pyright: ignore[reportImplic
 from PIL import Image as PILImage
 from PyQt6.QtCore import QEventLoop, QRect, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage, QPixmap
-from PyQt6.QtWidgets import QApplication, QMessageBox, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from auth import AuthError  # pyright: ignore[reportImplicitRelativeImport]
 from auth.firebase_auth import FirebaseAuth  # pyright: ignore[reportImplicitRelativeImport]
@@ -1008,36 +1016,81 @@ class ProgressEyeApp:
         if self._bar_selection_guide_shown or self._editing_region_id is not None:
             return
 
-        dialog = QMessageBox(self._main_window)
+        dialog = QDialog(self._main_window)
         dialog.setWindowTitle(t("bar_selection_guide_title"))
-        dialog.setIcon(QMessageBox.Icon.Information)
-        dialog.setText(t("bar_selection_guide_text"))
 
-        sample_pixmap = self._load_bar_selection_guide_pixmap()
-        if sample_pixmap is not None:
-            dialog.setIconPixmap(sample_pixmap)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
-        dialog.addButton(t("btn_confirm"), QMessageBox.ButtonRole.AcceptRole)
-        self._exec_foreground_dialog(dialog)
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        image_label.setStyleSheet("background: transparent;")
+        layout.addWidget(image_label)
+
+        guide_label = QLabel(t("bar_selection_guide_text"))
+        guide_label.setWordWrap(True)
+        guide_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(guide_label)
+
+        confirm_btn = QPushButton(t("btn_confirm"))
+        confirm_btn.clicked.connect(dialog.accept)
+        layout.addWidget(confirm_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        sample_pixmaps = self._load_bar_selection_guide_pixmaps()
+        if sample_pixmaps:
+            image_label.setPixmap(sample_pixmaps[0])
+        else:
+            image_label.setVisible(False)
+
+        if len(sample_pixmaps) > 1:
+            current_index = 0
+            rotate_timer = QTimer(dialog)
+            rotate_timer.setInterval(4000)
+
+            def _rotate_sample() -> None:
+                nonlocal current_index
+                current_index = (current_index + 1) % len(sample_pixmaps)
+                image_label.setPixmap(sample_pixmaps[current_index])
+
+            rotate_timer.timeout.connect(_rotate_sample)
+            rotate_timer.start()
+
+        self._prepare_foreground_window(dialog)
+        dialog.exec()
         self._bar_selection_guide_shown = True
 
-    def _load_bar_selection_guide_pixmap(self) -> QPixmap | None:
+    def _load_bar_selection_guide_pixmaps(self) -> list[QPixmap]:
         base_dir = pathlib.Path(__file__).resolve().parent
-        candidates = (
-            base_dir / "resources" / "progress-bar-sample.png",
-            base_dir / "sampleBar" / "image3.png",
-        )
+        candidates: list[pathlib.Path] = []
 
+        primary = base_dir / "resources" / "progress-bar-sample.png"
+        if primary.exists():
+            candidates.append(primary)
+
+        sample_dir = base_dir / "sampleBar"
+        if sample_dir.exists():
+            candidates.extend(sorted(sample_dir.glob("image*.png")))
+
+        pixmaps: list[QPixmap] = []
+        seen_paths: set[pathlib.Path] = set()
         for image_path in candidates:
-            if not image_path.exists():
+            resolved = image_path.resolve()
+            if resolved in seen_paths:
                 continue
+            seen_paths.add(resolved)
+
             pixmap = QPixmap(str(image_path))
             if pixmap.isNull():
                 continue
-            return pixmap.scaledToWidth(360, Qt.TransformationMode.SmoothTransformation)
+            pixmaps.append(
+                pixmap.scaledToWidth(360, Qt.TransformationMode.SmoothTransformation)
+            )
 
-        log.warning("진행률 바 가이드 샘플 이미지를 찾지 못함")
-        return None
+        if not pixmaps:
+            log.warning("진행률 바 가이드 샘플 이미지를 찾지 못함")
+
+        return pixmaps
 
     def _start_ocr_area_selection(self) -> None:
         """숫자(OCR) 영역 선택을 시작한다."""
