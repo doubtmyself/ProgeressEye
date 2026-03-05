@@ -243,21 +243,33 @@ PC Agent 강제 업데이트 체크용. 인증 없이 읽기 가능.
 |------|------|------|
 | minVersion | string | PC Agent 최소 허용 버전 (시맨틱 버전) |
 
-### users/{uid} (owner 읽기, 일부 필드 제한 쓰기)
+### appConfig/policies (공개 읽기)
 
-사용자 구독/광고 정책 상태. `plan`은 신규 문서 생성 시 `free`만 클라이언트 허용, 그 외 변경은 관리자(Firebase Console/서버)만 가능하다. `adFreeMode` 계열은 관리자만 수정 가능.
+모바일/PC 공통 정책 토글. 인증 없이 읽기 가능.
 
 ```json
 {
-  "plan": "free",
-  "adFreeMode": false
+  "adFreeModeGlobal": false
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| adFreeModeGlobal | boolean | true면 전체 계정 광고 비표시 모드 강제 |
+
+### users/{uid} (owner 읽기, 일부 필드 제한 쓰기)
+
+사용자 구독 상태. `plan`은 신규 문서 생성 시 `free`만 클라이언트 허용, 그 외 변경은 관리자(Firebase Console/서버)만 가능하다.
+
+```json
+{
+  "plan": "free"
 }
 ```
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | plan | string | "free" / "pro" — 구독 상태 |
-| adFreeMode | boolean | true면 광고 비표시 모드 (관리자 전용) |
 
 ### Firestore 보안 규칙
 
@@ -267,7 +279,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /appConfig/{doc} {
       allow read: if true;        // 공개 읽기 (버전 체크)
-      allow write: if true;       // Console에서 관리
+      allow write: if false;      // 클라이언트 쓰기 금지 (관리자/서버만 변경)
     }
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
