@@ -1,6 +1,7 @@
 package com.chg.progeresseye.ui.screen.settings
 
 import android.app.Activity
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -50,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -519,8 +521,9 @@ private fun AppearanceCard(
 @Composable
 private fun AboutCard() {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val uriHandler = LocalUriHandler.current
-    val lang = context.resources.configuration.locales[0]?.language ?: "en"
+    val lang = configuration.locales[0]?.language ?: "en"
     val policyUrl = if (lang.startsWith("ko")) {
         "https://progresseye-49244.web.app/?lang=ko"
     } else {
@@ -576,11 +579,16 @@ private fun AboutCard() {
         HorizontalDivider(color = OutlineVariantDark)
 
         // Open Source Licenses
-        // TODO: OSS 라이선스 화면 구현 및 네비게이션 연결
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* TODO: Navigate to licenses screen */ }
+                .clickable {
+                    val intent = Intent(context, OssLicensesActivity::class.java)
+                    if (context !is Activity) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }
                 .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

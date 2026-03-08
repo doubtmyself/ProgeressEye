@@ -32,6 +32,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.screen.settings.OssLicensesActivity"
+            android:exported="false"
+            android:label="@string/settings_oss_licenses"
+            android:theme="@style/Theme.ProgeressEye" />
+
         <service
             android:name=".service.FCMService"
             android:exported="false">

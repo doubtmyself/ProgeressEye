@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ProgressEye</string>
+    <string name="app_name" translatable="false">ProgressEye</string>
 
     <!-- ── Navigation ── -->
     <string name="nav_dashboard">Dashboard</string>
@@ -102,6 +102,7 @@
     <string name="settings_version">Version</string>
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_oss_licenses">Open Source Licenses</string>
+    <string name="settings_oss_licenses_description">Tap an item to open the license text in your browser.</string>
     <string name="settings_logout_title">Log out?</string>
     <string name="settings_logout_message">You will need to sign in again.</string>
     <string name="settings_cancel">Cancel</string>
