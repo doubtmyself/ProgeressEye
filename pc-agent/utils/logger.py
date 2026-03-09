@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 
@@ -34,8 +35,11 @@ def setup_logger(name: str = "progresseye", level: int = logging.INFO) -> loggin
     # 파일 핸들러 (AppData)
     log_dir = Path.home() / "AppData" / "Local" / "ProgressEye" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(
-        log_dir / "progresseye.log", encoding="utf-8"
+    file_handler = TimedRotatingFileHandler(
+        log_dir / "progresseye.log",
+        when="midnight",
+        backupCount=7,
+        encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)

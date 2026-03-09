@@ -33,7 +33,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "timeout_minutes": 5,
     },
     "startup": {
-        "auto_start": False,
         "start_minimized": True,
         "ocr_runtime_guide_ack": False,
     },

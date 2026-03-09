@@ -13,7 +13,7 @@ The list below highlights key OCR/runtime dependencies used in PC agent builds.
 
 Build policy: CPU-only ONNX Runtime (`onnxruntime`) is used for PC builds.
 
-3) opencv-python
+3) opencv-python-headless
 - License: Apache-2.0 (package); OpenCV is BSD-3-Clause
 - Project: https://github.com/opencv/opencv-python
 

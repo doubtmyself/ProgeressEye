@@ -43,6 +43,7 @@ powershell -ExecutionPolicy Bypass -File .\packaging\scripts\build_exe.ps1 -Clea
 빌드 스크립트는 기본적으로 불필요한 대용량 파일(예: OpenCV video DLL, NumPy 테스트 모듈, Qt PDF DLL 등)을 제거해 배포 폴더 용량을 줄인다.
 또한 기본적으로 Visual C++ Redistributable DLL(`msvcp140.dll`, `vcomp140.dll` 등)을 배포 폴더에 자동 포함해, 타깃 PC에 재배포 패키지가 없는 경우에도 실행 호환성을 높인다.
 또한 FAST 기준에서 `sympy`/`mpmath`를 자동 제외해 ONNX 체인으로 인한 EXE 비대화를 억제한다.
+또한 OpenCV는 `opencv-python-headless` 단일 변형만 허용하며, `opencv-python`/`opencv-contrib-python`이 함께 설치된 빌드 환경에서는 실패 처리한다.
 
 ## MSIX 빌드 (Microsoft Store)
 
@@ -80,6 +81,7 @@ MSIX 패키징 안정성 참고:
 OCR 런타임 호환성 가이드:
 - PC 빌드는 CPU 전용 `onnxruntime` + RapidOCR를 기준으로 한다.
 - 빌드 스크립트는 `onnxruntime-gpu`가 감지되면 실패 처리하여 CUDA/cuDNN 대용량 DLL 유입을 차단한다.
+- 빌드 스크립트는 OpenCV 혼합 설치(`opencv-python`, `opencv-contrib-python`)가 감지되면 실패 처리하며, `opencv-python-headless`만 허용한다.
 - Paddle fallback 경로는 배포 빌드에서 사용하지 않는다(FAST 기준 고정).
 
 ## MSIX 에셋

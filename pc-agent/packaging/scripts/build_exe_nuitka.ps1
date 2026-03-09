@@ -248,10 +248,9 @@ function Copy-VcRuntimeDlls {
 
         $candidates = @()
         foreach ($root in $searchRoots) {
+            # Only System32 (x64 DLLs). SysWOW64 holds 32-bit DLLs and must not be bundled with an x64 app.
             $direct1 = Join-Path $root "System32\$dll"
-            $direct2 = Join-Path $root "SysWOW64\$dll"
             if (Test-Path $direct1) { $candidates += $direct1 }
-            if (Test-Path $direct2) { $candidates += $direct2 }
 
             try {
                 $found = Get-ChildItem -Path $root -Filter $dll -File -Recurse -ErrorAction SilentlyContinue |
@@ -261,7 +260,10 @@ function Copy-VcRuntimeDlls {
             }
         }
 
-        $source = $candidates | Select-Object -First 1
+        # Prefer x64 paths over x86 paths to avoid bundling a 32-bit DLL into the x64 app.
+        $source = $candidates |
+            Sort-Object { if ($_ -match '\\x64\\|\\amd64\\') { 0 } elseif ($_ -match '\\x86\\|\\i386\\|SysWOW64') { 2 } else { 1 } } |
+            Select-Object -First 1
         if ($source) {
             Copy-Item $source $dest -Force
             Write-Host "[build_exe_nuitka] Bundled VC runtime: $dll"
@@ -302,6 +304,31 @@ function Assert-CpuOnnxRuntimeOnly {
     }
 }
 
+function Assert-OpenCvHeadlessOnly {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonPath
+    )
+
+    $probe = & $PythonPath -c "import importlib.metadata as m; names={str(d.metadata.get('Name','')).lower() for d in m.distributions()}; print('1' if 'opencv-python-headless' in names else '0'); print('1' if 'opencv-python' in names else '0'); print('1' if 'opencv-contrib-python' in names else '0'); print('1' if 'opencv-contrib-python-headless' in names else '0')"
+    if ($LASTEXITCODE -ne 0 -or $probe.Count -lt 4) {
+        throw "Failed to inspect python packages for OpenCV policy checks."
+    }
+
+    $hasHeadless = ($probe[0].Trim() -eq "1")
+    $hasDesktop = ($probe[1].Trim() -eq "1")
+    $hasContrib = ($probe[2].Trim() -eq "1")
+    $hasContribHeadless = ($probe[3].Trim() -eq "1")
+
+    if (-not $hasHeadless) {
+        throw "opencv-python-headless is required for build. Install it in the build venv before building."
+    }
+
+    if ($hasDesktop -or $hasContrib -or $hasContribHeadless) {
+        throw "Conflicting OpenCV variants detected. Keep only opencv-python-headless in build environment."
+    }
+}
+
 Push-Location $PcAgentRoot
 try {
     if ($NuitkaJobs -le 0) {
@@ -327,6 +354,7 @@ try {
     & $PythonExe -m pip install --upgrade nuitka ordered-set
 
     Assert-CpuOnnxRuntimeOnly -PythonPath $PythonExe
+    Assert-OpenCvHeadlessOnly -PythonPath $PythonExe
 
     # Run Nuitka standalone build
     $nuitkaArgs = @(
