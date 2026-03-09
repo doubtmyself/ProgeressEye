@@ -452,12 +452,12 @@ class MainWindow(QMainWindow):
             if _icon_path.exists():
                 self.setWindowIcon(QIcon(str(_icon_path)))
                 break
-        self._app_min_size = (600, 500)
-        self._app_default_size = (630, 700)
+        self._app_min_size = (600, 750)
+        self._app_default_size = (630, 1050)
         self._login_min_size = (380, 740)
         self._login_default_size = (390, 780)
-        self.setMinimumSize(600, 500)
-        self.resize(630, 700)
+        self.setMinimumSize(600, 750)
+        self.resize(630, 1050)
 
         self._setup_ui()
         self._login_panel.login_requested.connect(self.login_start_requested)

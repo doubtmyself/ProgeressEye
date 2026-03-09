@@ -158,6 +158,7 @@ class LoginStartDialog(QWidget):
         terms_layout.setSpacing(6)
 
         terms_check_row = QWidget()
+        terms_check_row.setStyleSheet("background: transparent;")
         terms_check_row_layout = QHBoxLayout(terms_check_row)
         terms_check_row_layout.setContentsMargins(0, 0, 0, 0)
         terms_check_row_layout.setSpacing(8)

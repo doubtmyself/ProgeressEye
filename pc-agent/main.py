@@ -587,7 +587,29 @@ class ProgressEyeApp:
     def _do_login(self) -> None:
         """Google OAuth와 Firebase Auth를 통해 로그인한다."""
         self._silent_auth_abort = False
-        google_result = self._google_oauth.sign_in()
+
+        # OAuth 서버는 브라우저 콜백을 기다리며 블로킹된다.
+        # 메인 스레드를 막지 않도록 백그라운드 스레드에서 실행하고
+        # QEventLoop으로 결과를 기다린다.
+        _oauth_result: dict[str, str] = {}
+        _oauth_errors: list[BaseException] = []
+        _oauth_loop = QEventLoop(self._app)
+
+        def _run_oauth() -> None:
+            try:
+                _oauth_result.update(self._google_oauth.sign_in())
+            except BaseException as exc:
+                _oauth_errors.append(exc)
+            finally:
+                QTimer.singleShot(0, _oauth_loop.quit)
+
+        threading.Thread(target=_run_oauth, daemon=True).start()
+        _oauth_loop.exec()
+
+        if _oauth_errors:
+            raise _oauth_errors[0]
+
+        google_result = _oauth_result
         firebase_result = self._firebase_auth.sign_in_with_google(
             google_result["id_token"]
         )
