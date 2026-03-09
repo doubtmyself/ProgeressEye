@@ -2,6 +2,7 @@ Param(
     [string]$PythonExe = "",
     [switch]$Clean,
     [switch]$Fast,
+    [string]$OutputSubdir = "",
     [switch]$EnableUpx,
     [switch]$SkipBundleVCRuntime,
     [int]$NuitkaJobs = 0,
@@ -15,6 +16,7 @@ $params = @{}
 if ($PythonExe) { $params["PythonExe"] = $PythonExe }
 if ($Clean) { $params["Clean"] = $true }
 if ($Fast) { $params["Fast"] = $true }
+if ($OutputSubdir) { $params["OutputSubdir"] = $OutputSubdir }
 if ($EnableUpx) { $params["EnableUpx"] = $true }
 if ($SkipBundleVCRuntime) { $params["SkipBundleVCRuntime"] = $true }
 if ($NuitkaJobs -gt 0) { $params["NuitkaJobs"] = $NuitkaJobs }

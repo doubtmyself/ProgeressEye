@@ -36,9 +36,8 @@ PowerShell 프로필(`$PROFILE.CurrentUserAllHosts`)에 아래 1줄을 추가한
 - `pe-test [suite]`: 테스트 스크립트 실행
   - suite: `detection`, `downscale`, `ocr-accuracy`, `ocr-optimize`, `all`(기본값)
 - `pe-kill`: 실행 중인 `ProgressEye.exe`/관련 프로세스 강제 종료
-- `pe-exe`: EXE 증분 빌드(기본, 빠름)
-- `pe-exe-clean`: EXE 클린 빌드(느리지만 가장 안전)
-- `pe-exe-fast`: EXE 고속 빌드(PaddleOCR/PyMuPDF fallback 경로 제외)
+- `pe-exe`: EXE 증분 빌드(FAST OCR 기준)
+- `pe-exe-clean`: EXE 클린 빌드(FAST OCR 기준, 릴리스 직전 권장)
 - `pe-exe-run`: `pe-exe`로 생성된 EXE 실행(`dist/ProgressEye/ProgressEye.exe`)
 - `pe-msix`: 빠른 Store MSIX 빌드(증분 EXE + FastExe + 병렬 컴파일)
 - `pe-msix-clean`: 클린 Store MSIX 빌드(릴리스 직전 권장, FastExe 포함)
@@ -58,7 +57,6 @@ pe-ocr-setup
 pe-test detection
 pe-kill
 pe-exe
-pe-exe-fast
 pe-exe-run
 pe-msix
 pe-msix-clean

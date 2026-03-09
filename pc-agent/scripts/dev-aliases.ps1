@@ -93,7 +93,7 @@ function pe-kill {
 function pe-exe {
     Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -NuitkaJobs 0
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast -NuitkaJobs 0
     } finally {
         Pop-Location
     }
@@ -103,16 +103,7 @@ function pe-exe-clean {
     Push-Location $global:PcAgentRoot
     try {
         pe-kill
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -NuitkaJobs 0
-    } finally {
-        Pop-Location
-    }
-}
-
-function pe-exe-fast {
-    Push-Location $global:PcAgentRoot
-    try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast -NuitkaJobs 0
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -Fast -NuitkaJobs 0
     } finally {
         Pop-Location
     }
@@ -177,7 +168,6 @@ $script:_peFunctions = @(
     "pe-kill",
     "pe-exe",
     "pe-exe-clean",
-    "pe-exe-fast",
     "pe-exe-run",
     "pe-msix",
     "pe-msix-clean",

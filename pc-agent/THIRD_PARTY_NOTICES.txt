@@ -11,23 +11,17 @@ The list below highlights key OCR/runtime dependencies used in PC agent builds.
 - License: MIT
 - Project: https://github.com/microsoft/onnxruntime
 
-3) paddleocr
-- License: Apache-2.0
-- Project: https://github.com/PaddlePaddle/PaddleOCR
+Build policy: CPU-only ONNX Runtime (`onnxruntime`) is used for PC builds.
 
-4) paddlepaddle
-- License: Apache-2.0
-- Project: https://github.com/PaddlePaddle/Paddle
-
-5) opencv-python
+3) opencv-python
 - License: Apache-2.0 (package); OpenCV is BSD-3-Clause
 - Project: https://github.com/opencv/opencv-python
 
-6) Pillow
+4) Pillow
 - License: HPND
 - Project: https://github.com/python-pillow/Pillow
 
-7) numpy
+5) numpy
 - License: BSD-3-Clause
 - Project: https://github.com/numpy/numpy
 

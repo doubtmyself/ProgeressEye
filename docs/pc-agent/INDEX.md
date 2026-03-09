@@ -10,7 +10,7 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 - Firebase 동기화: `docs/pc-agent/topics/firebase-sync.md`
 - 원격 명령: `docs/pc-agent/topics/remote-commands.md`
 - 런타임 운영: `docs/pc-agent/topics/runtime-operations.md`
-- 빌드/배포: `docs/pc-agent/topics/build-deploy.md`
+- 빌드/배포(FAST 경량 제외 정책 포함): `docs/pc-agent/topics/build-deploy.md`
 - 개발용 터미널 축약어: `docs/pc-agent/topics/dev-aliases.md`
 - 스토어 등록 문안: `docs/pc-agent/topics/store-listing.md`
 

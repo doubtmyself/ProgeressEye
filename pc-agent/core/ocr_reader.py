@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import importlib
 import re
-import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,40 +73,12 @@ class OcrReader:
                 log.warning("RapidOCR initialization failed: %s", exc)
 
         detail = repr(_rapidocr_import_error) if _rapidocr_import_error else "unknown"
-        log.warning(
-            "rapidocr-onnxruntime is unavailable (python=%s, reason=%s) - trying PaddleOCR fallback",
-            sys.executable,
-            detail,
-        )
-        try:
-            paddle_mod = importlib.import_module("paddleocr")
-            paddle_cls = getattr(paddle_mod, "PaddleOCR", None)
-            if paddle_cls is None:
-                raise ImportError("PaddleOCR class not found in paddleocr module")
-            ocr = paddle_cls(use_angle_cls=False, lang="en", show_log=False)
-            self._backend = "paddleocr"
-            log.info("PaddleOCR fallback initialized")
-            return ocr
-        except Exception as exc:
-            log.error(
-                "OCR backend init failed (rapid_reason=%s, paddle_reason=%s). Run: %s -m pip install rapidocr-onnxruntime paddleocr paddlepaddle",
-                detail,
-                repr(exc),
-                sys.executable,
-            )
-            return None
+        log.error("OCR backend init failed: RapidOCR unavailable (%s)", detail)
+        return None
 
     def _extract_raw_lines(self, image_bgr: Any) -> list[tuple[Any, str, float]]:
         if self._ocr is None:
             return []
-        if self._backend == "paddleocr":
-            try:
-                paddle_ocr_call = getattr(self._ocr, "ocr")
-                raw = paddle_ocr_call(image_bgr, cls=False)
-            except Exception as exc:
-                log.error("PaddleOCR execution failed: %s", exc)
-                return []
-            return self._normalize_raw_output(raw)
         try:
             raw = self._ocr(image_bgr, use_det=True, use_cls=False, use_rec=True)
             if isinstance(raw, tuple) and len(raw) >= 1:

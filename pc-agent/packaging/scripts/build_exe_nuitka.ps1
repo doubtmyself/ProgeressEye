@@ -2,6 +2,7 @@ Param(
     [string]$PythonExe = "",
     [switch]$Clean,
     [switch]$Fast,
+    [string]$OutputSubdir = "ProgressEye",
     [switch]$EnableUpx,
     [switch]$SkipBundleVCRuntime,
     [int]$NuitkaJobs = 0,
@@ -123,6 +124,9 @@ function Remove-UnusedPayloadFiles {
     $removedMB = 0
     $removeFilePatterns = @(
         "cv2\opencv_videoio_ffmpeg*.dll",    # video I/O runtime, unused by image-only capture
+        "cv2\opencv_video*.dll",
+        "cv2\opencv_ml*.dll",
+        "cv2\opencv_objdetect*.dll",
         "numpy.libs\libscipy_openblas*.dll",  # heavy BLAS payload, not required for current usage
         "numpy\_core\_multiarray_tests.pyd",  # numpy test extension
         "qt6pdf.dll",                          # Qt PDF module not used by app
@@ -151,6 +155,20 @@ function Remove-UnusedPayloadFiles {
     foreach ($dir in $removeDirs) {
         Get-Item $dir -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "[build_exe_nuitka] Removing directory $($_.FullName)"
+            Remove-Item $_.FullName -Recurse -Force
+        }
+    }
+
+    foreach ($extraDir in @(
+        (Join-Path $DistRoot "pandas"),
+        (Join-Path $DistRoot "pandas.libs"),
+        (Join-Path $DistRoot "scipy"),
+        (Join-Path $DistRoot "scipy.libs"),
+        (Join-Path $DistRoot "sympy"),
+        (Join-Path $DistRoot "mpmath")
+    )) {
+        Get-Item $extraDir -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "[build_exe_nuitka] Removing scientific payload $($_.FullName)"
             Remove-Item $_.FullName -Recurse -Force
         }
     }
@@ -261,6 +279,29 @@ function Copy-VcRuntimeDlls {
     }
 }
 
+function Assert-CpuOnnxRuntimeOnly {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonPath
+    )
+
+    $probe = & $PythonPath -c "import importlib.metadata as m; names={str(d.metadata.get('Name','')).lower() for d in m.distributions()}; print('1' if 'onnxruntime-gpu' in names else '0'); print('1' if 'onnxruntime' in names else '0')"
+    if ($LASTEXITCODE -ne 0 -or $probe.Count -lt 2) {
+        throw "Failed to inspect python packages for onnxruntime policy checks."
+    }
+
+    $hasGpu = ($probe[0].Trim() -eq "1")
+    $hasCpu = ($probe[1].Trim() -eq "1")
+
+    if ($hasGpu) {
+        throw "onnxruntime-gpu detected in build environment. Uninstall it and keep CPU-only onnxruntime before building."
+    }
+
+    if (-not $hasCpu) {
+        throw "onnxruntime package not found. Install CPU-only onnxruntime in the build venv before building."
+    }
+}
+
 Push-Location $PcAgentRoot
 try {
     if ($NuitkaJobs -le 0) {
@@ -284,6 +325,8 @@ try {
 
     # Install/upgrade Nuitka + ordered-set (improves build performance)
     & $PythonExe -m pip install --upgrade nuitka ordered-set
+
+    Assert-CpuOnnxRuntimeOnly -PythonPath $PythonExe
 
     # Run Nuitka standalone build
     $nuitkaArgs = @(
@@ -311,18 +354,27 @@ try {
         "--nofollow-import-to=unittest",
         "--nofollow-import-to=test",
         "--nofollow-import-to=tests",
+        "--nofollow-import-to=pandas",
+        "--nofollow-import-to=scipy",
+        "--nofollow-import-to=sympy",
+        "--nofollow-import-to=mpmath",
+        "--nofollow-import-to=IPython",
+        "--nofollow-import-to=PIL._webp",
         "main.py"
     )
 
+    # Fast OCR baseline: no Paddle fallback chain (large dependency tree).
+    $nuitkaArgs += @(
+        "--nofollow-import-to=paddleocr",
+        "--nofollow-import-to=paddlepaddle",
+        "--nofollow-import-to=pdf2docx",
+        "--nofollow-import-to=pymupdf",
+        "--nofollow-import-to=fitz"
+    )
+    Write-Host "[build_exe_nuitka] Fast OCR baseline: excluding PaddleOCR/PyMuPDF fallback path"
+
     if ($Fast) {
-        # PaddleOCR fallback chain pulls in heavy PDF modules and slows compile drastically.
-        $nuitkaArgs += @(
-            "--nofollow-import-to=paddleocr",
-            "--nofollow-import-to=pdf2docx",
-            "--nofollow-import-to=pymupdf",
-            "--nofollow-import-to=fitz"
-        )
-        Write-Host "[build_exe_nuitka] Fast mode enabled: excluding PaddleOCR/PyMuPDF fallback path"
+        Write-Host "[build_exe_nuitka] Fast flag enabled (already baseline)"
     }
 
     & $PythonExe @nuitkaArgs
@@ -331,9 +383,9 @@ try {
         throw "Nuitka compilation failed with exit code $LASTEXITCODE"
     }
 
-    # Nuitka outputs to dist/main.dist/ — rename to dist/ProgressEye/ for MSIX compatibility
+    # Nuitka outputs to dist/main.dist/ — rename to dist/<OutputSubdir>/
     $nuitkaOut = Join-Path $PcAgentRoot "dist\main.dist"
-    $targetDir = Join-Path $PcAgentRoot "dist\ProgressEye"
+    $targetDir = Join-Path $PcAgentRoot ("dist\" + $OutputSubdir)
 
     if (Test-Path $targetDir) {
         Remove-PathWithRetry -TargetPath $targetDir
