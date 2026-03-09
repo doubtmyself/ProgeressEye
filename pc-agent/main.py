@@ -1991,12 +1991,8 @@ class ProgressEyeApp:
                 QTimer.singleShot(100, self._start_ocr_area_selection)
         else:
             # 바 타입: BarPreviewDialog
-            # Edit Task는 현재 화면 기준으로 미리보기를 보여준다.
-            # (템플릿 파일은 유지하며, 캡처 실패 시에만 템플릿 fallback)
-            try:
-                image = self._capturer.capture(area)
-            except Exception as e:
-                log.warning("작업 수정용 실시간 캡처 실패 — 템플릿 사용: %s", e)
+            # Edit Task는 저장된 템플릿(최초 선택/재선택 기준)을 우선 사용한다.
+            # 상단 공통 로직에서 템플릿 로드에 실패한 경우에만 실시간 캡처 fallback이 적용된다.
 
             # 저장된 바 오프셋이 있으면 사용, 없으면 자동 탐지
             saved_left = area.get("bar_left")
@@ -2042,7 +2038,12 @@ class ProgressEyeApp:
                 self._config.update_region(region_id, updates)
                 self._main_window.update_progress(region_id, dialog.progress, new_label)
                 log.info("바 영역 수정: %s → %s", region_id, new_label)
-                # 템플릿은 변경하지 않음 (원본 영역 유지)
+                template_region = dict(area)
+                template_region.update(updates)
+                self._save_template(
+                    region_id,
+                    self._template_image_for_region(image, template_region),
+                )
                 # 스케줄러에 갱신된 영역 반영
                 if self._scheduler.is_running:
                     self._scheduler.remove_region(region_id)
@@ -2292,10 +2293,16 @@ class ProgressEyeApp:
         # 영역 타입에 따라 분석 분기
         region_type = region_config.get("type", "bar")
         progress_unit = "%"
-        apply_image_change_guard = region_type == "bar"
+        apply_image_change_guard = region_type in {"bar", "ocr"}
 
         # ── 이미지 변경 감지 ──
-        IMAGE_CHANGE_THRESHOLD = 0.3
+        IMAGE_CHANGE_THRESHOLD_BAR = 0.85
+        IMAGE_CHANGE_THRESHOLD_OCR = 0.85
+        image_change_threshold = (
+            IMAGE_CHANGE_THRESHOLD_OCR
+            if region_type == "ocr"
+            else IMAGE_CHANGE_THRESHOLD_BAR
+        )
         if apply_image_change_guard and region_id not in self._template_images:
             # 템플릿 없음 (영역 등록 전 복원된 경우) — 유사도 검사 생략
             log.debug("[%s] 템플릿 이미지 없음 — 유사도 검사 생략", region_id)
@@ -2339,6 +2346,7 @@ class ProgressEyeApp:
                     self._template_images[region_id],
                     image,
                     bar_bbox=bar_bbox,
+                    similarity_mode=region_type,
                 )
             except Exception as exc:
                 log.warning("[%s] 이미지 유사도 계산 실패: %s", region_id, exc)
@@ -2347,9 +2355,9 @@ class ProgressEyeApp:
                 "[%s] 이미지 유사도: %.4f (threshold: %.1f)",
                 region_id,
                 similarity,
-                IMAGE_CHANGE_THRESHOLD,
+                image_change_threshold,
             )
-            if similarity < IMAGE_CHANGE_THRESHOLD:
+            if similarity < image_change_threshold:
                 last_progress = self._last_firebase_state.get(region_id, {}).get("p", 0)
                 threshold = region_config.get("alert_threshold", 100)
                 if last_progress >= threshold - 10:
@@ -2830,6 +2838,7 @@ class ProgressEyeApp:
         img1: PILImage.Image,
         img2: PILImage.Image,
         bar_bbox: tuple[int, int, int, int] | None = None,
+        similarity_mode: str | None = None,
     ) -> float:
         """두 이미지의 유사도를 반환한다 (0.0~1.0).
 
@@ -2840,16 +2849,50 @@ class ProgressEyeApp:
         import cv2
         import numpy as np
 
-        # 바 영역 마스킹: 두 이미지의 바 부분을 동일한 회색(128)으로 채움
+        # 진행률 바/OCR의 동적 영역을 마스킹해 오탐을 줄인다.
         if bar_bbox is not None:
             left, top, right, bottom = bar_bbox
             img1 = img1.copy()
             img2 = img2.copy()
             from PIL import ImageDraw
 
-            for img in (img1, img2):
-                draw = ImageDraw.Draw(img)
-                draw.rectangle([left, top, right, bottom], fill=(128, 128, 128))
+            width, height = img1.size
+            left = max(0, min(width, int(left)))
+            top = max(0, min(height, int(top)))
+            right = max(0, min(width, int(right)))
+            bottom = max(0, min(height, int(bottom)))
+
+            bar_w = right - left
+            bar_h = bottom - top
+            if bar_w > 0 and bar_h > 0:
+                if similarity_mode == "bar":
+                    # bar: 외곽선만 비교 (내부 채움/주변 배경 모두 제외)
+                    border_width = max(1, min(3, min(bar_w, bar_h) // 10))
+                    mask = PILImage.new("L", (width, height), 0)
+                    draw_mask = ImageDraw.Draw(mask)
+                    draw_mask.rectangle([left, top, right, bottom], fill=255)
+                    inner_left = left + border_width
+                    inner_top = top + border_width
+                    inner_right = right - border_width
+                    inner_bottom = bottom - border_width
+                    if inner_left < inner_right and inner_top < inner_bottom:
+                        draw_mask.rectangle(
+                            [inner_left, inner_top, inner_right, inner_bottom],
+                            fill=0,
+                        )
+
+                    base1 = PILImage.new("RGB", (width, height), (128, 128, 128))
+                    base2 = PILImage.new("RGB", (width, height), (128, 128, 128))
+                    base1.paste(img1, mask=mask)
+                    base2.paste(img2, mask=mask)
+                    img1 = base1
+                    img2 = base2
+                else:
+                    # ocr: 숫자 영역 내부만 제외하고 주변 UI는 비교
+                    draw1 = ImageDraw.Draw(img1)
+                    draw2 = ImageDraw.Draw(img2)
+                    draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
+                    draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
 
         size = (64, 64)
         arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)
