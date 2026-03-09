@@ -102,11 +102,8 @@ class _EditorPane(QWidget):
             local = QRect(
                 rr.x() - self._geo.x(), rr.y() - self._geo.y(), rr.width(), rr.height()
             )
-            painter.setPen(QPen(QColor(255, 0, 0), 2))
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
             painter.drawRect(local)
-            inner = local.adjusted(2, 2, -2, -2)
-            painter.setPen(QPen(QColor(0, 255, 255), 2))
-            painter.drawRect(inner)
 
         # handles
         painter.setBrush(QColor(255, 255, 255))

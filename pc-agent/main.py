@@ -218,6 +218,9 @@ class ProgressEyeApp:
         self._main_window.settings_third_party_licenses_requested.connect(
             self._open_third_party_licenses
         )
+        self._main_window.settings_bar_guide_requested.connect(
+            self._on_show_bar_guide
+        )
         self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
@@ -1015,6 +1018,10 @@ class ProgressEyeApp:
     def _show_bar_selection_guide_if_needed(self) -> None:
         if self._bar_selection_guide_shown or self._editing_region_id is not None:
             return
+        if self._config.get("startup.bar_selection_guide_ack", False):
+            return
+
+        from PyQt6.QtWidgets import QCheckBox  # pyright: ignore[reportImplicitRelativeImport]
 
         dialog = QDialog(self._main_window)
         dialog.setWindowTitle(t("bar_selection_guide_title"))
@@ -1032,6 +1039,9 @@ class ProgressEyeApp:
         guide_label.setWordWrap(True)
         guide_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         layout.addWidget(guide_label)
+
+        never_checkbox = QCheckBox(t("bar_selection_guide_never"))
+        layout.addWidget(never_checkbox)
 
         confirm_btn = QPushButton(t("btn_confirm"))
         confirm_btn.clicked.connect(dialog.accept)
@@ -1059,6 +1069,8 @@ class ProgressEyeApp:
         self._prepare_foreground_window(dialog)
         dialog.exec()
         self._bar_selection_guide_shown = True
+        if never_checkbox.isChecked():
+            self._config.set("startup.bar_selection_guide_ack", True)
 
     def _load_bar_selection_guide_pixmaps(self) -> list[QPixmap]:
         base_dir = pathlib.Path(__file__).resolve().parent
@@ -1816,6 +1828,12 @@ class ProgressEyeApp:
             log.warning("서드파티 라이선스 파일 열기 실패: %s", exc)
             self._notify(t("third_party_licenses_open_failed").format(error=exc))
 
+    def _on_show_bar_guide(self) -> None:
+        """설정에서 '바 선택 안내 다시 보기' 버튼 클릭 시 안내 다이얼로그를 다시 표시한다."""
+        self._config.set("startup.bar_selection_guide_ack", False)
+        self._bar_selection_guide_shown = False
+        self._show_bar_selection_guide_if_needed()
+
     def _open_privacy_policy(self) -> None:
         lang = str(self._config.get("language", "en")).lower()
         lang = "ko" if lang.startswith("ko") else "en"
@@ -2195,21 +2213,22 @@ class ProgressEyeApp:
                 self._device_manager.set_monitoring(False)
 
     def _set_display_required(self, required: bool) -> None:
-        """모니터 절전 방지를 설정/해제한다.
+        """시스템 절전 방지를 설정/해제한다.
 
-        모니터링 중에는 ES_DISPLAY_REQUIRED | ES_CONTINUOUS를 설정하여
-        Windows가 모니터를 절전모드로 전환하지 않도록 한다.
+        모니터링 중에는 ES_SYSTEM_REQUIRED | ES_CONTINUOUS를 설정하여
+        Windows가 시스템 절전모드로 전환하지 않도록 한다.
+        모니터 절전은 허용한다(화면 캡처는 모니터 꺼진 상태에서도 가능).
         모니터링 정지 시 ES_CONTINUOUS만 설정하여 정상 절전으로 복귀한다.
         """
         try:
             if required:
-                # ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
-                ctypes.windll.kernel32.SetThreadExecutionState(0x80000002 | 0x00000001)
-                log.info("모니터 절전 방지 설정")
+                # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+                log.info("시스템 절전 방지 설정")
             else:
                 # ES_CONTINUOUS only — 정상 절전 복귀
                 ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
-                log.info("모니터 절전 방지 해제")
+                log.info("시스템 절전 방지 해제")
         except Exception as exc:
             log.warning("SetThreadExecutionState 실패: %s", exc)
 
@@ -2314,11 +2333,14 @@ class ProgressEyeApp:
                     bl = region_config.get("bar_left")
                     br = region_config.get("bar_right")
                     if bl is not None and br is not None:
+                        # 탐지된 바 경계가 게이지 내부를 가리킬 수 있으므로
+                        # 바깥쪽으로 확장해 border 픽셀이 UI 프레임 위에 오도록 한다.
+                        _EXPAND = 6
                         bar_bbox = (
-                            bl,
-                            region_config.get("bar_top", 0),
-                            br,
-                            region_config.get("bar_bottom", image.height),
+                            max(0, bl - _EXPAND),
+                            max(0, region_config.get("bar_top", 0) - _EXPAND),
+                            min(image.width, br + _EXPAND),
+                            min(image.height, region_config.get("bar_bottom", image.height) + _EXPAND),
                         )
                 elif region_type == "ocr":
                     left_raw = region_config.get("ocr_left")
@@ -2865,34 +2887,12 @@ class ProgressEyeApp:
             bar_w = right - left
             bar_h = bottom - top
             if bar_w > 0 and bar_h > 0:
-                if similarity_mode == "bar":
-                    # bar: 외곽선만 비교 (내부 채움/주변 배경 모두 제외)
-                    border_width = max(1, min(3, min(bar_w, bar_h) // 10))
-                    mask = PILImage.new("L", (width, height), 0)
-                    draw_mask = ImageDraw.Draw(mask)
-                    draw_mask.rectangle([left, top, right, bottom], fill=255)
-                    inner_left = left + border_width
-                    inner_top = top + border_width
-                    inner_right = right - border_width
-                    inner_bottom = bottom - border_width
-                    if inner_left < inner_right and inner_top < inner_bottom:
-                        draw_mask.rectangle(
-                            [inner_left, inner_top, inner_right, inner_bottom],
-                            fill=0,
-                        )
-
-                    base1 = PILImage.new("RGB", (width, height), (128, 128, 128))
-                    base2 = PILImage.new("RGB", (width, height), (128, 128, 128))
-                    base1.paste(img1, mask=mask)
-                    base2.paste(img2, mask=mask)
-                    img1 = base1
-                    img2 = base2
-                else:
-                    # ocr: 숫자 영역 내부만 제외하고 주변 UI는 비교
-                    draw1 = ImageDraw.Draw(img1)
-                    draw2 = ImageDraw.Draw(img2)
-                    draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
-                    draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
+                # bar/ocr 모두: 동적 영역(게이지 바 전체 또는 숫자)을 회색으로 마스킹하고
+                # 주변 UI를 비교해 실제 화면 변경 여부를 판단한다.
+                draw1 = ImageDraw.Draw(img1)
+                draw2 = ImageDraw.Draw(img2)
+                draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
+                draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
 
         size = (64, 64)
         arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)

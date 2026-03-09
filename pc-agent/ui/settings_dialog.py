@@ -44,6 +44,7 @@ class SettingsOverlay(QWidget):
     rejoin_expired_test_requested = pyqtSignal()
     privacy_policy_requested = pyqtSignal()
     third_party_licenses_requested = pyqtSignal()
+    bar_guide_requested = pyqtSignal()
     closed = pyqtSignal()  # 취소/배경클릭
 
     def __init__(self, parent: QWidget, show_debug_buttons: bool = False) -> None:
@@ -272,6 +273,11 @@ class SettingsOverlay(QWidget):
         self._btn_privacy.setToolTip(t("tooltip_privacy_policy"))
         self._btn_privacy.clicked.connect(self._on_privacy_policy_clicked)
         acc.addWidget(self._btn_privacy)
+        self._btn_bar_guide = QPushButton(t("btn_show_bar_guide"))
+        self._btn_bar_guide.setStyleSheet(btn_style_cancel)
+        self._btn_bar_guide.setToolTip(t("tooltip_show_bar_guide"))
+        self._btn_bar_guide.clicked.connect(self._on_bar_guide_clicked)
+        acc.addWidget(self._btn_bar_guide)
         account_row = QHBoxLayout()
         self._email_label = QLabel("")
         self._email_label.setStyleSheet(
@@ -500,6 +506,8 @@ class SettingsOverlay(QWidget):
         self._btn_licenses.setToolTip(t("tooltip_third_party_licenses"))
         self._btn_privacy.setText(t("btn_privacy_policy"))
         self._btn_privacy.setToolTip(t("tooltip_privacy_policy"))
+        self._btn_bar_guide.setText(t("btn_show_bar_guide"))
+        self._btn_bar_guide.setToolTip(t("tooltip_show_bar_guide"))
         self._interval_label.setText(t("settings_interval"))
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_hint.setText(t("settings_interval_hint"))
@@ -563,6 +571,10 @@ class SettingsOverlay(QWidget):
 
     def _on_privacy_policy_clicked(self) -> None:
         self.privacy_policy_requested.emit()
+
+    def _on_bar_guide_clicked(self) -> None:
+        self.bar_guide_requested.emit()
+        self.hide()
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802
         """배경(카드 바깥) 클릭 시 닫기. 웰컴 모드에서는 무시."""

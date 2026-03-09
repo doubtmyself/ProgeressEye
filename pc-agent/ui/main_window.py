@@ -414,6 +414,7 @@ class MainWindow(QMainWindow):
     settings_rejoin_expired_test_requested = pyqtSignal()
     settings_privacy_policy_requested = pyqtSignal()
     settings_third_party_licenses_requested = pyqtSignal()
+    settings_bar_guide_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
@@ -484,6 +485,9 @@ class MainWindow(QMainWindow):
         )
         self._settings_overlay.third_party_licenses_requested.connect(
             self.settings_third_party_licenses_requested
+        )
+        self._settings_overlay.bar_guide_requested.connect(
+            self.settings_bar_guide_requested
         )
 
     def _setup_ui(self) -> None:
