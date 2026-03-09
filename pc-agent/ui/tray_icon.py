@@ -5,9 +5,12 @@ pystray 기반으로 시스템 트레이에 상주하며
 """
 
 import threading
-from typing import Callable
+from pathlib import Path
+import sys
+from typing import Callable, Any
 
 from PIL import Image, ImageDraw
+from PIL.Image import Image as PILImage
 import pystray
 from pystray import MenuItem, Menu
 
@@ -29,7 +32,7 @@ class TrayIcon:
     ) -> None:
         self.on_show_window = on_show_window
         self.on_quit = on_quit
-        self._icon: pystray.Icon | None = None
+        self._icon: Any | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -37,16 +40,19 @@ class TrayIcon:
         if self._icon is not None:
             return
 
-        icon_image = self._create_default_icon()
+        icon_image = self._load_app_icon() or self._create_fallback_icon()
         self._icon = pystray.Icon(
             name="ProgressEye",
             icon=icon_image,
             title="ProgressEye",
             menu=self._build_menu(),
         )
+        icon = self._icon
+        if icon is None:
+            return
 
         self._thread = threading.Thread(
-            target=self._icon.run,
+            target=icon.run,
             daemon=True,
             name="tray-icon",
         )
@@ -83,7 +89,6 @@ class TrayIcon:
             MenuItem(t("tray_quit"), self._on_quit_clicked),
         )
 
-
     def _on_show_window(self, icon, item) -> None:
         if self.on_show_window:
             self.on_show_window()
@@ -94,11 +99,27 @@ class TrayIcon:
         self.stop()
 
     @staticmethod
-    def _create_default_icon() -> Image.Image:
-        """기본 트레이 아이콘을 프로그래매틱하게 생성한다.
+    def _load_app_icon() -> PILImage | None:
+        if getattr(sys, "frozen", False) or "__compiled__" in globals():
+            icon_base = Path(sys.executable).parent
+        else:
+            icon_base = Path(__file__).resolve().parents[1]
 
-        초록색 배경에 흰색 'P' 문자.
-        """
+        for icon_path in (
+            icon_base / "resources" / "app-icon.png",
+            icon_base / "resources" / "app-icon.ico",
+        ):
+            if not icon_path.exists():
+                continue
+            try:
+                return Image.open(icon_path).convert("RGBA")
+            except Exception as exc:
+                log.debug("트레이 아이콘 로드 실패(%s): %s", icon_path, exc)
+        return None
+
+    @staticmethod
+    def _create_fallback_icon() -> PILImage:
+        """리소스 아이콘을 찾지 못했을 때만 사용하는 fallback 아이콘."""
         size = 64
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)

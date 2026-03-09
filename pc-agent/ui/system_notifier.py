@@ -22,10 +22,19 @@ class SystemNotifier:
             log.info("시스템 트레이를 사용할 수 없어 시스템 알림을 비활성화합니다")
             return
 
-        icon_path = (
-            pathlib.Path(__file__).resolve().parents[1] / "resources" / "app-icon.ico"
-        )
-        icon = QIcon(str(icon_path)) if icon_path.exists() else app.windowIcon()
+        if getattr(sys, "frozen", False) or "__compiled__" in globals():
+            icon_base = pathlib.Path(sys.executable).parent
+        else:
+            icon_base = pathlib.Path(__file__).resolve().parents[1]
+
+        icon = app.windowIcon()
+        for icon_path in (
+            icon_base / "resources" / "app-icon.ico",
+            icon_base / "resources" / "app-icon.png",
+        ):
+            if icon_path.exists():
+                icon = QIcon(str(icon_path))
+                break
 
         tray = QSystemTrayIcon(icon, app)
         tray.setToolTip("ProgressEye")

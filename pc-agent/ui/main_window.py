@@ -443,9 +443,14 @@ class MainWindow(QMainWindow):
             _icon_base = Path(sys.executable).parent
         else:
             _icon_base = Path(__file__).resolve().parent.parent
-        _icon_path = _icon_base / "resources" / "app-icon.png"
-        if _icon_path.exists():
-            self.setWindowIcon(QIcon(str(_icon_path)))
+        _icon_candidates = [
+            _icon_base / "resources" / "app-icon.ico",
+            _icon_base / "resources" / "app-icon.png",
+        ]
+        for _icon_path in _icon_candidates:
+            if _icon_path.exists():
+                self.setWindowIcon(QIcon(str(_icon_path)))
+                break
         self._app_min_size = (600, 500)
         self._app_default_size = (630, 700)
         self._login_min_size = (380, 740)
