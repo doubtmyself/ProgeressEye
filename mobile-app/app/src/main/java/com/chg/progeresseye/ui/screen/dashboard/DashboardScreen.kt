@@ -36,16 +36,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -128,6 +133,8 @@ fun DashboardContent(
     uiState: DashboardUiState,
     userPlan: String = "free",
     onRequestScreenshot: (deviceId: String) -> Unit = {},
+    onSleep: (deviceId: String) -> Unit = {},
+    onShutdown: (deviceId: String) -> Unit = {},
     onRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -214,6 +221,8 @@ fun DashboardContent(
                                 device = device,
                                 isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
                                 onRequestScreenshot = { onRequestScreenshot(device.id) },
+                                onSleep = { onSleep(device.id) },
+                                onShutdown = { onShutdown(device.id) },
                             )
                         }
                         item(key = "pc-app-install-link") {
@@ -313,8 +322,11 @@ private fun DeviceCard(
     device: DeviceData,
     isScreenshotLoading: Boolean,
     onRequestScreenshot: () -> Unit,
+    onSleep: () -> Unit = {},
+    onShutdown: () -> Unit = {},
 ) {
     var showFullScreenshot by rememberSaveable { mutableStateOf(false) }
+    var showShutdownConfirm by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier
@@ -380,12 +392,36 @@ private fun DeviceCard(
 
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
-            ScreenshotButton(
-                isLoading = isScreenshotLoading,
+            PcControlRow(
                 isOnline = device.isOnline,
-                onClick = onRequestScreenshot,
+                isScreenshotLoading = isScreenshotLoading,
+                onRequestScreenshot = onRequestScreenshot,
+                onSleep = onSleep,
+                onShutdown = { showShutdownConfirm = true },
             )
         }
+    }
+
+    if (showShutdownConfirm) {
+        AlertDialog(
+            onDismissRequest = { showShutdownConfirm = false },
+            title = { Text(stringResource(R.string.dashboard_shutdown_confirm_title)) },
+            text = { Text(stringResource(R.string.dashboard_shutdown_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = { showShutdownConfirm = false; onShutdown() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444)),
+                ) { Text(stringResource(R.string.dashboard_shutdown_confirm_ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showShutdownConfirm = false }) {
+                    Text(stringResource(R.string.dashboard_shutdown_confirm_cancel))
+                }
+            },
+            containerColor = SurfaceContainerDark,
+            titleContentColor = OnSurfaceDark,
+            textContentColor = OnSurfaceDark,
+        )
     }
 
     // Fullscreen screenshot dialog
@@ -836,42 +872,103 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun ScreenshotButton(isLoading: Boolean, isOnline: Boolean, onClick: () -> Unit) {
-    val enabled = isOnline && !isLoading
-    val contentAlpha = if (enabled) 1f else 0.38f
+@Composable
+private fun PcControlRow(
+    isOnline: Boolean,
+    isScreenshotLoading: Boolean,
+    onRequestScreenshot: () -> Unit,
+    onSleep: () -> Unit,
+    onShutdown: () -> Unit,
+) {
     Surface {
-        Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Screenshot
+            val screenshotEnabled = isOnline && !isScreenshotLoading
             Surface(
-                onClick = { if (enabled) onClick() },
+                onClick = { if (screenshotEnabled) onRequestScreenshot() },
                 shape = RoundedCornerShape(12.dp),
                 color = SurfaceContainerDark,
                 border = BorderStroke(1.dp, SurfaceContainerHighDark),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    modifier = Modifier.padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (isLoading) {
+                    val alpha = if (screenshotEnabled) 1f else 0.38f
+                    if (isScreenshotLoading) {
                         CircularProgressIndicator(
-                            color = OnSurfaceDark.copy(alpha = contentAlpha),
-                            modifier = Modifier.size(18.dp),
+                            color = OnSurfaceDark.copy(alpha = alpha),
+                            modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
                         )
                     } else {
-                        Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark.copy(alpha = contentAlpha), modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark.copy(alpha = alpha), modifier = Modifier.size(18.dp))
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = when {
-                            isLoading -> stringResource(R.string.dashboard_capturing)
+                            isScreenshotLoading -> stringResource(R.string.dashboard_capturing)
                             !isOnline -> stringResource(R.string.dashboard_pc_offline)
                             else -> stringResource(R.string.dashboard_screenshot)
                         },
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = OnSurfaceDark.copy(alpha = contentAlpha),
+                        color = OnSurfaceDark.copy(alpha = alpha),
+                    )
+                }
+            }
+            // Sleep
+            Surface(
+                onClick = { if (isOnline) onSleep() },
+                shape = RoundedCornerShape(12.dp),
+                color = SurfaceContainerDark,
+                border = BorderStroke(1.dp, SurfaceContainerHighDark),
+                modifier = Modifier.weight(1f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val alpha = if (isOnline) 1f else 0.38f
+                    Icon(Icons.Outlined.Bedtime, null, tint = StatusSleep.copy(alpha = alpha), modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.dashboard_sleep),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = OnSurfaceDark.copy(alpha = alpha),
+                    )
+                }
+            }
+            // Shutdown
+            Surface(
+                onClick = { if (isOnline) onShutdown() },
+                shape = RoundedCornerShape(12.dp),
+                color = SurfaceContainerDark,
+                border = BorderStroke(1.dp, SurfaceContainerHighDark),
+                modifier = Modifier.weight(1f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val alpha = if (isOnline) 1f else 0.38f
+                    Icon(Icons.Outlined.PowerSettingsNew, null, tint = Color(0xFFEF4444).copy(alpha = alpha), modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.dashboard_shutdown),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = OnSurfaceDark.copy(alpha = alpha),
                     )
                 }
             }

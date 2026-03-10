@@ -567,6 +567,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = _uiState.value.copy(screenshotError = null)
     }
 
+    fun sendSleepCommand(deviceId: String) {
+        val uid = auth.currentUser?.uid ?: return
+        db.reference.child("users").child(uid).child("commands").child("sleep")
+            .setValue(mapOf(
+                "ts" to System.currentTimeMillis() / 1000,
+                "cmdId" to UUID.randomUUID().toString(),
+                "targetDeviceId" to deviceId,
+            ))
+            .addOnSuccessListener { Timber.d("[CMD] sleep command sent: $deviceId") }
+            .addOnFailureListener { e -> Timber.w(e, "[CMD] sleep command failed") }
+    }
+
+    fun sendShutdownCommand(deviceId: String) {
+        val uid = auth.currentUser?.uid ?: return
+        db.reference.child("users").child(uid).child("commands").child("shutdown")
+            .setValue(mapOf(
+                "ts" to System.currentTimeMillis() / 1000,
+                "cmdId" to UUID.randomUUID().toString(),
+                "targetDeviceId" to deviceId,
+            ))
+            .addOnSuccessListener { Timber.d("[CMD] shutdown command sent: $deviceId") }
+            .addOnFailureListener { e -> Timber.w(e, "[CMD] shutdown command failed") }
+    }
+
     fun consumeForcedSignOut() {
         _uiState.value = _uiState.value.copy(requiresForcedSignOut = false)
     }

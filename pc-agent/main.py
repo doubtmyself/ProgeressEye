@@ -874,7 +874,7 @@ class ProgressEyeApp:
             if not isinstance(cmd_type, str):
                 continue
             # 디바이스 대상 명령 필터링 (forceLogout은 전체 브로드캠스트)
-            if cmd_type in ("screenshot", "monitor"):
+            if cmd_type in ("screenshot", "monitor", "sleep", "shutdown"):
                 cmd_data = cmd.get("data")
                 target = (
                     cmd_data.get("targetDeviceId")
@@ -908,6 +908,16 @@ class ProgressEyeApp:
                         self._toggle_monitoring()
                     elif action == "stop" and self._scheduler.is_running:
                         self._toggle_monitoring()
+            elif cmd_type == "sleep":
+                log.info("[CMD] 원격 절전모드 명령 수신")
+                uid = str(self._config.get("auth.uid", ""))
+                self._cleanup_pc_command(uid, "sleep")
+                self._handle_sleep_command()
+            elif cmd_type == "shutdown":
+                log.info("[CMD] 원격 종료 명령 수신")
+                uid = str(self._config.get("auth.uid", ""))
+                self._cleanup_pc_command(uid, "shutdown")
+                self._handle_shutdown_command()
             elif cmd_type == "forceLogout":
                 log.info("[CMD] 원격 강제 로그아웃 수신 — 앱을 종료합니다.")
                 uid = str(self._config.get("auth.uid", ""))
@@ -1062,6 +1072,51 @@ class ProgressEyeApp:
                 self._realtime_db.delete(f"users/{uid}/commands/forceLogout")
         except Exception as exc:
             log.debug("forceLogout 명령 삭제 실패: %s", exc)
+
+    def _cleanup_pc_command(self, uid: str, cmd_name: str) -> None:
+        """PC 제어 명령(sleep/shutdown)을 RTDB에서 삭제한다."""
+        try:
+            if self._realtime_db and uid:
+                self._realtime_db.delete(f"users/{uid}/commands/{cmd_name}")
+        except Exception as exc:
+            log.debug("%s 명령 삭제 실패: %s", cmd_name, exc)
+
+    def _handle_sleep_command(self) -> None:
+        """PC를 절전모드로 전환한다."""
+        import subprocess
+
+        if self._device_manager:
+            threading.Thread(
+                target=self._device_manager.set_sleep, daemon=True
+            ).start()
+        try:
+            subprocess.Popen(
+                ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
+                shell=False,
+            )
+            log.info("[CMD] 절전모드 명령 실행")
+        except Exception as exc:
+            log.warning("[CMD] 절전모드 실행 실패: %s", exc)
+
+    def _handle_shutdown_command(self) -> None:
+        """PC를 종료한다 (30초 후 강제 종료)."""
+        import subprocess
+
+        if self._scheduler.is_running:
+            self._scheduler.stop()
+            self._main_window.set_monitoring_state(False)
+        if self._device_manager:
+            threading.Thread(
+                target=self._device_manager.set_offline, daemon=True
+            ).start()
+        try:
+            subprocess.Popen(
+                ["shutdown", "/s", "/t", "30"],
+                shell=False,
+            )
+            log.info("[CMD] 종료 명령 실행 (30초 후 종료)")
+        except Exception as exc:
+            log.warning("[CMD] 종료 실행 실패: %s", exc)
 
     def _restore_regions(self) -> None:
         """설정에 저장된 영역을 복원한다."""

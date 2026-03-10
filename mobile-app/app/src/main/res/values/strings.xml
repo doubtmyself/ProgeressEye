@@ -38,6 +38,12 @@
     <string name="dashboard_screenshot">Screenshot</string>
     <string name="dashboard_capturing">Capturing…</string>
     <string name="dashboard_pc_offline">PC Offline</string>
+    <string name="dashboard_sleep">Sleep</string>
+    <string name="dashboard_shutdown">Shutdown</string>
+    <string name="dashboard_shutdown_confirm_title">Shut down PC?</string>
+    <string name="dashboard_shutdown_confirm_body">The PC will shut down in 30 seconds.</string>
+    <string name="dashboard_shutdown_confirm_ok">Shut down</string>
+    <string name="dashboard_shutdown_confirm_cancel">Cancel</string>
     <string name="dashboard_image_load_failed">Failed to load image</string>
     <string name="cd_screenshot_preview">Screenshot preview</string>
     <string name="cd_screenshot_fullscreen">Screenshot fullscreen</string>

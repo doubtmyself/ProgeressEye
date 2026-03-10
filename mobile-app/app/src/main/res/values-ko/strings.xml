@@ -34,6 +34,12 @@
     <string name="dashboard_screenshot">스크린샷</string>
     <string name="dashboard_capturing">캡처 중…</string>
     <string name="dashboard_pc_offline">PC 오프라인</string>
+    <string name="dashboard_sleep">절전</string>
+    <string name="dashboard_shutdown">종료</string>
+    <string name="dashboard_shutdown_confirm_title">PC를 종료하시겠습니까?</string>
+    <string name="dashboard_shutdown_confirm_body">30초 후 PC가 종료됩니다.</string>
+    <string name="dashboard_shutdown_confirm_ok">종료</string>
+    <string name="dashboard_shutdown_confirm_cancel">취소</string>
     <string name="dashboard_image_load_failed">이미지를 불러올 수 없습니다</string>
     <string name="cd_screenshot_preview">스크린샷 미리보기</string>
     <string name="cd_screenshot_fullscreen">스크린샷 전체 화면</string>

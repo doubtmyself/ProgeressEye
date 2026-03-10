@@ -189,6 +189,8 @@ fun MainScreen(
                             dashboardViewModel.requestScreenshot(deviceId)
                         }
                     },
+                    onSleep = { deviceId -> dashboardViewModel.sendSleepCommand(deviceId) },
+                    onShutdown = { deviceId -> dashboardViewModel.sendShutdownCommand(deviceId) },
                     onRefresh = { dashboardViewModel.refresh() },
                     modifier = Modifier.padding(padding),
                 )
