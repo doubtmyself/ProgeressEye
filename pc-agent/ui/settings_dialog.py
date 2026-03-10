@@ -551,12 +551,12 @@ class SettingsOverlay(QWidget):
         self.hide()
 
     def _on_logout_clicked(self) -> None:
-        self.logout_requested.emit()
         self.hide()
+        self.logout_requested.emit()
 
     def _on_delete_account_clicked(self) -> None:
-        self.delete_account_requested.emit()
         self.hide()
+        self.delete_account_requested.emit()
 
     def _on_test_withdrawal_expired_clicked(self) -> None:
         self.withdrawal_expired_test_requested.emit()

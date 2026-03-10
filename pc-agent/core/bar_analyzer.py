@@ -230,3 +230,144 @@ class BarAnalyzer:
             filled_columns=width,
             total_columns=width,
         )
+
+    def analyze_by_color(
+        self,
+        bar_image: Image.Image,
+        target_color: tuple[int, int, int],
+        direction: str = "horizontal",
+        tolerance: int = 25,
+    ) -> AnalysisResult:
+        """특정 색상 기준으로 진행률을 분석한다.
+
+        target_color와 tolerance 이내의 픽셀들이 차지하는
+        바 내 가장 먼 위치를 진행률로 환산한다.
+
+        Args:
+            bar_image: 크롭된 진행바 PIL 이미지 (RGB).
+            target_color: 총 진행도를 나타내는 RGB 색상.
+            direction: "horizontal" 또는 "vertical".
+            tolerance: 색상 매칭 허용 거리 (0~255, 유클리드).
+        """
+        if direction == "vertical":
+            bar_image = bar_image.transpose(Image.Transpose.ROTATE_270)
+
+        if bar_image.mode != "RGB":
+            bar_image = bar_image.convert("RGB")
+
+        pixels = np.array(bar_image, dtype=np.float32)  # (H, W, 3)
+        h, w, _ = pixels.shape
+
+        target = np.array(target_color, dtype=np.float32)
+        dists = np.sqrt(np.sum((pixels - target) ** 2, axis=2))  # (H, W)
+        matches = dists <= tolerance  # (H, W) bool
+
+        # 열(column) 기준으로 매칭 비율 계산
+        col_match_ratio = matches.mean(axis=0)  # (W,)
+
+        # adaptive threshold: 최대 매칭 비율의 30%를 임계값으로 사용
+        peak = float(col_match_ratio.max())
+        log.info(
+            "색상 분석 [target=RGB%s tol=%d]: 이미지=%dx%d peak=%.3f",
+            target_color, tolerance, w, h, peak,
+        )
+        if peak < 1.0 / h:  # 매칭 픽셀이 사실상 없음
+            log.info("색상 기반 분석: 매칭 픽셀 없음 → 0%%")
+            return AnalysisResult(progress=0.0, confidence=0.8, filled_columns=0, total_columns=w)
+
+        threshold = peak * 0.3
+        col_filled = col_match_ratio >= threshold
+        filled_indices = np.where(col_filled)[0]
+
+        if len(filled_indices) == 0:
+            log.info("색상 기반 분석: filled 열 없음 → 0%%")
+            return AnalysisResult(progress=0.0, confidence=0.8, filled_columns=0, total_columns=w)
+
+        rightmost = int(filled_indices[-1]) + 1
+        progress = round(rightmost / w * 100, 1)
+        confidence = round(float(col_match_ratio[filled_indices].mean()), 2)
+
+        log.info(
+            "색상 기반 분석: %.1f%% (rightmost=%d/%d, peak=%.3f, threshold=%.3f)",
+            progress, rightmost, w, peak, threshold,
+        )
+        return AnalysisResult(
+            progress=progress,
+            confidence=confidence,
+            filled_columns=rightmost,
+            total_columns=w,
+        )
+
+
+def detect_dominant_colors(
+    bar_image: Image.Image,
+    max_colors: int = 4,
+    min_ratio: float = 0.05,
+    min_saturation: int = 30,
+) -> list[tuple[tuple[int, int, int], float]]:
+    """바 이미지에서 지배적인 색상 목록을 반환한다.
+
+    채도가 충분한 픽셀만 대상으로 클러스터링하여
+    색상별 점유 비율을 반환한다.
+
+    Args:
+        bar_image: 크롭된 진행바 PIL 이미지 (RGB).
+        max_colors: 최대 반환 색상 수.
+        min_ratio: 이 비율 미만의 색상은 제외.
+        min_saturation: HSV 채도 최솟값 (0~255).
+
+    Returns:
+        [(rgb_tuple, ratio), ...] — 비율 내림차순 정렬.
+    """
+    img = bar_image.convert("RGB")
+    arr = np.array(img, dtype=np.float32)  # (H, W, 3)
+    h, w, _ = arr.shape
+
+    # 개별 픽셀 기반 색상 감지 (열 평균 대신 실제 픽셀 사용)
+    # 성능을 위해 최대 2000픽셀로 균등 샘플링
+    pixels_flat = arr.reshape(-1, 3).astype(np.uint8)  # (H*W, 3)
+    total_px = len(pixels_flat)
+    if total_px > 2000:
+        step = total_px // 2000
+        pixels_flat = pixels_flat[::step]
+
+    # HSV 채도 필터 — 무채색(배경/트랙) 제거
+    hsv_img = Image.fromarray(pixels_flat.reshape(1, -1, 3), "RGB").convert("HSV")
+    hsv_arr = np.array(hsv_img)[0]  # (N, 3)
+    colored_mask = (hsv_arr[:, 1] >= min_saturation) & (hsv_arr[:, 2] >= 30)
+    colored_cols = pixels_flat[colored_mask]  # (N, 3)
+
+    if len(colored_cols) < 3:
+        return []
+
+    # 단순 k-means (numpy만 사용, k=max_colors)
+    k = min(max_colors, len(colored_cols))
+    rng = np.random.default_rng(42)
+    # 초기 중심: 픽셀 중 균등 간격으로 선택
+    indices = np.linspace(0, len(colored_cols) - 1, k, dtype=int)
+    centers = colored_cols[indices].astype(np.float32)
+
+    for _ in range(20):  # max iterations
+        dists = np.sqrt(
+            np.sum((colored_cols[:, None, :].astype(np.float32) - centers[None, :, :]) ** 2, axis=2)
+        )  # (N, k)
+        labels = np.argmin(dists, axis=1)
+        new_centers = np.array([
+            colored_cols[labels == i].mean(axis=0) if np.any(labels == i) else centers[i]
+            for i in range(k)
+        ], dtype=np.float32)
+        if np.allclose(centers, new_centers, atol=1.0):
+            break
+        centers = new_centers
+
+    total = len(colored_cols)
+    result: list[tuple[tuple[int, int, int], float]] = []
+    for i in range(k):
+        count = int(np.sum(labels == i))
+        ratio = count / total
+        if ratio >= min_ratio:
+            rgb = tuple(int(c) for c in centers[i])
+            result.append(((rgb[0], rgb[1], rgb[2]), round(ratio, 3)))
+
+    result.sort(key=lambda x: -x[1])
+    return result

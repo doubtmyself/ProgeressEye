@@ -22,6 +22,7 @@
     <string name="dashboard_status_online">온라인</string>
     <string name="dashboard_status_offline">오프라인</string>
     <string name="dashboard_status_monitoring">모니터링</string>
+    <string name="dashboard_status_sleeping">절전 중</string>
     <string name="dashboard_task_running">진행 중</string>
     <string name="dashboard_task_done">완료</string>
     <string name="dashboard_task_stalled">멈춤</string>

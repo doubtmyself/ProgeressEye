@@ -19,13 +19,20 @@ function pe-docs {
 }
 
 function pe-run {
+    param(
+        [switch]$d
+    )
+    $mainPy = Join-Path $global:PcAgentRoot "main.py"
+    $extraArgs = @()
+    if ($d) { $extraArgs += "-d" }
+
     if (Test-Path $global:VenvPython) {
-        & $global:VenvPython (Join-Path $global:PcAgentRoot "main.py")
+        & $global:VenvPython $mainPy @extraArgs
         return
     }
 
     Write-Warning "venv python not found. Trying 'python' from PATH."
-    & python (Join-Path $global:PcAgentRoot "main.py")
+    & python $mainPy @extraArgs
 }
 
 function pe-ocr-setup {

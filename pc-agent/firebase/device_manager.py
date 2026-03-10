@@ -92,8 +92,13 @@ class DeviceManager:
           "monitoring" — 온라인 + 모니터링 중
           "online"     — 온라인 + 대기
           "offline"    — 오프라인
+          "sleep"      — 절전 모드
         """
         self.update_status("monitoring" if active else "online")
+
+    def set_sleep(self) -> None:
+        """PC 절전모드 진입 상태를 기록한다."""
+        self.update_status("sleep")
 
     def push_alert(self, alert_type: str, title: str, body: str) -> None:
         """알림을 RTDB에 기록한다 (모바일 FCM 트리거용).

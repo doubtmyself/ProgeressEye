@@ -24,6 +24,8 @@ data class DeviceData(
     val lastSeen: Long,
     /** True when PC is actively monitoring (deviceStatus == "monitoring"). */
     val isMonitoring: Boolean = false,
+    /** True when PC is in sleep mode (deviceStatus == "sleep"). */
+    val isSleeping: Boolean = false,
     val tasks: List<TaskData>,
     /** Latest screenshot download URL from Firebase Storage. */
     val screenshotUrl: String? = null,

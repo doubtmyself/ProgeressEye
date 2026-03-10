@@ -12,18 +12,20 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QPoint, QRect, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 from PIL import Image as PILImage
 
-from core.bar_analyzer import BarAnalyzer
+from core.bar_analyzer import BarAnalyzer, detect_dominant_colors
 from core.bar_finder import BarRegion
 from utils.i18n import t
 from utils.logger import log
@@ -374,6 +376,8 @@ class BarPreviewDialog(QDialog):
         detected_progress: float,
         bar_region: BarRegion | None = None,
         debug_mode: bool = False,
+        initial_bar_mode: str = "auto",
+        initial_target_color: tuple[int, int, int] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -385,12 +389,19 @@ class BarPreviewDialog(QDialog):
         self._bar_region = bar_region
         self._analyzer = BarAnalyzer()
         self.reselect_requested = False
+        self._bar_mode: str = initial_bar_mode
+        self._target_color: tuple[int, int, int] | None = initial_target_color
+        self._detected_colors: list[tuple[tuple[int, int, int], float]] = []
 
         self.setWindowTitle(t("bar_preview_title"))
         self.setFixedWidth(380)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
         self._setup_ui()
+
+        # 저장된 color 모드 복원: 스와치 채우기 (시그널 연결 후)
+        if self._bar_mode == "color":
+            self._populate_color_swatches()
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -430,6 +441,45 @@ class BarPreviewDialog(QDialog):
         self._progress_bar.setFormat(f"{self._progress:.1f}%")
         self._progress_bar.setFixedHeight(24)
         layout.addWidget(self._progress_bar)
+
+        # ── 분석 방식 선택 ──────────────────────────────────
+        mode_label = QLabel(t("bar_analysis_mode"))
+        mode_label.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(mode_label)
+
+        mode_row = QHBoxLayout()
+        self._radio_auto = QRadioButton(t("bar_mode_auto"))
+        self._radio_color = QRadioButton(t("bar_mode_color"))
+        self._radio_group = QButtonGroup(self)
+        self._radio_group.addButton(self._radio_auto, 0)
+        self._radio_group.addButton(self._radio_color, 1)
+        # 저장된 모드 복원
+        if self._bar_mode == "color":
+            self._radio_color.setChecked(True)
+        else:
+            self._radio_auto.setChecked(True)
+        mode_row.addWidget(self._radio_auto)
+        mode_row.addWidget(self._radio_color)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
+        self._radio_group.idToggled.connect(self._on_mode_changed)
+
+        # 색상 선택 패널 (mode == "color" 일 때만 표시)
+        self._color_panel = QWidget()
+        color_panel_layout = QVBoxLayout(self._color_panel)
+        color_panel_layout.setContentsMargins(0, 0, 0, 0)
+        color_panel_layout.setSpacing(6)
+
+        self._color_hint = QLabel(t("bar_color_pick_hint"))
+        self._color_hint.setStyleSheet("color: #aaa; font-size: 11px;")
+        color_panel_layout.addWidget(self._color_hint)
+
+        self._color_swatch_row = QHBoxLayout()
+        self._color_swatch_row.setSpacing(8)
+        color_panel_layout.addLayout(self._color_swatch_row)
+        self._color_panel.setVisible(self._bar_mode == "color")
+        layout.addWidget(self._color_panel)
+        self._swatch_buttons: dict[tuple[int, int, int], QPushButton] = {}
 
         # 도구 행: 디버그 저장
         tools_row = QHBoxLayout()
@@ -477,6 +527,90 @@ class BarPreviewDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+    # ── 분석 방식 ─────────────────────────────────────────
+
+    def _on_mode_changed(self, button_id: int, checked: bool) -> None:
+        if not checked:
+            return
+        if button_id == 1:  # "색상 지정"
+            self._bar_mode = "color"
+            self._color_panel.setVisible(True)
+            self._populate_color_swatches()
+        else:  # "자동"
+            self._bar_mode = "auto"
+            self._target_color = None
+            self._color_panel.setVisible(False)
+            self._reanalyze()
+
+    def _populate_color_swatches(self) -> None:
+        """바 이미지에서 지배적 색상을 감지하여 스와치를 생성한다."""
+        # 기존 스와치 제거
+        while self._color_swatch_row.count():
+            item = self._color_swatch_row.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+        self._swatch_buttons.clear()
+
+        colors = detect_dominant_colors(self._bar_image)
+        self._detected_colors = colors
+
+        if not colors:
+            lbl = QLabel(t("bar_color_none_detected"))
+            lbl.setStyleSheet("color: #666; font-size: 11px;")
+            self._color_swatch_row.addWidget(lbl)
+            return
+
+        for rgb, ratio in colors:
+            btn = QPushButton()
+            btn.setFixedSize(36, 36)
+            r, g, b = rgb
+            border = "3px solid #3b82f6" if rgb == self._target_color else "2px solid #444"
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: rgb({r},{g},{b}); border: {border}; border-radius: 6px; }}"
+                f"QPushButton:hover {{ border: 2px solid #aaa; }}"
+            )
+            btn.setToolTip(f"RGB({r}, {g}, {b})  {ratio*100:.0f}%")
+            btn.clicked.connect(lambda _, c=rgb: self._on_color_swatch_clicked(c))
+            self._color_swatch_row.addWidget(btn)
+            self._swatch_buttons[rgb] = btn
+
+        self._color_swatch_row.addStretch()
+
+        # 첫 번째 색상 자동 선택
+        if colors and self._target_color is None:
+            self._target_color = colors[0][0]
+        self._reanalyze()
+
+    def _on_color_swatch_clicked(self, rgb: tuple[int, int, int]) -> None:
+        """색상 스와치 클릭 시 해당 색상으로 재분석."""
+        self._target_color = rgb
+        # 테두리만 갱신 (k-means 재실행 불필요)
+        for color, btn in self._swatch_buttons.items():
+            r, g, b = color
+            border = "3px solid #3b82f6" if color == rgb else "2px solid #444"
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: rgb({r},{g},{b}); border: {border}; border-radius: 6px; }}"
+                f"QPushButton:hover {{ border: 2px solid #aaa; }}"
+            )
+        self._reanalyze()
+
+    def _reanalyze(self) -> None:
+        """현재 설정(bar_mode, target_color)으로 진행률을 재분석한다."""
+        if self._bar_mode == "color" and self._target_color is not None:
+            result = self._analyzer.analyze_by_color(
+                self._bar_image,
+                self._target_color,
+                direction=self._direction,
+            )
+        else:
+            result = self._analyzer.analyze(self._bar_image, direction=self._direction)
+        self._progress = result.progress
+        self._progress_label.setText(
+            t("detected_progress").format(progress=f"{self._progress:.1f}")
+        )
+        self._progress_bar.setValue(int(self._progress * 10))
+        self._progress_bar.setFormat(f"{self._progress:.1f}%")
+
     def _on_reselect(self) -> None:
         """재선택 버튼 클릭 시 플래그 설정 후 reject."""
         self.reselect_requested = True
@@ -494,21 +628,13 @@ class BarPreviewDialog(QDialog):
     def _on_bar_region_edited(self, new_region: BarRegion) -> None:
         """바 영역이 편집되면 진행률을 재분석한다."""
         self._bar_region = new_region
-
-        # 바 이미지 재크롭
-        bar_image = self._full_image.crop(new_region.bbox)
-        self._bar_image = bar_image
-
-        # 재분석
-        result = self._analyzer.analyze(bar_image, direction=new_region.direction)
-        self._progress = result.progress
-
-        # UI 업데이트
-        self._progress_label.setText(
-            t("detected_progress").format(progress=f"{self._progress:.1f}")
-        )
-        self._progress_bar.setValue(int(self._progress * 10))
-        self._progress_bar.setFormat(f"{self._progress:.1f}%")
+        self._bar_image = self._full_image.crop(new_region.bbox)
+        # 색상 모드면 스와치 재생성
+        if self._bar_mode == "color":
+            self._target_color = None
+            self._populate_color_swatches()
+        else:
+            self._reanalyze()
 
         log.info(
             "바 영역 편집 → 재분석: (%d,%d)-(%d,%d) → %.1f%%",
@@ -558,6 +684,16 @@ class BarPreviewDialog(QDialog):
     def bar_region(self) -> BarRegion | None:
         """편집된 바 영역."""
         return self._bar_region
+
+    @property
+    def bar_mode(self) -> str:
+        """선택된 분석 방식: 'auto' 또는 'color'."""
+        return self._bar_mode
+
+    @property
+    def target_color(self) -> tuple[int, int, int] | None:
+        """색상 지정 모드에서 선택된 RGB 색상. auto 모드면 None."""
+        return self._target_color if self._bar_mode == "color" else None
 
     @property
     def task_name(self) -> str | None:

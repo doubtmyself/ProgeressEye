@@ -434,10 +434,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun emitState() {
         val devices = deviceCache.values.map { device ->
             val rawStatus = statusCache[device.id] ?: "offline"
-            val isOnline = rawStatus == "online" || rawStatus == "monitoring"
+            val isOnline = rawStatus == "online" || rawStatus == "monitoring" || rawStatus == "sleep"
             val isMonitoring = rawStatus == "monitoring"
+            val isSleeping = rawStatus == "sleep"
             val heartbeatTs = heartbeatCache[device.id] ?: 0L
-            device.copy(isOnline = isOnline, isMonitoring = isMonitoring, lastSeen = heartbeatTs)
+            device.copy(isOnline = isOnline, isMonitoring = isMonitoring, isSleeping = isSleeping, lastSeen = heartbeatTs)
         }
 
         val currentLoading = _uiState.value.screenshotLoadingDeviceId

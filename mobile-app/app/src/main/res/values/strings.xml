@@ -24,6 +24,7 @@
     <string name="dashboard_status_online">Online</string>
     <string name="dashboard_status_offline">Offline</string>
     <string name="dashboard_status_monitoring">Monitoring</string>
+    <string name="dashboard_status_sleeping">Sleeping</string>
     <string name="dashboard_status_standby">Standby</string>
     <string name="dashboard_task_running">Running</string>
     <string name="dashboard_task_done">Done</string>

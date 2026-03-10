@@ -48,7 +48,7 @@ _set_dpi_awareness()
 
 from core.ocr_reader import OcrReader, OcrResult  # pyright: ignore[reportImplicitRelativeImport]
 from PIL import Image as PILImage
-from PyQt6.QtCore import QEventLoop, QRect, Qt, QTimer
+from PyQt6.QtCore import QAbstractNativeEventFilter, QEventLoop, QRect, Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -92,6 +92,35 @@ _SAMPLER_START_DELAY_MS = 20_000
 
 class _SilentAuthAbort(AuthError):
     """사용자 선택으로 로그인 흐름을 조용히 종료할 때 사용한다."""
+
+
+class _PowerEventFilter(QAbstractNativeEventFilter):
+    """Windows WM_POWERBROADCAST 메시지를 감지해 절전 진입/복귀를 콜백한다."""
+
+    _WM_POWERBROADCAST = 0x0218
+    _PBT_APMSUSPEND = 0x0004
+    _PBT_APMRESUMEAUTOMATIC = 0x0012
+    _PBT_APMRESUMESUSPEND = 0x0013
+
+    def __init__(
+        self,
+        on_suspend: Callable[[], None],
+        on_resume: Callable[[], None],
+    ) -> None:
+        super().__init__()
+        self._on_suspend = on_suspend
+        self._on_resume = on_resume
+
+    def nativeEventFilter(self, event_type: bytes, message: object) -> tuple[bool, int]:
+        if event_type == b"windows_generic_MSG":
+            import ctypes.wintypes
+            msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.wintypes.MSG)).contents  # type: ignore[arg-type]
+            if msg.message == self._WM_POWERBROADCAST:
+                if msg.wParam == self._PBT_APMSUSPEND:
+                    self._on_suspend()
+                elif msg.wParam in (self._PBT_APMRESUMEAUTOMATIC, self._PBT_APMRESUMESUSPEND):
+                    self._on_resume()
+        return False, 0
 
 
 class ProgressEyeApp:
@@ -178,9 +207,19 @@ class ProgressEyeApp:
         self._selection_mode: str = "bar"  # "bar" 또는 "ocr"
         self._bar_selection_guide_shown = False
 
+        # Windows 절전 이벤트 감지
+        self._power_filter = _PowerEventFilter(
+            on_suspend=self._on_system_suspend,
+            on_resume=self._on_system_resume,
+        )
+        self._app.installNativeEventFilter(self._power_filter)
+
         # 크로스-스레드 액션 큐 (pystray/Timer → Qt 메인 스레드)
         self._action_queue: queue.Queue[Callable[[], None]] = queue.Queue()
         self._poll_timer = QTimer()
+        # 백그라운드 분석 중인 영역 ID 집합 (중복 실행 방지)
+        self._capturing_regions: set[str] = set()
+        self._capturing_lock = threading.Lock()
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
 
@@ -188,6 +227,11 @@ class ProgressEyeApp:
         self._cmd_poll_timer = QTimer()
         self._cmd_poll_timer.timeout.connect(self._process_commands)
         self._cmd_poll_timer.start(200)
+
+        # HW stats UI 갱신 (10초 주기, 샘플러와 동일 주기)
+        self._hw_ui_timer = QTimer()
+        self._hw_ui_timer.timeout.connect(self._update_hw_ui)
+        self._hw_ui_timer.start(10_000)
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)
@@ -1025,6 +1069,8 @@ class ProgressEyeApp:
                 enabled=enabled,
                 alert_threshold=region.get("alert_threshold", 100),
                 alert_delay_minutes=region.get("alert_delay_minutes", 0),
+                bar_mode=region.get("bar_mode", "auto"),
+                target_color=region.get("target_color"),
             )
             # 로컬 템플릿 이미지 복원
             tpl = self._load_template(region["id"])
@@ -1204,7 +1250,7 @@ class ProgressEyeApp:
             else:
                 direction = "horizontal"
                 bar_crop = {}
-            region = {
+            region: dict = {
                 "id": region_id,
                 "label": dialog.task_name
                 or t("default_task_name").format(n=self._task_counter),
@@ -1217,12 +1263,17 @@ class ProgressEyeApp:
                 "abs_x": area.get("abs_x"),
                 "abs_y": area.get("abs_y"),
                 "direction": direction,
+                "bar_mode": dialog.bar_mode,
                 **bar_crop,
             }
+            if dialog.target_color is not None:
+                region["target_color"] = list(dialog.target_color)
             region_label = str(region["label"])
             self._config.add_region(region)
             self._main_window.add_region_display(
-                region_id, region_label, region_type="bar"
+                region_id, region_label, region_type="bar",
+                bar_mode=dialog.bar_mode,
+                target_color=list(dialog.target_color) if dialog.target_color else None,
             )
             final_progress = dialog.progress
             self._main_window.update_progress(region_id, final_progress, region_label)
@@ -2055,6 +2106,14 @@ class ProgressEyeApp:
                 bar_image = image.crop(bar_region.bbox) if bar_region else image
 
             qimage = self._pil_to_qimage(image)
+            # 저장된 bar_mode / target_color 복원
+            saved_bar_mode = area.get("bar_mode", "auto")
+            saved_target_color_raw = area.get("target_color")
+            saved_target_color: tuple[int, int, int] | None = (
+                tuple(int(c) for c in saved_target_color_raw[:3])  # type: ignore[assignment]
+                if saved_target_color_raw
+                else None
+            )
             dialog = BarPreviewDialog(
                 image=qimage,
                 full_image=image,
@@ -2062,12 +2121,18 @@ class ProgressEyeApp:
                 detected_progress=result.progress,
                 bar_region=bar_region,
                 debug_mode=self._debug_mode,
+                initial_bar_mode=saved_bar_mode,
+                initial_target_color=saved_target_color,
             )
             dialog._task_name_input.setText(current_label)
 
             if dialog.exec():
                 new_label = dialog.task_name or current_label
-                updates: dict = {"label": new_label}
+                updates: dict = {"label": new_label, "bar_mode": dialog.bar_mode}
+                if dialog.target_color is not None:
+                    updates["target_color"] = list(dialog.target_color)
+                else:
+                    updates["target_color"] = None
                 final_br = dialog.bar_region
                 if final_br:
                     updates["direction"] = final_br.direction
@@ -2175,7 +2240,15 @@ class ProgressEyeApp:
                 )
             )
             direction = area.get("direction", "horizontal")
-            result = self._analyzer.analyze(bar_image, direction=direction)
+            target_color_raw = area.get("target_color")
+            if area.get("bar_mode") == "color" and target_color_raw:
+                tc = tuple(int(c) for c in target_color_raw[:3])
+                result = self._analyzer.analyze_by_color(
+                    bar_image, tc, direction=direction  # type: ignore[arg-type]
+                )
+            else:
+                result = self._analyzer.analyze(bar_image, direction=direction)
+
             progress_val = result.progress
             # 바 영역 사각형 (화면 좌표)
             bar_area = {
@@ -2233,6 +2306,31 @@ class ProgressEyeApp:
             log.info("모니터링 자동 정지 (활성 영역 없음)")
             if self._device_manager:
                 self._device_manager.set_monitoring(False)
+
+    def _update_hw_ui(self) -> None:
+        """CPU/GPU/RAM 사용량을 읽어 메인 윈도우에 반영한다."""
+        stats = collect_stats()
+        if stats:
+            self._main_window.update_hw_stats(stats)
+
+    def _on_system_suspend(self) -> None:
+        """PC 절전 진입 시 호출된다."""
+        log.info("시스템 절전 진입 감지")
+        if self._device_manager:
+            threading.Thread(
+                target=self._device_manager.set_sleep, daemon=True
+            ).start()
+
+    def _on_system_resume(self) -> None:
+        """PC 절전 복귀 시 호출된다."""
+        log.info("시스템 절전 복귀 감지")
+        if self._device_manager:
+            is_monitoring = self._scheduler.is_running
+            threading.Thread(
+                target=self._device_manager.set_monitoring,
+                args=(is_monitoring,),
+                daemon=True,
+            ).start()
 
     def _set_display_required(self, required: bool) -> None:
         """시스템 절전 방지를 설정/해제한다.
@@ -2310,15 +2408,27 @@ class ProgressEyeApp:
                         log.debug("[모니터링 시작] %s 템플릿 생성 실패: %s", rid, exc)
 
     def _on_capture_from_worker(self, region_id: str, image: PILImage.Image) -> None:
-        """Timer 스레드에서 호출 — 메인 스레드로 마샬링."""
-        self._action_queue.put(lambda: self._on_capture(region_id, image))
+        """Timer 스레드에서 호출 — 백그라운드에서 직접 분석 (UI 업데이트만 큐로 전달).
+
+        이전 캡처 분석이 아직 실행 중이면 스킵하여 큐 쌓임을 방지한다.
+        """
+        with self._capturing_lock:
+            if region_id in self._capturing_regions:
+                log.debug("[%s] 이전 분석 진행 중 — 캡처 스킵", region_id)
+                return
+            self._capturing_regions.add(region_id)
+        try:
+            self._on_capture(region_id, image)
+        finally:
+            with self._capturing_lock:
+                self._capturing_regions.discard(region_id)
 
     def _on_cycle_complete_from_worker(self) -> None:
         """Timer 스레드에서 호출 — 메인 스레드로 마샬링."""
         self._action_queue.put(self._on_cycle_complete)
 
     def _on_capture(self, region_id: str, image: PILImage.Image) -> None:
-        """캡처 콜백 — 분석 + UI 업데이트 (메인 스레드)."""
+        """캡처 콜백 — 분석은 백그라운드 스레드, UI 업데이트는 action_queue로 메인 스레드 전달."""
         if not self._scheduler.is_running:
             return
         # 영역 설정 찾기
@@ -2358,12 +2468,18 @@ class ProgressEyeApp:
                         # 탐지된 바 경계가 게이지 내부를 가리킬 수 있으므로
                         # 바깥쪽으로 확장해 border 픽셀이 UI 프레임 위에 오도록 한다.
                         _EXPAND = 6
-                        bar_bbox = (
+                        _bbox = (
                             max(0, bl - _EXPAND),
                             max(0, region_config.get("bar_top", 0) - _EXPAND),
                             min(image.width, br + _EXPAND),
                             min(image.height, region_config.get("bar_bottom", image.height) + _EXPAND),
                         )
+                        # bar_bbox가 캡처 이미지의 70% 이상을 덮으면 마스킹 생략
+                        # (전체가 바 영역이면 마스킹 후 양쪽 다 회색 → 유사도 항상 높음)
+                        _img_area = image.width * image.height
+                        _bbox_area = (_bbox[2] - _bbox[0]) * (_bbox[3] - _bbox[1])
+                        if _img_area > 0 and _bbox_area / _img_area < 0.70:
+                            bar_bbox = _bbox
                 elif region_type == "ocr":
                     left_raw = region_config.get("ocr_left")
                     top_raw = region_config.get("ocr_top")
@@ -2404,12 +2520,21 @@ class ProgressEyeApp:
             if similarity < image_change_threshold:
                 last_progress = self._last_firebase_state.get(region_id, {}).get("p", 0)
                 threshold = region_config.get("alert_threshold", 100)
-                if last_progress >= threshold - 10:
-                    # 완료 근접 → 완료 처리
+                # color 모드는 대상 색상 특성상 100%에 못 미치는 값이 최대일 수 있으므로
+                # 진행률이 0보다 크면 완료로 간주한다.
+                # auto 모드는 캡처 주기 공백을 고려해 30% 버퍼를 준다 (기존 10%→30%).
+                bar_mode = region_config.get("bar_mode", "auto")
+                if bar_mode == "color":
+                    near_completion = last_progress > 0
+                else:
+                    near_completion = last_progress >= threshold - 30
+                if near_completion:
+                    # 완료 처리
                     log.info(
-                        "[이미지 변경] %s — 완료 근접 (%.1f%%) → 완료 처리 (유사도: %.2f)",
+                        "[이미지 변경] %s — 화면 소멸 (%.1f%%, mode=%s) → 완료 처리 (유사도: %.2f)",
                         label,
                         last_progress,
+                        bar_mode,
                         similarity,
                     )
                     self._alerted_regions[region_id] = last_progress
@@ -2427,7 +2552,9 @@ class ProgressEyeApp:
                             "image_change", "ProgressEye", complete_msg
                         )
                     # 완료 처리된 작업은 모니터링 중지 (반복 알림 방지)
-                    self._config.update_region(region_id, {"enabled": False})
+                    self._action_queue.put(
+                        lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
+                    )
                     self._scheduler.remove_region(region_id)
                     self._action_queue.put(
                         lambda _id=region_id: self._main_window.set_region_enabled(
@@ -2464,7 +2591,9 @@ class ProgressEyeApp:
                             self._main_window.set_region_warning(_id, _m)
                         )
                     )
-                    self._config.update_region(region_id, {"enabled": False})
+                    self._action_queue.put(
+                        lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
+                    )
                     self._scheduler.remove_region(region_id)
                     self._action_queue.put(
                         lambda _id=region_id: self._main_window.set_region_enabled(
@@ -2544,8 +2673,20 @@ class ProgressEyeApp:
                 )
             )
             direction = region_config.get("direction", "horizontal")
-            result = self._analyzer.analyze(bar_image, direction=direction)
+            target_color_raw = region_config.get("target_color")
+            if region_config.get("bar_mode") == "color" and target_color_raw:
+                tc: tuple[int, int, int] = tuple(int(c) for c in target_color_raw[:3])  # type: ignore[assignment]
+                result = self._analyzer.analyze_by_color(bar_image, tc, direction=direction)
+            else:
+                result = self._analyzer.analyze(bar_image, direction=direction)
             progress = result.progress
+
+            if self._debug_mode:
+                self._debug_save_bar(
+                    region_id, bar_image, progress,
+                    region_config.get("bar_mode", "auto"),
+                    target_color_raw,
+                )
 
         if progress is None:
             return
@@ -2662,7 +2803,9 @@ class ProgressEyeApp:
                         "completion", "ProgressEye", alert_msg
                     )
                 # 완료 확정 → 해당 영역 모니터링 체크 해제
-                self._config.update_region(region_id, {"enabled": False})
+                self._action_queue.put(
+                    lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
+                )
                 self._scheduler.remove_region(region_id)
                 self._action_queue.put(
                     lambda _id=region_id: self._main_window.set_region_enabled(
@@ -2839,6 +2982,40 @@ class ProgressEyeApp:
         self._app.processEvents()
         self._app.exit(0)
         self._app.quit()
+
+    def _debug_save_bar(
+        self,
+        region_id: str,
+        bar_image: "PILImage.Image",
+        progress: float,
+        bar_mode: str,
+        target_color: "list | None",
+    ) -> None:
+        """디버그 모드: bar 이미지를 순차적으로 temp/debug_capture/ 에 저장한다."""
+        import numpy as _np
+
+        debug_dir = pathlib.Path(__file__).parent / "temp" / "debug_capture"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        # 순번 계산
+        counter_attr = f"_debug_counter_{region_id}"
+        n = getattr(self, counter_attr, 0) + 1
+        setattr(self, counter_attr, n)
+
+        fname = f"{region_id}_{n:04d}_p{progress:.1f}.png"
+        bar_image.save(str(debug_dir / fname))
+
+        # 픽셀 분포 로그
+        arr = _np.array(bar_image.convert("RGB"), dtype=_np.uint8)
+        unique, counts = _np.unique(arr.reshape(-1, 3), axis=0, return_counts=True)
+        top5 = sorted(zip(counts.tolist(), [tuple(int(c) for c in u) for u in unique]), reverse=True)[:5]
+        tc_str = f"RGB{tuple(target_color[:3])}" if target_color else "None"
+        log.info(
+            "[디버그 캡처] %s #%d — progress=%.1f%% mode=%s target=%s top_pixels=%s → %s",
+            region_id, n, progress, bar_mode, tc_str,
+            [(rgb, cnt) for cnt, rgb in top5],
+            fname,
+        )
 
     def _save_template(self, region_id: str, image: PILImage.Image) -> None:
         """템플릿 이미지를 메모리 캐시 + 로컬 파일에 저장한다."""

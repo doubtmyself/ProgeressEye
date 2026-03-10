@@ -101,6 +101,7 @@ import com.chg.progeresseye.ui.theme.ProgressGradientEnd
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.StatusComplete
 import com.chg.progeresseye.ui.theme.StatusOffline
+import com.chg.progeresseye.ui.theme.StatusSleep
 import com.chg.progeresseye.ui.theme.StatusStalled
 import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 import com.chg.progeresseye.ui.theme.SurfaceContainerHighDark
@@ -338,6 +339,7 @@ private fun DeviceCard(
                 name = device.name,
                 isOnline = device.isOnline,
                 isMonitoring = device.isMonitoring,
+                isSleeping = device.isSleeping,
                 cpuUsage = device.cpuUsage,
                 gpuUsage = device.gpuUsage,
                 ramUsage = device.ramUsage,
@@ -548,6 +550,7 @@ private fun DeviceHeader(
     name: String,
     isOnline: Boolean,
     isMonitoring: Boolean,
+    isSleeping: Boolean = false,
     cpuUsage: Float? = null,
     gpuUsage: Float? = null,
     ramUsage: Float? = null,
@@ -596,6 +599,7 @@ private fun DeviceHeader(
                             .background(
                                 when {
                                     isOnline && isMonitoring -> StatusComplete
+                                    isSleeping -> StatusSleep
                                     isOnline -> Amber500
                                     else -> StatusOffline
                                 }
@@ -604,6 +608,7 @@ private fun DeviceHeader(
                     Text(
                         text = when {
                             isOnline && isMonitoring -> stringResource(R.string.dashboard_status_monitoring)
+                            isSleeping -> stringResource(R.string.dashboard_status_sleeping)
                             isOnline -> stringResource(R.string.dashboard_status_online)
                             else -> stringResource(R.string.dashboard_status_offline)
                         },
@@ -611,6 +616,7 @@ private fun DeviceHeader(
                         fontWeight = FontWeight.Medium,
                         color = when {
                             isOnline && isMonitoring -> StatusComplete
+                            isSleeping -> StatusSleep
                             isOnline -> Amber500
                             else -> StatusOffline
                         },

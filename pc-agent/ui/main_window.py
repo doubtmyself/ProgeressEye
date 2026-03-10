@@ -77,6 +77,8 @@ class RegionCard(QFrame):
         alert_threshold: int = 100,
         alert_delay_minutes: int = 0,
         show_test_buttons: bool = False,
+        bar_mode: str = "auto",
+        target_color: list | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -84,6 +86,8 @@ class RegionCard(QFrame):
         self._region_type = region_type
         self._progress_unit = progress_unit
         self._show_test_buttons = show_test_buttons
+        self._bar_mode = bar_mode
+        self._target_color = target_color
         self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self.setStyleSheet(
             f"RegionCard {{"
@@ -106,6 +110,28 @@ class RegionCard(QFrame):
             f"color: {CARD_LABEL}; background: transparent; border: none;"
         )
         layout.addWidget(self._label)
+
+        # ── Row 1b: 분석 방식 + 색상 스와치 (bar 타입만) ──
+        if region_type == "bar":
+            mode_key = "bar_mode_color" if bar_mode == "color" else "bar_mode_auto"
+            mode_row = QHBoxLayout()
+            mode_row.setSpacing(6)
+            mode_lbl = QLabel(f"· {t('bar_analysis_mode')}: {t(mode_key)}")
+            mode_lbl.setStyleSheet(
+                f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+            )
+            mode_row.addWidget(mode_lbl)
+            if bar_mode == "color" and target_color and len(target_color) >= 3:
+                r, g, b = int(target_color[0]), int(target_color[1]), int(target_color[2])
+                swatch = QLabel()
+                swatch.setFixedSize(14, 14)
+                swatch.setStyleSheet(
+                    f"background-color: rgb({r},{g},{b}); border: 1px solid #555; border-radius: 3px;"
+                )
+                swatch.setToolTip(f"RGB({r}, {g}, {b})")
+                mode_row.addWidget(swatch)
+            mode_row.addStretch()
+            layout.addLayout(mode_row)
 
         # ── Row 2: 체크박스 + 모니터링 여부 라벨 (작은 글씨) ──
         header_row = QHBoxLayout()
@@ -544,13 +570,23 @@ class MainWindow(QMainWindow):
         )
         app_layout.addWidget(self._subtitle)
 
-        # ── Status indicator ──
+        # ── Status + HW stats row ──
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(12)
         self._status_label = QLabel(t("status_standby"))
         self._status_label.setStyleSheet(
             f"color: {STATUS_GRAY}; font-size: 13px;"
             f"font-weight: bold; background: transparent;"
         )
-        app_layout.addWidget(self._status_label)
+        status_row.addWidget(self._status_label)
+        status_row.addStretch()
+        self._hw_label = QLabel("")
+        self._hw_label.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent;"
+        )
+        status_row.addWidget(self._hw_label)
+        app_layout.addLayout(status_row)
 
         # ── Scroll area for region cards ──
         scroll = QScrollArea()
@@ -687,6 +723,8 @@ class MainWindow(QMainWindow):
         enabled: bool = True,
         alert_threshold: int = 100,
         alert_delay_minutes: int = 0,
+        bar_mode: str = "auto",
+        target_color: list | None = None,
     ) -> None:
         """영역 카드를 추가한다."""
         if region_id in self._region_cards:
@@ -700,6 +738,8 @@ class MainWindow(QMainWindow):
             alert_threshold=alert_threshold,
             alert_delay_minutes=alert_delay_minutes,
             show_test_buttons=self._show_test_buttons,
+            bar_mode=bar_mode,
+            target_color=target_color,
         )
         card.set_checked(enabled)
         card.toggled.connect(self.region_toggled)
@@ -818,6 +858,17 @@ class MainWindow(QMainWindow):
         self._btn_add_ocr.setVisible(not active)
         for card in self._region_cards.values():
             card.set_buttons_visible(not active)
+
+    def update_hw_stats(self, stats: dict) -> None:
+        """CPU/GPU/RAM 사용량 표시를 갱신한다."""
+        parts = []
+        if "cpu" in stats:
+            parts.append(f"CPU {stats['cpu']:.0f}%")
+        if "gpu" in stats:
+            parts.append(f"GPU {stats['gpu']:.0f}%")
+        if "ram" in stats:
+            parts.append(f"RAM {stats['ram']:.0f}%")
+        self._hw_label.setText("  ·  ".join(parts))
 
     def refresh_texts(self) -> None:
         """언어 변경 시 UI 텍스트를 갱신한다."""

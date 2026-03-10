@@ -24,6 +24,7 @@ val StatusRunning = Primary
 val StatusComplete = Color(0xFF4ADE80)       // green-400
 val StatusStalled = Color(0xFFF59E0B)        // amber-500
 val StatusOffline = Color(0xFF64748B)        // slate-500
+val StatusSleep = Color(0xFF93C5FD)          // blue-300 (절전)
 val ErrorRed = Color(0xFFEF4444)             // red-500
 
 // ── Progress Bar ──
