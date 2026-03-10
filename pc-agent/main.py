@@ -2627,8 +2627,9 @@ class ProgressEyeApp:
             mode, target, progress_unit, prefer_percent = self._get_ocr_mode_settings(
                 region_config
             )
+            _ocr_crop = self._crop_ocr_image_by_config(image, region_config)
             detected_value = self._ocr_reader.read_progress(
-                self._crop_ocr_image_by_config(image, region_config),
+                _ocr_crop,
                 region_id=region_id,
                 min_value=0.0,
                 max_value=target,
@@ -2676,6 +2677,8 @@ class ProgressEyeApp:
                         return
             else:
                 progress = self._normalize_ocr_progress(mode, detected_value, target)
+            if self._debug_mode:
+                self._debug_save_ocr(region_id, _ocr_crop, detected_value, progress)
         else:
             # 바 — 원본 영역에서 bar 오프셋으로 크롭하여 분석 (bar_finder 불필요)
             bar_image = image.crop(
@@ -3012,7 +3015,6 @@ class ProgressEyeApp:
         debug_dir = pathlib.Path(__file__).parent / "temp" / "debug_capture"
         debug_dir.mkdir(parents=True, exist_ok=True)
 
-        # 순번 계산
         counter_attr = f"_debug_counter_{region_id}"
         n = getattr(self, counter_attr, 0) + 1
         setattr(self, counter_attr, n)
@@ -3020,7 +3022,6 @@ class ProgressEyeApp:
         fname = f"{region_id}_{n:04d}_p{progress:.1f}.png"
         bar_image.save(str(debug_dir / fname))
 
-        # 픽셀 분포 로그
         arr = _np.array(bar_image.convert("RGB"), dtype=_np.uint8)
         unique, counts = _np.unique(arr.reshape(-1, 3), axis=0, return_counts=True)
         top5 = sorted(zip(counts.tolist(), [tuple(int(c) for c in u) for u in unique]), reverse=True)[:5]
@@ -3029,6 +3030,33 @@ class ProgressEyeApp:
             "[디버그 캡처] %s #%d — progress=%.1f%% mode=%s target=%s top_pixels=%s → %s",
             region_id, n, progress, bar_mode, tc_str,
             [(rgb, cnt) for cnt, rgb in top5],
+            fname,
+        )
+
+    def _debug_save_ocr(
+        self,
+        region_id: str,
+        ocr_image: "PILImage.Image",
+        detected_value: "float | None",
+        progress: "float | None",
+    ) -> None:
+        """디버그 모드: OCR 크롭 이미지를 순차적으로 temp/debug_capture/ 에 저장한다."""
+        debug_dir = pathlib.Path(__file__).parent / "temp" / "debug_capture"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        counter_attr = f"_debug_counter_{region_id}"
+        n = getattr(self, counter_attr, 0) + 1
+        setattr(self, counter_attr, n)
+
+        det_str = f"{detected_value:.1f}" if detected_value is not None else "miss"
+        prog_str = f"{progress:.1f}" if progress is not None else "none"
+        fname = f"{region_id}_{n:04d}_det{det_str}_p{prog_str}.png"
+        ocr_image.save(str(debug_dir / fname))
+
+        log.info(
+            "[디버그 OCR] %s #%d — detected=%s progress=%s%% size=%dx%d → %s",
+            region_id, n, det_str, prog_str,
+            ocr_image.width, ocr_image.height,
             fname,
         )
 
