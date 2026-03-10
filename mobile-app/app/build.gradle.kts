@@ -162,7 +162,7 @@ play {
     defaultToAppBundles.set(true)
 
     // 배포 트랙: internal (비공개 테스트)
-    track.set("internal")
+    track.set("alpha")
 
     // publishBundle 실행 시 즉시 배포
     releaseStatus.set(ReleaseStatus.COMPLETED)
