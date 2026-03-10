@@ -8,9 +8,9 @@
 
 | 항목 | 상태 |
 |------|------|
-| OAuth 클라이언트 시크릿 하드코딩 | ⚠️ 주의 |
-| targetDeviceId 미검증 명령 실행 | ⚠️ 주의 |
-| Firebase 토큰을 URL 파라미터로 전송 | ⚠️ 주의 |
+| OAuth 클라이언트 시크릿 하드코딩 | 🔒 수정 불가 (설계 한계) |
+| targetDeviceId 미검증 명령 실행 | ✅ 완료 |
+| Firebase 토큰을 URL 파라미터로 전송 | ✅ 완료 |
 | subprocess shell=False | ✅ 안전 |
 | 토큰 저장 (Windows keyring) | ✅ 안전 |
 | 설정 파일 민감 정보 | ✅ 안전 |
@@ -21,18 +21,17 @@
 
 ## 1. 인증 / 자격증명
 
-### 1-1. OAuth 클라이언트 시크릿 하드코딩 ⚠️ 주의
+### 1-1. OAuth 클라이언트 시크릿 하드코딩 — 수정 불가 (설계 한계)
 - **파일:** `pc-agent/auth/google_oauth.py:30-33`
-- **내용:** `CLIENT_SECRET`이 환경변수 fallback으로 소스코드에 하드코딩되어 있음
-  ```python
-  CLIENT_SECRET = os.environ.get(
-      "PROGRESSEYE_OAUTH_CLIENT_SECRET",
-      "GOCSPX-...",  # 하드코딩된 시크릿
-  )
-  ```
-- **위험도:** 중간 — 데스크탑(Installed App) OAuth에서 클라이언트 시크릿은 Google 정책상 "공개 정보"로 취급되지만, 소스코드/Git 히스토리 노출은 바람직하지 않음
-- **조치:** 환경변수 또는 별도 secrets 파일로 분리, fallback 기본값 제거
-- **현재 상태:** 미조치 (기능 우선 개발 단계)
+- **내용:** `CLIENT_SECRET`이 소스코드에 하드코딩되어 있음
+- **수정 불가 사유:**
+  1. **Google 공식 정책**: Google OAuth2 Installed App 문서에서 데스크탑 앱의 client_secret은 "공개 정보(not secret)"로 명시. 바이너리에 포함되는 것을 Google이 공식 허용
+  2. **Python 데스크탑 SDK 부재**: Firebase Auth 공식 클라이언트 SDK가 Python 데스크탑을 지원하지 않음. `pyrebase` 등 비공식 라이브러리는 수년째 업데이트 없음
+  3. **PKCE로 해결 불가**: PKCE는 Authorization Code 탈취를 막지만, Google Desktop App OAuth는 PKCE 사용 시에도 token 교환 단계에서 client_secret을 여전히 요구함
+  4. **C/Rust 난독화로 해결 불가**: 바이너리에 시크릿을 숨겨도 IDA Pro, Ghidra 등 역공학 도구로 추출 가능. 난이도만 높아질 뿐 근본 해결 아님
+  5. **백엔드 중계 서버**: 유일한 진짜 해결책이나 OAuth 중계 서버 별도 운영 필요 → 인프라 복잡도 대비 실익 없음
+- **실질 위험도:** 낮음 — 공격자가 시크릿을 얻어도 사용자가 직접 가짜 앱을 설치·승인해야 하며, Firebase Rules로 타 유저 데이터 접근 불가
+- **현재 상태:** 수정 불가 / 허용됨
 
 ### 1-2. Firebase API Key 하드코딩 ℹ️ 낮음
 - **파일:** `pc-agent/auth/firebase_auth.py:20-23`
@@ -124,11 +123,11 @@
 
 ---
 
-## 조치 우선순위
+## 조치 현황
 
-| 우선순위 | 항목 | 난이도 |
-|---------|------|--------|
-| 높음 | 2-1. sleep/shutdown targetDeviceId 필수 검증 | 낮음 (5분) |
-| 중간 | 1-1. OAuth 시크릿 하드코딩 제거 | 중간 |
-| 낮음 | 3-1. 토큰 Authorization 헤더로 전환 | 중간 |
-| 선택 | 4-1. MD5 → SHA-256 | 낮음 |
+| 항목 | 상태 |
+|------|------|
+| 2-1. sleep/shutdown targetDeviceId 필수 검증 | ✅ 완료 |
+| 1-1. OAuth 시크릿 하드코딩 | 🔒 수정 불가 (사유 위 참고) |
+| 3-1. 토큰 Authorization 헤더로 전환 | ✅ 완료 |
+| 4-1. MD5 → SHA-256 | ℹ️ 선택사항 (보안 무관) |
