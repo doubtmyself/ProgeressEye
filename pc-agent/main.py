@@ -10,6 +10,7 @@ import queue
 import time
 import threading
 import os
+from concurrent.futures import ThreadPoolExecutor
 import pathlib
 import sys
 import uuid
@@ -220,6 +221,8 @@ class ProgressEyeApp:
         # 백그라운드 분석 중인 영역 ID 집합 (중복 실행 방지)
         self._capturing_regions: set[str] = set()
         self._capturing_lock = threading.Lock()
+        # 영역별 병렬 분석용 스레드 풀 (OCR 등 CPU/IO 병목을 영역 간 병렬화)
+        self._analysis_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pe-analysis")
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
 
@@ -2408,20 +2411,28 @@ class ProgressEyeApp:
                         log.debug("[모니터링 시작] %s 템플릿 생성 실패: %s", rid, exc)
 
     def _on_capture_from_worker(self, region_id: str, image: PILImage.Image) -> None:
-        """Timer 스레드에서 호출 — 백그라운드에서 직접 분석 (UI 업데이트만 큐로 전달).
+        """Timer 스레드에서 호출 — ThreadPoolExecutor로 병렬 분석 제출.
 
-        이전 캡처 분석이 아직 실행 중이면 스킵하여 큐 쌓임을 방지한다.
+        각 영역의 분석(OCR/바)을 독립 스레드에서 병렬 실행한다.
+        이전 분석이 아직 진행 중인 영역은 스킵하여 큐 쌓임을 방지한다.
+        UI 업데이트는 _on_capture 내부에서 action_queue를 통해 메인 스레드로 전달된다.
         """
         with self._capturing_lock:
             if region_id in self._capturing_regions:
                 log.debug("[%s] 이전 분석 진행 중 — 캡처 스킵", region_id)
                 return
             self._capturing_regions.add(region_id)
-        try:
-            self._on_capture(region_id, image)
-        finally:
-            with self._capturing_lock:
-                self._capturing_regions.discard(region_id)
+
+        def _run() -> None:
+            try:
+                self._on_capture(region_id, image)
+            except Exception as exc:
+                log.error("[%s] 분석 스레드 오류: %s", region_id, exc)
+            finally:
+                with self._capturing_lock:
+                    self._capturing_regions.discard(region_id)
+
+        self._analysis_executor.submit(_run)
 
     def _on_cycle_complete_from_worker(self) -> None:
         """Timer 스레드에서 호출 — 메인 스레드로 마샬링."""
@@ -2949,6 +2960,7 @@ class ProgressEyeApp:
             return
         log.info("ProgressEye 종료")
         self._scheduler.stop()
+        self._analysis_executor.shutdown(wait=False, cancel_futures=True)
         self._set_display_required(False)
         self._capturer.close()
         stop_sampler()
