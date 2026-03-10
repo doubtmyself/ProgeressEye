@@ -2417,15 +2417,18 @@ class ProgressEyeApp:
                     self._ocr_reader.reset_cache(r["id"])
             self._scheduler.start(regions, interval)
             self._main_window.set_monitoring_state(True, interval)
+            # 미체크(비활성) 영역 카드는 idle 상태로 표시
+            disabled = [
+                r for r in self._config.regions if not r.get("enabled", True)
+            ]
+            for r in disabled:
+                self._main_window.set_region_task_status(r["id"], "idle")
             self._set_runtime_hint("ProgressEye - 모니터링 중")
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
             self._set_display_required(True)
             if self._device_manager:
                 self._device_manager.set_monitoring(True)
                 # 미체크(비활성) 작업을 idle 상태로 RTDB에 기록
-                disabled = [
-                    r for r in self._config.regions if not r.get("enabled", True)
-                ]
                 if disabled:
                     idle_batch = {r["id"]: {"s": "i"} for r in disabled}
                     self._device_manager.sync_tasks(idle_batch)
