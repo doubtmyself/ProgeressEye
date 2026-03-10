@@ -2597,10 +2597,7 @@ class ProgressEyeApp:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", complete_msg
                         )
-                    # 완료 처리된 작업은 모니터링 중지 (반복 알림 방지)
-                    self._action_queue.put(
-                        lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
-                    )
+                    # 완료 처리된 작업은 스케줄러에서 제거 (반복 알림 방지)
                     self._scheduler.remove_region(region_id)
                     self._action_queue.put(
                         lambda _id=region_id: self._main_window.set_region_task_status(_id, "completed")
@@ -2635,9 +2632,6 @@ class ProgressEyeApp:
                     self._pending_firebase_batch[region_id] = {"p": _stopped_p, "s": "s"}
                     self._action_queue.put(
                         lambda _id=region_id: self._main_window.set_region_task_status(_id, "stopped")
-                    )
-                    self._action_queue.put(
-                        lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
                     )
                     self._scheduler.remove_region(region_id)
                     # 모든 영역이 제외되면 모니터링 자동 정지
