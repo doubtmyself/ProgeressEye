@@ -150,6 +150,7 @@ fun SettingsContent(
                 },
                 subscriptionPrice = state.subscriptionPrice,
                 isAdFreeMode = state.isAdFreeMode,
+                isPolicyLoaded = state.isPolicyLoaded,
                 canStartSubscription = activity != null && state.isBillingReady && !state.isPurchaseLoading,
                 isPurchaseLoading = state.isPurchaseLoading,
                 onStartSubscription = {
@@ -256,6 +257,7 @@ private fun AccountCard(
     planLabel: String,
     subscriptionPrice: String?,
     isAdFreeMode: Boolean,
+    isPolicyLoaded: Boolean,
     canStartSubscription: Boolean,
     isPurchaseLoading: Boolean,
     onStartSubscription: () -> Unit,
@@ -306,16 +308,7 @@ private fun AccountCard(
 
         HorizontalDivider(color = OutlineVariantDark)
 
-        if (isAdFreeMode && !isProPlan) {
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text(
-                    text = stringResource(R.string.settings_ad_free_mode_admin_active),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OnSurfaceVariantDark,
-                )
-            }
-            HorizontalDivider(color = OutlineVariantDark)
-        } else {
+        if (isPolicyLoaded && !isAdFreeMode) {
             SubscriptionSection(
                 isProPlan = isProPlan,
                 subscriptionPrice = subscriptionPrice,
@@ -728,6 +721,7 @@ private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
                 planLabel = stringResource(R.string.settings_free_plan),
                 subscriptionPrice = "\u20a93,000",
                 isAdFreeMode = false,
+                isPolicyLoaded = true,
                 canStartSubscription = true,
                 isPurchaseLoading = false,
                 onStartSubscription = {},

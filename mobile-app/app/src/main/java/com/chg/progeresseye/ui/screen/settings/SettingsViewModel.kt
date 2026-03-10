@@ -30,6 +30,7 @@ data class SettingsUiState(
     val stallWarnings: Boolean = true,
     val currentPlan: String = "free",
     val isAdFreeMode: Boolean = false,
+    val isPolicyLoaded: Boolean = false,
     val subscriptionPrice: String? = null,
     val isBillingReady: Boolean = false,
     val isPurchaseLoading: Boolean = false,
@@ -113,14 +114,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun startProSubscription(activity: Activity) {
-        if (_uiState.value.isAdFreeMode) {
-            _uiState.update {
-                it.copy(
-                    billingMessage = getApplication<Application>().getString(R.string.settings_ad_free_mode_admin_active),
-                )
-            }
-            return
-        }
+        if (_uiState.value.isAdFreeMode) return
 
         val client = billingClient
         if (client == null || !client.isReady) {
@@ -211,7 +205,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .addSnapshotListener { snapshot, _ ->
                 val globalAdFreeMode = snapshot?.getBoolean("adFreeModeGlobal") == true
                 _uiState.update { state ->
-                    state.copy(isAdFreeMode = globalAdFreeMode)
+                    state.copy(isAdFreeMode = globalAdFreeMode, isPolicyLoaded = true)
                 }
             }
     }

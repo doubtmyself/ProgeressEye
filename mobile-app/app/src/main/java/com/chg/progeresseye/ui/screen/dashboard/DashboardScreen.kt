@@ -872,7 +872,6 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
 // ═════════════════════════════════════════════════════════
 
 @Composable
-@Composable
 private fun PcControlRow(
     isOnline: Boolean,
     isScreenshotLoading: Boolean,
