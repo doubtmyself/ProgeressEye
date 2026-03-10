@@ -17,7 +17,7 @@
 |--------|------|------|------|
 | ✅ 완료 | sleep/shutdown targetDeviceId 필수 검증 | PC Agent | 완료 |
 | 🔒 수정 불가 | OAuth 클라이언트 시크릿 소스코드 노출 | PC Agent | Google 정책상 허용 / Python 데스크탑 SDK 부재 / PKCE·난독화 모두 근본 해결 불가 |
-| ✅ 완료 | Firebase 토큰을 URL 파라미터로 전송 | PC Agent | Authorization 헤더로 변경 완료 |
+| 🔒 수정 불가 | Firebase 토큰을 URL 파라미터로 전송 | PC Agent | Firebase RTDB ID 토큰은 `?auth=` 쿼리 파라미터 전용 — `Authorization: Bearer`는 서비스 계정 전용 |
 | ✅ 완료 | 스크린샷 URL 화이트리스트 검증 없음 | Android | Firebase Storage 도메인 검증 완료 |
 | ✅ 완료 | MD5 → SHA-256 (스크린샷 캐시 해시) | PC Agent | 완료 |
 | ✅ 안전 | subprocess shell=False (명령 주입 없음) | PC Agent | 완료 |

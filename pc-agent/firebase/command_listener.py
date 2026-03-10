@@ -93,13 +93,13 @@ class CommandListener:
             headers = {
                 "Accept": "text/event-stream",
                 "Cache-Control": "no-cache",
-                "Authorization": f"Bearer {token}",
             }
 
             try:
                 with requests.get(
                     url,
                     headers=headers,
+                    params={"auth": token},
                     stream=True,
                     timeout=(10, 30),
                 ) as response:

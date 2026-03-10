@@ -87,14 +87,15 @@
 
 ## 3. 네트워크
 
-### 3-1. Firebase 토큰 Authorization 헤더로 전환 ✅ 완료
+### 3-1. Firebase 토큰 전송 방식 🔒 수정 불가 (설계 제약)
 - **파일:** `pc-agent/firebase/realtime_db.py`, `pc-agent/firebase/command_listener.py`
-- **내용:** Firebase ID Token을 `Authorization: Bearer` 헤더로 전송
+- **내용:** Firebase ID Token을 `?auth=<token>` 쿼리 파라미터로 전송
   ```python
-  headers = {"Authorization": f"Bearer {token}"}
+  params = {"auth": token}
   ```
-- **위험도:** 없음 — 토큰이 URL에 노출되지 않음
-- **현재 상태:** 완료
+- **수정 불가 사유:** Firebase RTDB REST API에서 `Authorization: Bearer`는 서버 서비스 계정 액세스 토큰 전용. Firebase ID 토큰은 `?auth=` 쿼리 파라미터로만 인증됨 (헤더 방식 사용 시 401)
+- **실질 위험도:** 낮음 — 모든 통신은 HTTPS이므로 전송 중 토큰 노출 없음. Firebase ID 토큰 자체도 만료 시간 있음
+- **현재 상태:** 수정 불가 / 허용됨
 
 ### 3-2. SSL 검증 ✅ 안전
 - **파일:** `pc-agent/firebase/realtime_db.py`, `pc-agent/firebase/command_listener.py`

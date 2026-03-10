@@ -12,7 +12,7 @@
 | 바 탐지 | opencv-python-headless | OpenCV 4전략 기반 진행바 자동 탐지 |
 | OCR 감지 | RapidOCR (ONNX Runtime) | 숫자가 보이는 진행바에서 % 수치 직접 인식. 초기화 실패 시 PaddleOCR 호환 모드 자동 전환 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
-| Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`Authorization: Bearer {idToken}` 헤더 방식), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
+| Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`?auth={idToken}` 쿼리 파라미터), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
 | 하드웨어 샘플러 | Windows PDH (% Processor Utility) + GetSystemTimes + psutil + nvidia-ml-py | CPU(주파수 보정)/GPU/RAM 수집, 이동평균 산출 |
 | 패키징 | Nuitka (standalone, C 네이티브 컴파일) + MSIX | 단일 .exe 생성, Microsoft Store 배포 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
