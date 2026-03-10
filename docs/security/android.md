@@ -8,7 +8,7 @@
 
 | 항목 | 상태 |
 |------|------|
-| 스크린샷 URL 검증 없이 Coil로 로딩 | ⚠️ 주의 |
+| 스크린샷 URL Firebase Storage 도메인 검증 | ✅ 완료 |
 | R8/ProGuard 난독화 | ✅ 안전 |
 | Timber 로그 (릴리즈 비활성화) | ✅ 안전 |
 | AndroidManifest exported 컴포넌트 | ✅ 안전 |
@@ -41,25 +41,16 @@
 
 ## 2. 네트워크 / 데이터 로딩
 
-### 2-1. 스크린샷 URL 검증 없이 Coil 로딩 ⚠️ 주의
-- **파일:** `ui/screen/dashboard/DashboardScreen.kt:456-467`
-- **내용:** RTDB에서 가져온 `screenshotUrl`을 검증 없이 Coil에 전달
+### 2-1. 스크린샷 URL Firebase Storage 도메인 검증 ✅ 완료
+- **파일:** `ui/screen/dashboard/DashboardViewModel.kt`
+- **조치 내용:** RTDB에서 가져온 URL을 Firebase Storage 도메인만 허용하도록 검증 후 Coil에 전달
   ```kotlin
-  SubcomposeAsyncImage(
-      model = ImageRequest.Builder(LocalContext.current)
-          .data(url)  // RTDB 값 그대로 사용
-          .build(),
-  )
-  ```
-- **위험도:** 낮음~중간 — Firebase Rules로 URL 형식이 강제되지 않으면 `file://`, `javascript:` 등 악성 URL 주입 가능
-- **실제 위험:** 같은 계정에서만 devices 경로에 쓸 수 있으므로 외부 공격자는 불가. 단, PC 에이전트가 탈취될 경우 악성 URL 주입 가능
-- **조치:** ViewModel에서 URL 화이트리스트 검증 추가 권장
-  ```kotlin
-  val safeUrl = url?.takeIf {
+  val screenshotUrl = rawScreenshotUrl?.takeIf {
+      it.startsWith("https://firebasestorage.googleapis.com/") ||
       it.startsWith("https://progresseye-49244.firebasestorage.app/")
   }
   ```
-- **현재 상태:** 미조치
+- **현재 상태:** 완료
 
 ---
 
@@ -114,8 +105,8 @@
 
 ---
 
-## 조치 우선순위
+## 조치 현황
 
-| 우선순위 | 항목 | 난이도 |
-|---------|------|--------|
-| 중간 | 2-1. 스크린샷 URL 화이트리스트 검증 | 낮음 (10분) |
+| 항목 | 상태 |
+|------|------|
+| 2-1. 스크린샷 URL 화이트리스트 검증 | ✅ 완료 |
