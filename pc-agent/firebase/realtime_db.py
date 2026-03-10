@@ -67,7 +67,7 @@ class RealtimeDB:
             response = self._session.request(
                 method,
                 url,
-                params={"auth": token},
+                headers={"Authorization": f"Bearer {token}"},
                 json=data,
                 timeout=10,
             )

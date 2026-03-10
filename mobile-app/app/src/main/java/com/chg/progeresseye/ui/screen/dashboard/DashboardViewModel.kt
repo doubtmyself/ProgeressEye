@@ -478,7 +478,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // Screenshot latest
         val screenshotLatest = snapshot.child("screenshots").child("latest")
-        val screenshotUrl = screenshotLatest.child("url").getValue(String::class.java)
+        val rawScreenshotUrl = screenshotLatest.child("url").getValue(String::class.java)
+        val screenshotUrl = rawScreenshotUrl?.takeIf {
+            it.startsWith("https://firebasestorage.googleapis.com/") ||
+            it.startsWith("https://progresseye-49244.firebasestorage.app/")
+        }
         val screenshotTs = screenshotLatest.child("ts").getValue(Long::class.java) ?: 0L
 
         // Hardware stats

@@ -90,16 +90,15 @@ class CommandListener:
                 continue
 
             url = f"{self._db_url}/users/{self._uid}/commands.json"
-            params = {"auth": token}
             headers = {
                 "Accept": "text/event-stream",
                 "Cache-Control": "no-cache",
+                "Authorization": f"Bearer {token}",
             }
 
             try:
                 with requests.get(
                     url,
-                    params=params,
                     headers=headers,
                     stream=True,
                     timeout=(10, 30),

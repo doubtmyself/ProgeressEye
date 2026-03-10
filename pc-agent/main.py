@@ -873,7 +873,7 @@ class ProgressEyeApp:
             cmd_type = cmd.get("type")
             if not isinstance(cmd_type, str):
                 continue
-            # 디바이스 대상 명령 필터링 (forceLogout은 전체 브로드캠스트)
+            # 디바이스 대상 명령 필터링 (forceLogout은 전체 브로드캐스트)
             if cmd_type in ("screenshot", "monitor", "sleep", "shutdown"):
                 cmd_data = cmd.get("data")
                 target = (
@@ -882,7 +882,16 @@ class ProgressEyeApp:
                     else None
                 )
                 my_device = str(self._config.get("auth.device_id", ""))
-                if isinstance(target, str) and target and target != my_device:
+                # sleep/shutdown: targetDeviceId 반드시 일치해야 실행
+                if cmd_type in ("sleep", "shutdown"):
+                    if not isinstance(target, str) or target != my_device:
+                        log.debug(
+                            "[CMD] %s 명령 무시: targetDeviceId 불일치 (target=%s)",
+                            cmd_type,
+                            target,
+                        )
+                        continue
+                elif isinstance(target, str) and target and target != my_device:
                     log.debug(
                         "[CMD] 다른 기기 대상 명령 무시: type=%s target=%s",
                         cmd_type,
