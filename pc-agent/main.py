@@ -1023,7 +1023,7 @@ class ProgressEyeApp:
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=70)
             jpeg_bytes = buf.getvalue()
-            jpeg_hash = hashlib.md5(jpeg_bytes).hexdigest()
+            jpeg_hash = hashlib.sha256(jpeg_bytes).hexdigest()
 
             with self._screenshot_cache_lock:
                 cached = self._screenshot_cache.get(device_id)
