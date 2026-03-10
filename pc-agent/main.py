@@ -2552,6 +2552,8 @@ class ProgressEyeApp:
                         similarity,
                     )
                     self._alerted_regions[region_id] = last_progress
+                    self._last_firebase_state[region_id] = {"p": round(last_progress, 1), "s": "c"}
+                    self._pending_firebase_batch[region_id] = self._last_firebase_state[region_id]
                     complete_msg = t("image_changed_completed").format(
                         label=label, progress=last_progress
                     )
@@ -2571,9 +2573,7 @@ class ProgressEyeApp:
                     )
                     self._scheduler.remove_region(region_id)
                     self._action_queue.put(
-                        lambda _id=region_id: self._main_window.set_region_enabled(
-                            _id, False
-                        )
+                        lambda _id=region_id: self._main_window.set_region_task_status(_id, "completed")
                     )
                     if self._scheduler.region_count == 0:
                         log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
@@ -2599,21 +2599,17 @@ class ProgressEyeApp:
                         self._device_manager.push_alert(
                             "image_change", "ProgressEye", warn_msg
                         )
-                    # UI에 경고 표시 + 체크 해제
+                    # UI에 작업 중지 상태 표시, Firebase에 stopped 상태 기록
+                    _stopped_p = round(last_progress, 1)
+                    self._last_firebase_state[region_id] = {"p": _stopped_p, "s": "s"}
+                    self._pending_firebase_batch[region_id] = {"p": _stopped_p, "s": "s"}
                     self._action_queue.put(
-                        lambda _id=region_id, _m=stopped_msg: (
-                            self._main_window.set_region_warning(_id, _m)
-                        )
+                        lambda _id=region_id: self._main_window.set_region_task_status(_id, "stopped")
                     )
                     self._action_queue.put(
                         lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
                     )
                     self._scheduler.remove_region(region_id)
-                    self._action_queue.put(
-                        lambda _id=region_id: self._main_window.set_region_enabled(
-                            _id, False
-                        )
-                    )
                     # 모든 영역이 제외되면 모니터링 자동 정지
                     if self._scheduler.region_count == 0:
                         log.info("모든 영역이 모니터링에서 제외됨 — 자동 정지")
@@ -2825,9 +2821,7 @@ class ProgressEyeApp:
                 )
                 self._scheduler.remove_region(region_id)
                 self._action_queue.put(
-                    lambda _id=region_id: self._main_window.set_region_enabled(
-                        _id, False
-                    )
+                    lambda _id=region_id: self._main_window.set_region_task_status(_id, "completed")
                 )
                 if self._scheduler.region_count == 0:
                     log.info("모든 영역 완료 — 자동 정지")

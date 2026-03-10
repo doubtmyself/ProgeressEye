@@ -165,6 +165,15 @@ class RegionCard(QFrame):
         header_row.addStretch()
         layout.addLayout(header_row)
 
+        # ── 작업 상태 라벨 (모니터링 중에만 표시) ──
+        self._task_status_label = QLabel()
+        self._task_status_label.setStyleSheet(
+            "font-size: 12px; font-weight: bold;"
+            " background: transparent; border: none; padding: 2px 0;"
+        )
+        self._task_status_label.hide()
+        layout.addWidget(self._task_status_label)
+
         # ── Progress bar (percentage shown ON bar, no separate label) ──
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 1000)
@@ -345,12 +354,20 @@ class RegionCard(QFrame):
         layout.addLayout(btn_row)
 
     def set_buttons_visible(self, visible: bool) -> None:
-        """카드 버튼(작업 수정/영역보기/삭제/테스트)의 표시 여부를 설정한다."""
+        """카드 버튼(작업 수정/영역보기/삭제/테스트)의 표시 여부를 설정한다.
+
+        visible=False (모니터링 중): 수정/삭제 버튼·체크박스 숨김, 작업 상태 라벨 표시.
+        visible=True (모니터링 정지): 수정/삭제 버튼·체크박스 표시, 작업 상태 라벨 숨김.
+        """
         self._btn_edit.setVisible(visible)
         self._btn_view.setVisible(visible)
         self._btn_delete.setVisible(visible)
         self._btn_test_stall.setVisible(visible and self._show_test_buttons)
         self._btn_test_complete.setVisible(visible and self._show_test_buttons)
+        # 모니터링 중: 체크박스 숨기고 작업 상태 라벨 표시
+        self._checkbox.setVisible(visible)
+        self._type_label.setVisible(visible)
+        self._task_status_label.setVisible(not visible)
 
     def _on_check_changed(self, state: int) -> None:
         """체크박스 상태 변경 시 시그널을 발생시킨다."""
@@ -387,6 +404,31 @@ class RegionCard(QFrame):
         """체크박스 상태를 설정한다."""
         self._checkbox.setChecked(checked)
 
+    def set_task_status(self, status: str) -> None:
+        """모니터링 중 작업 상태를 설정한다.
+
+        Args:
+            status: "running" | "completed" | "stopped"
+        """
+        if status == "running":
+            self._task_status_label.setText("● 진행 중")
+            self._task_status_label.setStyleSheet(
+                "color: #4ade80; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+        elif status == "completed":
+            self._task_status_label.setText("✓ 작업 완료")
+            self._task_status_label.setStyleSheet(
+                "color: #4ade80; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+        elif status == "stopped":
+            self._task_status_label.setText("⚠ 작업 중지")
+            self._task_status_label.setStyleSheet(
+                "color: #f59e0b; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+
     def refresh_texts(self) -> None:
         """언어 변경 시 카드 텍스트를 갱신한다."""
         self._btn_edit.setText(t("btn_edit"))
@@ -416,7 +458,6 @@ class RegionCard(QFrame):
             f"color: #ef4444; font-size: 11px;"
             f"background: transparent; border: none; font-weight: bold;"
         )
-        self._checkbox.setChecked(False)
 
 
 class MainWindow(QMainWindow):
@@ -798,6 +839,12 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_checked(enabled)
 
+    def set_region_task_status(self, region_id: str, status: str) -> None:
+        """모니터링 중 카드의 작업 상태를 설정한다 (running/completed/stopped)."""
+        card = self._region_cards.get(region_id)
+        if card is not None:
+            card.set_task_status(status)
+
     def set_monitoring_state(self, active: bool, interval: int = 0) -> None:
         """모니터링 상태 UI를 변경한다."""
         self._monitoring = active
@@ -858,6 +905,8 @@ class MainWindow(QMainWindow):
         self._btn_add_ocr.setVisible(not active)
         for card in self._region_cards.values():
             card.set_buttons_visible(not active)
+            if active:
+                card.set_task_status("running")
 
     def update_hw_stats(self, stats: dict) -> None:
         """CPU/GPU/RAM 사용량 표시를 갱신한다."""
