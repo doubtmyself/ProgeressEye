@@ -75,7 +75,7 @@ from core.bar_finder import BarFinder, BarRegion  # pyright: ignore[reportImplic
 from core.capturer import ScreenCapturer  # pyright: ignore[reportImplicitRelativeImport]
 from core.freeze_detector import FreezeDetector  # pyright: ignore[reportImplicitRelativeImport]
 from core.scheduler import CaptureScheduler  # pyright: ignore[reportImplicitRelativeImport]
-from core.system_monitor import collect_stats, warmup_cpu_percent, stop_sampler  # pyright: ignore[reportImplicitRelativeImport]
+from core.system_monitor import collect_stats, warmup_cpu_percent, start_sampler, stop_sampler  # pyright: ignore[reportImplicitRelativeImport]
 from ui.area_selector import AreaSelector  # pyright: ignore[reportImplicitRelativeImport]
 from ui.color_picker import BarPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
 from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRelativeImport]
@@ -236,6 +236,8 @@ class ProgressEyeApp:
         self._hw_ui_timer = QTimer()
         self._hw_ui_timer.timeout.connect(self._update_hw_ui)
         self._hw_ui_timer.start(10_000)
+        # 앱 시작 5초 후 HW 샘플러 시작 (로그인 여부와 무관하게 항상 실행)
+        QTimer.singleShot(5_000, start_sampler)
 
         # 시그널 연결
         self._main_window.select_area_requested.connect(self._start_area_selection)

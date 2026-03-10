@@ -29,8 +29,8 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 _SAMPLE_SIZE = 5
 _IS_WINDOWS = sys.platform == "win32"
-_CPU_WARMUP_SKIP_SAMPLES = 2
-_CPU_MIN_REPORT_SAMPLES = _SAMPLE_SIZE
+_CPU_WARMUP_SKIP_SAMPLES = 1
+_CPU_MIN_REPORT_SAMPLES = 2
 
 # ── 샘플 저장소 (모듈 레벨 싱글턴) ──
 _cpu_samples: deque[float] = deque(maxlen=_SAMPLE_SIZE)
