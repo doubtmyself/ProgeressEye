@@ -24,7 +24,7 @@ Firebase 데이터 구조, Cloud Functions, 계정 정책 관련 문서 모음�
   - `onWithdrawnUserChanged`: withdrawnUsers 문서 변화 감지 후 tombstone 정리 Task 예약
   - `processWithdrawalCleanup`: Cloud Tasks로 유예 만료 사용자 정리
   - `processWithdrawnTombstoneCleanup`: Cloud Tasks로 tombstone 만료 정리
-  - `backfillWithdrawnTombstoneCleanup`: 10분 주기 누락 tombstone 재수집/Task 예약
+  - `backfillWithdrawnTombstoneCleanup`: 24시간 주기 누락 tombstone 재수집/Task 예약
 
 ## 3) 계정/탈퇴 정책
 - 정책 명시: `docs/privacy-policy-ko.md`, `docs/privacy-policy-en.md`

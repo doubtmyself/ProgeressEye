@@ -671,7 +671,7 @@ exports.processWithdrawnTombstoneCleanup = onTaskDispatched(
  */
 exports.backfillWithdrawnTombstoneCleanup = onSchedule(
   {
-    schedule: "every 10 minutes",
+    schedule: "every 24 hours",
     region: CLEANUP_REGION,
     timeZone: "Asia/Seoul",
     maxInstances: 1,

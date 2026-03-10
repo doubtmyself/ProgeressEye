@@ -33,7 +33,7 @@
 - `processWithdrawnTombstoneCleanup`
   - `rejoinAllowedAt` 도달 시 `withdrawnUsers/{uid}` + `withdrawnEmails/{emailKey}` tombstone 삭제
 - `backfillWithdrawnTombstoneCleanup`
-  - 10분 주기 스케줄러
+  - 24시간 주기 스케줄러
   - `rejoinAllowedAt <= now` 인 만료 tombstone을 재수집해 cleanup task 재예약
 
 ## 탈퇴 정리 아키텍처
