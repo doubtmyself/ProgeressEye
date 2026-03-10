@@ -87,7 +87,7 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
 
 _HEARTBEAT_INTERVAL_MS = 60_000
-_STATS_SYNC_INTERVAL_MS = 60_000
+_STATS_SYNC_INTERVAL_MS = 30_000
 _SAMPLER_START_DELAY_MS = 20_000
 
 
@@ -185,6 +185,9 @@ class ProgressEyeApp:
             str, dict
         ] = {}  # region_id -> {p, s} 마지막 전송값
         self._last_stats_synced_at_ms: int = 0
+        self._heartbeat_thread: threading.Thread | None = None
+        # (region_id, bar_bbox) -> 64x64 flat gray float32 배열 (유사도 비교 template 캐시)
+        self._template_gray_cache: dict[tuple, "np.ndarray"] = {}
         self._completion_first_reached: dict[
             str, float
         ] = {}  # region_id -> threshold 최초 도달 timestamp (time.time())
@@ -222,9 +225,10 @@ class ProgressEyeApp:
         # 백그라운드 분석 중인 영역 ID 집합 (중복 실행 방지)
         self._capturing_regions: set[str] = set()
         self._capturing_lock = threading.Lock()
-        # 영역별 병렬 분석용 스레드 풀 (OCR 등 CPU/IO 병목을 영역 간 병렬화)
-        # max_workers=None → Python 기본값: min(32, os.cpu_count() + 4)
-        self._analysis_executor = ThreadPoolExecutor(max_workers=None, thread_name_prefix="pe-analysis")
+        # 영역별 병렬 분석용 스레드 풀 (OCR/이미지 처리는 CPU 바운드)
+        # CPU 코어 수만큼만 병렬 실행 — 초과 시 컨텍스트 스위칭 낭비
+        _analysis_workers = max(1, os.cpu_count() or 1)
+        self._analysis_executor = ThreadPoolExecutor(max_workers=_analysis_workers, thread_name_prefix="pe-analysis")
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
 
@@ -786,12 +790,16 @@ class ProgressEyeApp:
         dm = self._device_manager
         if not dm:
             return
-        threading.Thread(
+        if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            return  # 이전 하트비트가 아직 실행 중이면 스킵
+        t = threading.Thread(
             target=self._heartbeat_worker,
             args=(dm,),
             daemon=True,
             name="heartbeat",
-        ).start()
+        )
+        self._heartbeat_thread = t
+        t.start()
 
     def _heartbeat_worker(self, dm: DeviceManager) -> None:
         """워커 스레드: 하트비트 + stats RTDB 전송."""
@@ -2618,6 +2626,7 @@ class ProgressEyeApp:
                     image,
                     bar_bbox=bar_bbox,
                     similarity_mode=region_type,
+                    cache_key=(region_id, bar_bbox),
                 )
             except Exception as exc:
                 log.warning("[%s] 이미지 유사도 계산 실패: %s", region_id, exc)
@@ -3154,6 +3163,10 @@ class ProgressEyeApp:
     def _save_template(self, region_id: str, image: PILImage.Image) -> None:
         """템플릿 이미지를 메모리 캐시 + 로컬 파일에 저장한다."""
         self._template_images[region_id] = image.copy()
+        # 템플릿 교체 시 gray 캐시 무효화 (다음 비교 시 재계산)
+        for k in list(self._template_gray_cache):
+            if k[0] == region_id:
+                del self._template_gray_cache[k]
         try:
             path = self._template_dir / f"{region_id}.png"
             image.save(str(path), "PNG")
@@ -3180,6 +3193,9 @@ class ProgressEyeApp:
     def _delete_template(self, region_id: str) -> None:
         """템플릿 이미지를 메모리 캐시 + 로컬 파일에서 삭제한다."""
         self._template_images.pop(region_id, None)
+        for k in list(self._template_gray_cache):
+            if k[0] == region_id:
+                del self._template_gray_cache[k]
         path = self._template_dir / f"{region_id}.png"
         try:
             if path.exists():
@@ -3194,44 +3210,57 @@ class ProgressEyeApp:
         img2: PILImage.Image,
         bar_bbox: tuple[int, int, int, int] | None = None,
         similarity_mode: str | None = None,
+        cache_key: tuple | None = None,
     ) -> float:
         """두 이미지의 유사도를 반환한다 (0.0~1.0).
 
         bar_bbox가 주어지면 해당 영역을 동일 상수로 마스킹하여
         게이지 변화가 유사도에 영향을 주지 않도록 한다.
         64x64 grayscale 다운스케일 후 numpy 상관계수로 비교.
+        cache_key가 주어지면 img1(template) 쪽 gray 배열을 캐시에서 재사용한다.
         """
         import cv2
         import numpy as np
 
-        # 진행률 바/OCR의 동적 영역을 마스킹해 오탐을 줄인다.
-        if bar_bbox is not None:
-            left, top, right, bottom = bar_bbox
-            img1 = img1.copy()
-            img2 = img2.copy()
-            from PIL import ImageDraw
-
-            width, height = img1.size
-            left = max(0, min(width, int(left)))
-            top = max(0, min(height, int(top)))
-            right = max(0, min(width, int(right)))
-            bottom = max(0, min(height, int(bottom)))
-
-            bar_w = right - left
-            bar_h = bottom - top
-            if bar_w > 0 and bar_h > 0:
-                # bar/ocr 모두: 동적 영역(게이지 바 전체 또는 숫자)을 회색으로 마스킹하고
-                # 주변 UI를 비교해 실제 화면 변경 여부를 판단한다.
-                draw1 = ImageDraw.Draw(img1)
-                draw2 = ImageDraw.Draw(img2)
-                draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
-                draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
-
         size = (64, 64)
-        arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)
+
+        # img1(template) — 캐시 히트 시 resize/cvtColor 생략
+        flat1: np.ndarray | None = self._template_gray_cache.get(cache_key) if cache_key is not None else None
+        if flat1 is None:
+            # 진행률 바/OCR의 동적 영역을 마스킹해 오탐을 줄인다.
+            if bar_bbox is not None:
+                from PIL import ImageDraw
+                left, top, right, bottom = bar_bbox
+                width, height = img1.size
+                left = max(0, min(width, int(left)))
+                top = max(0, min(height, int(top)))
+                right = max(0, min(width, int(right)))
+                bottom = max(0, min(height, int(bottom)))
+                if right - left > 0 and bottom - top > 0:
+                    img1 = img1.copy()
+                    draw1 = ImageDraw.Draw(img1)
+                    draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
+            arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)
+            flat1 = arr1.astype(np.float32).flatten()
+            if cache_key is not None:
+                self._template_gray_cache[cache_key] = flat1
+
+        # img2(현재 캡처) — 항상 신선하게 계산
+        if bar_bbox is not None:
+            from PIL import ImageDraw
+            left, top, right, bottom = bar_bbox
+            width2, height2 = img2.size
+            left = max(0, min(width2, int(left)))
+            top = max(0, min(height2, int(top)))
+            right = max(0, min(width2, int(right)))
+            bottom = max(0, min(height2, int(bottom)))
+            if right - left > 0 and bottom - top > 0:
+                img2 = img2.copy()
+                draw2 = ImageDraw.Draw(img2)
+                draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
         arr2 = cv2.cvtColor(np.array(img2.resize(size)), cv2.COLOR_RGB2GRAY)
-        flat1 = arr1.astype(np.float32).flatten()
         flat2 = arr2.astype(np.float32).flatten()
+
         # 표준편차가 0이면 동일 이미지 (단색)
         if np.std(flat1) < 1e-6 and np.std(flat2) < 1e-6:
             return 1.0
@@ -3239,9 +3268,7 @@ class ProgressEyeApp:
         if np.std(flat1) < 1e-6 or np.std(flat2) < 1e-6:
             return 0.0
         corr = np.corrcoef(flat1, flat2)[0, 1]
-        # NaN 방어 (corrcoef가 NaN 반환 시 0.0 처리)
         import math
-
         if math.isnan(corr):
             return 0.0
         return max(0.0, float(corr))
