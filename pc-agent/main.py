@@ -222,7 +222,8 @@ class ProgressEyeApp:
         self._capturing_regions: set[str] = set()
         self._capturing_lock = threading.Lock()
         # 영역별 병렬 분석용 스레드 풀 (OCR 등 CPU/IO 병목을 영역 간 병렬화)
-        self._analysis_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pe-analysis")
+        # max_workers=None → Python 기본값: min(32, os.cpu_count() + 4)
+        self._analysis_executor = ThreadPoolExecutor(max_workers=None, thread_name_prefix="pe-analysis")
         self._poll_timer.timeout.connect(self._process_queued_actions)
         self._poll_timer.start(50)
 
