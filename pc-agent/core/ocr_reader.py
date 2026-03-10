@@ -209,28 +209,12 @@ class OcrReader:
         return normalized
 
     @staticmethod
-    def _build_variants(image_bgr: Any) -> list[tuple[Any, float]]:
-        variants: list[tuple[Any, float]] = [(image_bgr, 1.0)]
-
-        h, w = image_bgr.shape[:2]
-        if min(h, w) < 220:
-            upscaled = cv2.resize(
-                image_bgr, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
-            )
-            variants.append((upscaled, 2.0))
-
+    def _make_threshold_variant(image_bgr: Any) -> tuple[Any, float]:
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
         thresholded = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            9,
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 9
         )
-        variants.append((cv2.cvtColor(thresholded, cv2.COLOR_GRAY2BGR), 1.0))
-
-        return variants
+        return (cv2.cvtColor(thresholded, cv2.COLOR_GRAY2BGR), 1.0)
 
     def find_percentages(
         self,
@@ -249,40 +233,47 @@ class OcrReader:
         # OCR engines here expect OpenCV/BGR ndarray.
         bgr_np = img_np[:, :, ::-1]
 
-        results: list[OcrResult] = []
-        for variant, scale in self._build_variants(bgr_np):
-            lines = self._extract_raw_lines(variant)
-            if not lines:
-                continue
+        # Build primary variants (original + upscale if small).
+        # Threshold variant is generated lazily only if primaries yield no results.
+        h, w = bgr_np.shape[:2]
+        primary_variants: list[tuple[Any, float]] = [(bgr_np, 1.0)]
+        if min(h, w) < 220:
+            upscaled = cv2.resize(
+                bgr_np, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC
+            )
+            primary_variants.append((upscaled, 2.0))
 
+        def _process_variant(variant: Any, scale: float) -> list[OcrResult]:
+            lines = self._extract_raw_lines(variant)
+            out: list[OcrResult] = []
             for points, text, raw_conf in lines:
                 try:
                     x_vals = [int(float(p[0]) / scale) for p in points]
                     y_vals = [int(float(p[1]) / scale) for p in points]
                 except Exception:
                     continue
-
                 conf = raw_conf * 100.0 if raw_conf <= 1.0 else raw_conf
                 x = max(0, min(x_vals))
                 y = max(0, min(y_vals))
-                w = max(1, max(x_vals) - x)
-                h = max(1, max(y_vals) - y)
-
+                bw = max(1, max(x_vals) - x)
+                bh = max(1, max(y_vals) - y)
                 extracted = self._extract_progress_values(text)
-                if not extracted:
-                    continue
-
                 for value, has_percent in extracted:
                     if min_value <= value <= max_value:
-                        results.append(
-                            OcrResult(
-                                text=text,
-                                confidence=conf,
-                                bbox=(x, y, w, h),
-                                progress=value,
-                                has_percent_sign=has_percent,
-                            )
-                        )
+                        out.append(OcrResult(
+                            text=text, confidence=conf, bbox=(x, y, bw, bh),
+                            progress=value, has_percent_sign=has_percent,
+                        ))
+            return out
+
+        results: list[OcrResult] = []
+        for variant, scale in primary_variants:
+            results.extend(_process_variant(variant, scale))
+
+        # Fallback: threshold variant only when primaries found nothing
+        if not results:
+            thresh_var, thresh_scale = self._make_threshold_variant(bgr_np)
+            results.extend(_process_variant(thresh_var, thresh_scale))
 
         results = self._dedupe_results(results)
         log.info("OCR detection complete: %d numeric candidates", len(results))
