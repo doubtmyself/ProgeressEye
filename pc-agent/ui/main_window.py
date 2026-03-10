@@ -408,7 +408,7 @@ class RegionCard(QFrame):
         """모니터링 중 작업 상태를 설정한다.
 
         Args:
-            status: "running" | "completed" | "stopped"
+            status: "running" | "completed" | "stopped" | "frozen" | "idle"
         """
         if status == "running":
             self._task_status_label.setText("● 진행 중")
@@ -426,6 +426,18 @@ class RegionCard(QFrame):
             self._task_status_label.setText("⚠ 작업 중지")
             self._task_status_label.setStyleSheet(
                 "color: #f59e0b; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+        elif status == "frozen":
+            self._task_status_label.setText("⏸ 변화 없음")
+            self._task_status_label.setStyleSheet(
+                "color: #f59e0b; font-size: 12px; font-weight: bold;"
+                " background: transparent; border: none;"
+            )
+        elif status == "idle":
+            self._task_status_label.setText("— 대기 중")
+            self._task_status_label.setStyleSheet(
+                "color: #6b7280; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"
             )
 

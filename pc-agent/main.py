@@ -2749,6 +2749,9 @@ class ProgressEyeApp:
         )
         if prev_frozen and not freeze_state.is_frozen:
             log.info("[%s] 프리징 해제 — 진행률 변화 감지: %.1f%%", region_id, progress)
+            self._action_queue.put(
+                lambda _id=region_id: self._main_window.set_region_task_status(_id, "running")
+            )
 
         # Firebase 배치 수집 (변화 있을 때만)
         status_code = (
@@ -2865,7 +2868,10 @@ class ProgressEyeApp:
                 freeze_state.frozen_minutes,
             )
             if not prev_frozen:
-                # 프리징 시작 시점 — 트레이 알림 + RTDB 알림
+                # 프리징 시작 시점 — 카드 상태 + 트레이 알림 + RTDB 알림
+                self._action_queue.put(
+                    lambda _id=region_id: self._main_window.set_region_task_status(_id, "frozen")
+                )
                 stall_msg = t("stall_detected").format(
                     label=label, minutes=freeze_state.frozen_minutes
                 )
