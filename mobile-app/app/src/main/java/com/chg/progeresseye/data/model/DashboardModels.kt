@@ -11,7 +11,7 @@ data class TaskData(
     val label: String,
     /** Progress fraction 0f..1f (RTDB stores 0-100, converted on parse). */
     val progress: Float,
-    /** Status code: "r" = running, "f" = frozen/stalled, "c" = completed, "i" = idle (unchecked). */
+    /** Status code: "r" = running, "f" = frozen/stalled, "c" = completed, "s" = stopped, "i" = idle (unchecked). */
     val status: String,
 )
 
@@ -58,5 +58,6 @@ object TaskStatus {
     const val RUNNING = "r"
     const val FROZEN = "f"
     const val COMPLETED = "c"
+    const val STOPPED = "s"
     const val IDLE = "i"
 }

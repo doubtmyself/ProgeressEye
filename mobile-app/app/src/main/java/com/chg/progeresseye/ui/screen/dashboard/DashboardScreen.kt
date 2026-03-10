@@ -713,6 +713,7 @@ private fun TaskItem(task: TaskData, isActive: Boolean) {
                     val color = when (task.status) {
                         TaskStatus.RUNNING -> Primary
                         TaskStatus.FROZEN -> Amber500
+                        TaskStatus.STOPPED -> Slate400
                         else -> Slate400
                     }
                     Text(
@@ -756,6 +757,21 @@ private fun TaskItem(task: TaskData, isActive: Boolean) {
                 )
             }
 
+            TaskStatus.STOPPED -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Outlined.Warning, null, tint = Slate400, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = stringResource(R.string.dashboard_stopped),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = Slate400,
+                    )
+                }
+            }
+
             else -> {} // Running — no extra subtitle needed
         }
     }
@@ -771,6 +787,7 @@ private fun StatusBadge(status: String) {
         TaskStatus.RUNNING -> Triple(Primary.copy(alpha = 0.15f), Blue300, stringResource(R.string.dashboard_task_running))
         TaskStatus.COMPLETED -> Triple(StatusComplete.copy(alpha = 0.15f), Emerald300, stringResource(R.string.dashboard_task_done))
         TaskStatus.FROZEN -> Triple(StatusStalled.copy(alpha = 0.15f), Amber300, stringResource(R.string.dashboard_task_stalled))
+        TaskStatus.STOPPED -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_stopped))
         TaskStatus.IDLE -> Triple(Slate400.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_idle))
         else -> Triple(StatusOffline.copy(alpha = 0.15f), Slate400, stringResource(R.string.dashboard_task_unknown))
     }
@@ -802,6 +819,7 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
                 TaskStatus.RUNNING -> Brush.horizontalGradient(listOf(Primary, ProgressGradientEnd))
                 TaskStatus.COMPLETED -> Brush.horizontalGradient(listOf(StatusComplete, StatusComplete))
                 TaskStatus.FROZEN -> Brush.horizontalGradient(listOf(Amber500, Amber500))
+                TaskStatus.STOPPED -> Brush.horizontalGradient(listOf(Slate400, Slate400))
                 else -> Brush.horizontalGradient(listOf(Slate400, Slate400))
             }
             drawRoundRect(

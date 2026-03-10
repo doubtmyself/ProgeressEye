@@ -31,8 +31,10 @@
     <string name="dashboard_task_stalled">Stalled</string>
     <string name="dashboard_task_unknown">Unknown</string>
     <string name="dashboard_task_idle">Idle</string>
+    <string name="dashboard_task_stopped">Stopped</string>
     <string name="dashboard_frozen_warning">No change detected</string>
     <string name="dashboard_completed">Completed</string>
+    <string name="dashboard_stopped">Monitoring stopped (screen changed)</string>
     <string name="dashboard_screenshot">Screenshot</string>
     <string name="dashboard_capturing">Capturing…</string>
     <string name="dashboard_pc_offline">PC Offline</string>
