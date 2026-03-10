@@ -67,12 +67,11 @@ ProgressEye 모바일 앱은 Android 기반으로, **Google 로그인**으로 �
 | 설명 | 모바일에서 PC에 명령 전송 |
 | 상세 | - **모니터링 시작/정지**: `users/{uid}/commands/monitor` 경로에 `{action: "start" \| "stop", ts}` 기록 |
 |  | - **스크린샷 요청**: FR-MOB-008 참조 |
+|  | - **절전 모드**: `users/{uid}/commands/sleep` 경로에 `{targetDeviceId, ts}` 기록 |
+|  | - **PC 종료**: `users/{uid}/commands/shutdown` 경로에 `{targetDeviceId, ts}` 기록. 종료 전 확인 AlertDialog 표시 |
 |  | - 명령 경로: `users/{uid}/commands/` (PC Agent가 SSE로 실시간 수신) |
-|  | - **절전 모드**: 절전 모드 전환 (2단계) |
-|  | - 명령 경로: `users/{uid}/commands/` (PC Agent가 SSE로 실시간 수신) |
-|  | - 명령 전송 전 확인 다이얼로그 표시 |
-|  | - 명령 실행 결과 피드백 (성공/실패) |
-| 우선순위 | **필수 (P0)** — 모니터링 제어, 스크린샷은 1단계 / PC 종료, 절전은 2단계 |
+|  | - sleep/shutdown은 targetDeviceId 필수 포함 (PC Agent에서 자기 기기 여부 검증) |
+| 우선순위 | **필수 (P0)** — 모든 명령 구현 완료 |
 
 ### FR-MOB-006: 설정 (Settings)
 

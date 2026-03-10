@@ -14,9 +14,18 @@
 ## 확인 포인트
 
 ### 병렬 분석
-- 영역별 `ThreadPoolExecutor(max_workers=None)` — 기본값은 CPU 코어 수.
+- 영역별 `ThreadPoolExecutor(max_workers=os.cpu_count())` — OCR/이미지 처리는 CPU 바운드이므로 코어 수만큼만 병렬 실행.
 - 각 영역마다 스킵 가드: 동일 영역 분석이 이미 실행 중이면 새 요청을 즉시 드롭 (`_capturing_regions: set[str]` + Lock).
 - UI 업데이트는 `action_queue.put(fn)` 패턴으로 메인 스레드에서 처리.
+
+### 하트비트 / Stats 동기화
+- 하트비트는 60초마다 단일 daemon 스레드로 전송. 이전 스레드가 살아있으면 새 스레드 생성 스킵 (네트워크 지연 시 스레드 누적 방지).
+- HW stats(CPU/GPU/RAM)는 **30초** 간격으로 RTDB에 동기화.
+
+### 이미지 유사도 캐싱
+- 매 캡처 사이클에서 template 이미지의 64×64 grayscale 배열을 `_template_gray_cache[(region_id, bar_bbox)]`에 캐시.
+- 캐시 히트 시 template 쪽 resize/cvtColor 생략 — 현재 캡처(img2)만 신선하게 계산.
+- 템플릿 교체(`_save_template`) 또는 삭제(`_delete_template`) 시 캐시 자동 무효화.
 
 ### 작업 상태 (Task Status)
 - 모니터링 시작 시 모든 영역 상태 → `running` (Firebase `"r"`).

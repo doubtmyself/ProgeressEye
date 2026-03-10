@@ -10,6 +10,8 @@
 ## 명령 경로
 - `users/{uid}/commands/screenshot`
 - `users/{uid}/commands/monitor`
+- `users/{uid}/commands/sleep` — PC 절전 모드 전환 요청
+- `users/{uid}/commands/shutdown` — PC 종료 요청 (모바일에서 확인 다이얼로그 표시 후 전송)
 - `users/{uid}/commands/forceLogout`
 
 ## 관련 문서

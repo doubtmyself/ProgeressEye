@@ -12,7 +12,7 @@
 | 바 탐지 | opencv-python-headless | OpenCV 4전략 기반 진행바 자동 탐지 |
 | OCR 감지 | RapidOCR (ONNX Runtime) | 숫자가 보이는 진행바에서 % 수치 직접 인식. 초기화 실패 시 PaddleOCR 호환 모드 자동 전환 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
-| Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`{DB_URL}/{path}.json?auth={idToken}`), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
+| Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`Authorization: Bearer {idToken}` 헤더 방식), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
 | 하드웨어 샘플러 | Windows PDH (% Processor Utility) + GetSystemTimes + psutil + nvidia-ml-py | CPU(주파수 보정)/GPU/RAM 수집, 이동평균 산출 |
 | 패키징 | Nuitka (standalone, C 네이티브 컴파일) + MSIX | 단일 .exe 생성, Microsoft Store 배포 |
 | 설정 저장 | JSON (AppData) | 영역 좌표, 색상, 사용자 설정 영속화 |
@@ -77,7 +77,7 @@ pc-agent/
   │
   ├─ keyring에 저장된 토큰 있음 ──→ refresh_token으로 Firebase 자동 로그인 (_try_auto_login)
   │                          │
-  │                          ├─ 성공 ──→ Firebase 초기화 (기기 등록 + 프로필 저장 + 60초 하트비트)
+  │                          ├─ 성공 ──→ Firebase 초기화 (기기 등록 + 프로필 저장 + 60초 하트비트 / 30초 stats 동기화)
   │                          └─ 실패 ──→ 수동 로그인 다이얼로그 (_ensure_login)
   │
   └─ 토큰 없음 ──→ 수동 로그인 다이얼로그 (Retry/Cancel)
@@ -119,7 +119,7 @@ pc-agent/
 ### 3.2b 모니터링 파이프라인
 
 ```
-모니터링 사이클 (매 N초) — 영역별 병렬 실행 (ThreadPoolExecutor, max_workers=CPU코어수)
+모니터링 사이클 (매 N초) — 영역별 병렬 실행 (ThreadPoolExecutor, max_workers=os.cpu_count())
   │
   ├─ [스킵 가드] 해당 영역 분석 중이면 즉시 스킵 (중복 실행 방지)
   │

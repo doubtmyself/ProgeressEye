@@ -56,23 +56,16 @@
 
 ## 2. 명령 처리 (원격 제어)
 
-### 2-1. sleep/shutdown 명령 — targetDeviceId 미제공 시 실행 ⚠️ 주의
-- **파일:** `pc-agent/main.py:877-891`
-- **내용:** `targetDeviceId`가 null이거나 없으면 필터링 없이 명령 실행
-  ```python
-  # targetDeviceId가 없으면 → my_device 비교 없이 통과
-  if isinstance(target, str) and target and target != my_device:
-      continue  # 다른 기기 대상이면 무시
-  # target이 None이면 이 블록을 통과 → 명령 실행됨
-  ```
-- **위험도:** 중간 — Firebase Rules가 자신의 commands 경로에만 쓸 수 있도록 제한하므로 외부 공격자는 불가. 단, 같은 계정의 다른 기기에서 targetDeviceId 없이 쓰면 모든 PC에 명령이 실행됨
-- **조치:** sleep/shutdown은 targetDeviceId 필수 검증으로 강화 권장
+### 2-1. sleep/shutdown 명령 — targetDeviceId 필수 검증 ✅ 완료
+- **파일:** `pc-agent/main.py`
+- **내용:** sleep/shutdown은 targetDeviceId가 자기 기기와 정확히 일치할 때만 실행
   ```python
   if cmd_type in ("sleep", "shutdown"):
       if not isinstance(target, str) or target != my_device:
           continue
   ```
-- **현재 상태:** 미조치
+- **위험도:** 없음 — Firebase Rules + targetDeviceId 이중 검증
+- **현재 상태:** 완료
 
 ### 2-2. subprocess 명령 주입 ✅ 안전
 - **파일:** `pc-agent/main.py:1093-1115`
@@ -94,15 +87,14 @@
 
 ## 3. 네트워크
 
-### 3-1. Firebase 토큰을 URL 파라미터로 전송 ⚠️ 주의
-- **파일:** `pc-agent/firebase/realtime_db.py:70`, `pc-agent/firebase/command_listener.py:93`
-- **내용:** Firebase ID Token을 `?auth=<token>` 쿼리 파라미터로 전송
+### 3-1. Firebase 토큰 Authorization 헤더로 전환 ✅ 완료
+- **파일:** `pc-agent/firebase/realtime_db.py`, `pc-agent/firebase/command_listener.py`
+- **내용:** Firebase ID Token을 `Authorization: Bearer` 헤더로 전송
   ```python
-  params = {"auth": token}
+  headers = {"Authorization": f"Bearer {token}"}
   ```
-- **위험도:** 낮음~중간 — 토큰이 서버 접근 로그, 프록시 로그에 기록될 수 있음. Firebase 권장 방식은 `Authorization: Bearer` 헤더
-- **조치:** `headers={"Authorization": f"Bearer {token}"}` 방식으로 변경 권장
-- **현재 상태:** 미조치 (Firebase REST API가 두 방식 모두 지원하므로 기능상 문제 없음)
+- **위험도:** 없음 — 토큰이 URL에 노출되지 않음
+- **현재 상태:** 완료
 
 ### 3-2. SSL 검증 ✅ 안전
 - **파일:** `pc-agent/firebase/realtime_db.py`, `pc-agent/firebase/command_listener.py`
@@ -114,12 +106,14 @@
 
 ## 4. 데이터 처리
 
-### 4-1. 스크린샷 해시 MD5 ℹ️ 낮음
+### 4-1. 스크린샷 해시 SHA-256 ✅ 완료
 - **파일:** `pc-agent/main.py` (스크린샷 캐시 로직)
-- **내용:** 스크린샷 중복 업로드 방지를 위한 캐시 키로 MD5 사용
-- **위험도:** 없음 — 보안용이 아닌 캐싱용 해시
-- **조치:** SHA-256으로 교체 가능 (선택사항)
-- **현재 상태:** 기능상 문제 없음
+- **내용:** 스크린샷 중복 업로드 방지 캐시 키로 SHA-256 사용
+  ```python
+  jpeg_hash = hashlib.sha256(jpeg_bytes).hexdigest()
+  ```
+- **위험도:** 없음
+- **현재 상태:** 완료
 
 ---
 

@@ -337,14 +337,18 @@ fun GradientProgressBar(progress: Float, modifier: Modifier) {
 기기 섹션 하단에 위치. 오프라인 시 버튼 비활성.
 
 ```
-┌────────────────┐  ┌────────────────────────┐
-│  📸 Screenshot  │  │  ▶ Start Monitoring     │
-└────────────────┘  └────────────────────────┘
+┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐
+│ 📸 Screenshot│  │ 🌙 Sleep     │  │  ▶ Start Monitoring      │
+└─────────────┘  └─────────────┘  └─────────────────────────┘
 ```
+
+PC 제어 버튼 (3열 행):
 
 | 버튼 | 동작 | 오프라인 시 |
 |------|------|------------|
 | 📸 스크린샷 | `commands/screenshot` 기록 → 로딩 → 이미지 표시 | 비활성 (grayed out) |
+| 🌙 절전 | `commands/sleep` 기록 `{targetDeviceId, ts}` | 비활성 |
+| ⚡ 종료 | 확인 AlertDialog → `commands/shutdown` 기록 `{targetDeviceId, ts}` | 비활성 |
 | ▶ 모니터링 시작 | `commands/monitor` 기록 `{action: "start"}` | 비활성 |
 | ⏹ 모니터링 정지 | `commands/monitor` 기록 `{action: "stop"}` | 비활성 |
 
@@ -684,7 +688,7 @@ val animatedProgress by animateFloatAsState(
 | Task Detail | 진행률 그래프 (시간별 추이, Vico 차트) |
 | Task Detail | 예상 완료 시간 계산 |
 | Settings | 알림 종류별 on/off, 방해금지 시간 |
-| Remote Command | PC 종료, 절전 명령 |
+| Remote Command | ~~PC 종료, 절전 명령~~ → **P0으로 격상, 구현 완료** |
 
 ### P2 (3단계)
 
