@@ -139,8 +139,10 @@ PC에서 모니터링 중인 작업의 실시간 진행률. `devices/{pcId}/task
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | p | number | 진행률 (0.0~100.0) |
-| s | string | "r" (running) / "f" (frozen) / "c" (completed) / "i" (idle) |
+| s | string | "r" (running) / "f" (frozen) / "c" (completed) / "s" (stopped) / "i" (idle) |
 | l | string | 작업 라벨 (사용자 지정) |
+
+> 상태 코드 상세: `"r"` 진행 중 / `"f"` 멈춤(프리징) / `"c"` 완료 / `"s"` 화면 변경으로 중지 / `"i"` 대기(미모니터링)
 
 > 대역폭 절감을 위해 압축된 키 사용. 변경된 작업만 배치 전송 (동일 데이터 스킵).
 

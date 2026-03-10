@@ -10,7 +10,7 @@
 | GUI 프레임워크 | PyQt6 | 영역 선택 오버레이, 설정 창 구현 |
 | 화면 캡처 | mss | PIL 대비 3~5배 빠른 부분 캡처, thread-local GDI |
 | 바 탐지 | opencv-python-headless | OpenCV 4전략 기반 진행바 자동 탐지 |
-| OCR 감지 | pytesseract + Tesseract OCR | 숫자가 보이는 진행바에서 % 수치 직접 인식 |
+| OCR 감지 | RapidOCR (ONNX Runtime) | 숫자가 보이는 진행바에서 % 수치 직접 인식. 초기화 실패 시 PaddleOCR 호환 모드 자동 전환 |
 | 인증 | google-auth + google-auth-oauthlib | 브라우저 기반 Google OAuth 2.0 |
 | Firebase | requests (Firebase REST API) | Realtime DB 읽기/쓰기 (`{DB_URL}/{path}.json?auth={idToken}`), firebase-admin은 서버용이므로 데스크톱 클라이언트에서는 REST API 직접 호출 |
 | 하드웨어 샘플러 | Windows PDH (% Processor Utility) + GetSystemTimes + psutil + nvidia-ml-py | CPU(주파수 보정)/GPU/RAM 수집, 이동평균 산출 |
@@ -20,7 +20,7 @@
 | SSE 스트리밍 | sseclient-py | RTDB 명령 실시간 수신 (commands/ 경로) |
 | 강제 버전 체크 | Firestore REST API (requests) | appConfig/pc 문서에서 minVersion 조회 |
 
-> **이중 감지 모드**: 진행바 픽셀 분석(OpenCV)과 OCR 숫자 감지(pytesseract) 두 가지 모드를 지원한다. 숫자가 화면에 표시되는 경우 OCR 모드를, 그렇지 않은 경우 바 탐지 모드를 사용한다.
+> **이중 감지 모드**: 진행바 픽셀 분석(OpenCV)과 OCR 숫자 감지(RapidOCR) 두 가지 모드를 지원한다. 숫자가 화면에 표시되는 경우 OCR 모드를, 그렇지 않은 경우 바 탐지 모드를 사용한다.
 
 ---
 
@@ -43,22 +43,18 @@ pc-agent/
 ├── core/
 │   ├── bar_finder.py        # OpenCV 4전략 바 탐지 + Sobel 트랙 확장
 │   ├── bar_analyzer.py      # 전환점 분석 (그라데이션 지원)
-│   ├── ocr_reader.py        # pytesseract 기반 숫자% 탐지 (단독 숫자 포함)
+│   ├── ocr_reader.py        # RapidOCR(ONNX Runtime) 기반 숫자% 탐지. 1차: 원본+업스케일, 2차(lazy fallback): 적응형 이진화
 │   ├── capturer.py          # mss 기반 화면 캡처 (thread-local GDI)
 │   ├── freeze_detector.py   # 진행 멈춤 감지
 │   ├── scheduler.py         # Timer 기반 주기 캡처
-│   └── system_monitor.py    # CPU/GPU/RAM 샘플러 (Windows/Linux 분기)
+│   └── system_monitor.py    # CPU/GPU/RAM 샘플러 (Windows PDH, 앱 시작 5초 후 자동 시작)
 ├── ui/
-│   ├── main_window.py       # 메인 창 (다크 테마, 색상 팔레트 27개 상수)
-│   ├── area_selector.py     # 드래그 영역 선택 오버레이
+│   ├── main_window.py       # 메인 창 (다크 테마, 색상 팔레트 상수)
+│   ├── area_selector.py     # 드래그 영역 선택 오버레이 (신규 영역)
+│   ├── region_editor.py     # 기존 영역 편집 오버레이 (8핸들 리사이즈, 바 탐지 미리보기)
 │   ├── color_picker.py      # InteractiveBarPreview + BarPreviewDialog
 │   ├── ocr_preview.py       # OCR 탐지 미리보기 (빨간+시안 사각형)
-│   ├── region_viewer.py     # 전체 화면 탐지 결과 오버레이
-│   └── tray_icon.py         # (레거시) 트레이 모듈
-├── tesseract/               # Tesseract OCR 번들 (바이너리, .gitignore)
-│   ├── tesseract.exe
-│   ├── *.dll
-│   └── tessdata/eng.traineddata, osd.traineddata
+│   └── region_viewer.py     # 전체 화면 탐지 결과 오버레이
 ├── utils/
 │   ├── i18n.py              # 한/영 번역 모듈
 │   └── logger.py
@@ -120,26 +116,36 @@ pc-agent/
                        [확인] → "진행률 퍼센트" 배지로 등록
 ```
 
-### 3.2b 모니터링 파이프라인 (리팩토링 후)
+### 3.2b 모니터링 파이프라인
 
 ```
-모니터링 사이클 (매 N초)
+모니터링 사이클 (매 N초) — 영역별 병렬 실행 (ThreadPoolExecutor, max_workers=CPU코어수)
+  │
+  ├─ [스킵 가드] 해당 영역 분석 중이면 즉시 스킵 (중복 실행 방지)
   │
   ├─ full area 스크린샷 캡처
   │
   ├─ template 이미지와 비교 (64×64 grayscale + Pearson 상관계수)
   │     ├─ 일치 → 계속
-  │     └─ 불일치 → 화면 변경 감지 처리
+  │     └─ 불일치 → 화면 변경 감지 → 해당 영역 작업 상태 "stopped" 전환
+  │                                   └─ 모든 영역이 stopped/completed → 모니터링 자동 종료
   │
   ├─ bar offset으로 full area에서 바 영역만 crop
   │
   └─ bar_analyzer만으로 fill 비율 계산 (bar_finder 미사용)
        └─ 진행률 산출 → Firebase 전송
+            └─ 완료 조건 충족 → 작업 상태 "completed" 전환
+                               └─ 모든 영역이 stopped/completed → 모니터링 자동 종료
 ```
 
-> **핵심 변경**: 모니터링 중에는 bar_finder를 호출하지 않는다.
-> bar_finder는 영역 선택 시에만 사용하여 초기 바 위치를 탐지하고,
-> 이후 모니터링은 사용자가 편집한 bar offset 기반으로 crop + bar_analyzer만 사용한다.
+> **핵심**: bar_finder는 영역 선택/재선택 시에만 실행. 모니터링 중에는 bar_analyzer만 사용.
+>
+> **작업 상태(task status)**: 모니터링 중 카드에 실시간 상태 표시.
+> - `running` (진행 중) → Firebase `"r"`, 카드에 녹색 "● 진행 중"
+> - `completed` (완료) → Firebase `"c"`, 카드에 "✓ 작업 완료"
+> - `stopped` (화면 변경으로 중지) → Firebase `"s"`, 카드에 "⚠ 작업 중지"
+> - `frozen` (멈춤) → Firebase `"f"`, 카드에 경고 표시
+> - `idle` (모니터링 전) → Firebase `"i"`
 
 ### 3.3 바 탐지 파이프라인 (OpenCV 4전략)
 
@@ -188,43 +194,54 @@ class BarAnalyzer:
         return round(progress, 1)
 ```
 
-### 3.5 OCR 탐지 파이프라인 (pytesseract)
+### 3.5 OCR 탐지 파이프라인 (RapidOCR)
 
 ```python
 # 의사코드
 class OcrReader:
-    def read(self, image):
+    def find_percentages(self, image):
         """
-        pytesseract로 진행률 숫자를 인식한다.
-        
+        RapidOCR(ONNX Runtime)으로 진행률 숫자를 인식한다.
+
+        변형 순서 (lazy fallback):
+        1. 원본 이미지 (+ 작은 이미지면 2x 업스케일 병행)
+        2. 1차에서 결과 없을 때만: 적응형 이진화(adaptiveThreshold) 변형
+
         인식 패턴:
         - "45%" 형태: % 기호와 함께 인식
-        - "45" + "%" 분리 인식: 두 요소가 근접한 경우 합산
-        - 단독 숫자 "45": % 없이 0~100 범위의 숫자만 있어도 감지
-        - 앞뒤 문자 포함 텍스트에서도 추출 (search 매칭)
-        
-        신뢰도 기반 필터링으로 오인식 최소화.
+        - 단독 숫자 "45": 0~100 범위의 숫자만 있어도 감지
+        - 앞뒤 문자 포함 텍스트에서도 추출 (regex search)
+
+        디버그 모드(-d 실행 시): OCR 크롭 이미지를 로컬에 저장.
         """
-        text = pytesseract.image_to_string(image, config='--psm 7')
-        return self._parse_percentage(text)
-    
-    def _parse_percentage(self, text):
-        # "45%", "45 %", 단독 "45" (0~100 범위), "진행르45%완료" 등 모두 처리
-        ...
+        results = []
+        for variant in primary_variants:            # 원본 [+ 업스케일]
+            results += _process_variant(variant)
+        if not results:
+            results += _process_variant(threshold_variant)   # lazy fallback
+        return results
 ```
 
-### 3.6 영역 선택 플로우
+### 3.6 영역 선택/편집 플로우
 
 ```
+[신규 영역 추가]
 1. 사용자가 "프로그래스바 영역 추가" 또는 "숫자 영역 추가" 클릭
-2. 전체 화면 반투명 오버레이 표시 (멀티모니터 지원, mss 좌표 ↔ Qt 좌표 변환)
+2. AreaSelector: 전체 화면 반투명 오버레이 (멀티모니터, mss↔Qt 좌표 변환)
 3. 마우스 드래그로 사각형 영역 지정
-4. 모드에 따라 미리보기 표시:
-   - 바 탐지 모드: InteractiveBarPreview (파워포인트식 리사이즈 핸들로 영역 편집 가능)
-   - OCR 모드: OcrPreview (빨간+시안 사각형으로 감지된 숫자 위치 표시)
-5. [확인] → 좌표 + 모드 저장, 모니터링 시작
+4. 모드에 따라 미리보기:
+   - 바 탐지 모드: BarPreviewDialog + InteractiveBarPreview (8핸들 바 영역 편집)
+   - OCR 모드: OcrPreviewDialog (빨간+시안 사각형으로 감지 위치 표시)
+5. [확인] → 좌표 + 모드 저장
    [재선택] → 2로 복귀
-   [취소] → 오버레이 닫기
+
+[기존 바 영역 재선택 (Reselect)]
+1. BarPreviewDialog에서 [재선택] 클릭
+2. RegionEditor: 전체 화면 오버레이, 기존 선택 영역을 8핸들로 편집
+   - 드래그 후 300ms 후 자동 바 탐지 실행 → 빨간 사각형으로 탐지 위치 표시
+   - 오버레이 표시 즉시에도 초기 바 탐지 실행
+3. [Enter] 확인 → 새 좌표로 업데이트 + BarPreviewDialog 재열기
+   [Esc] 취소
 ```
 
 ---
@@ -251,10 +268,10 @@ class OcrReader:
         "monitor": 0,
         "x": 520, "y": 980,
         "width": 300, "height": 20,
-        "fill_color": [66, 133, 244],
-        "empty_color": [224, 224, 224],
-        "color_tolerance": 30,
-        "direction": "left_to_right",
+        "abs_x": 520, "abs_y": 980,
+        "direction": "horizontal",
+        "bar_mode": "auto",
+        "bar_left": 5, "bar_top": 2, "bar_right": 295, "bar_bottom": 18,
         "alert_threshold": 90,
         "alert_delay_minutes": 0
       },
@@ -268,9 +285,6 @@ class OcrReader:
         "alert_threshold": 90
       }
     ]
-  },
-  "analysis": {
-    "confidence_threshold": 0.8
   },
   "freeze_detection": {
     "enabled": true,
@@ -307,12 +321,11 @@ powershell -ExecutionPolicy Bypass -File .\packaging\msix\build_store_msix.ps1 -
 - Python 런타임 (C 네이티브 컴파일)
 - PyQt6 라이브러리 (플러그인 자동 번들링)
 - opencv-python-headless (바 탐지/분석)
-- pytesseract (OCR 인터페이스)
+- rapidocr-onnxruntime (OCR 엔진)
 - Google Auth + requests (google-auth, google-auth-oauthlib, requests, keyring)
 - sseclient-py (SSE 명령 수신)
 - psutil, nvidia-ml-py (하드웨어 모니터링)
 - 앱 아이콘 및 리소스
-- tesseract/ 폴더 (Tesseract 바이너리 + tessdata)
 - templates/ 폴더 (영역 등록 시점 스크린샷)
 
 ---

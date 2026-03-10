@@ -16,6 +16,21 @@
 - 대시보드 진입 시 `devices`/`deviceStatus` 초기 1회 스냅샷을 함께 조회해, 등록된 PC가 없어도 로딩이 멈추지 않고 즉시 빈 상태 화면으로 전환한다.
 - 설정 > 정보(About) 카드의 "오픈소스 라이선스" 항목을 누르면 라이선스 목록 화면(`OssLicensesActivity`)이 열린다.
 
+## 작업 상태 표시 (Task Status)
+
+PC Agent에서 Firebase `tasks/{taskId}.s` 에 쓰는 상태 코드를 모바일 카드에 반영한다.
+
+| 상태 코드 | 배지 색상 | 진행바 색상 | 카드 부제 |
+|-----------|-----------|-------------|-----------|
+| `"r"` (running) | 녹색 | 원래 색상 | 진행 중 |
+| `"f"` (frozen) | 노란색/주황 | 주황 | 변화 감지되지 않음 |
+| `"c"` (completed) | 녹색(완료) | 녹색 | 완료됨 |
+| `"s"` (stopped) | 회색 | 회색 | ⚠ 화면 변경으로 모니터링 중지됨 |
+| `"i"` (idle) | 회색 | 회색 | 대기 중 |
+
+- 상태별 배지(`StatusBadge`)와 진행바(`GradientProgressBar`) 색상이 각각 독립 처리된다.
+- stopped 상태는 `DashboardModels.kt`의 `TaskStatus.STOPPED = "s"` 상수로 관리한다.
+
 ## 관련 문서
 - UI 설계: `docs/mobile-app/ui-design.md`
 - 요구사항: `docs/mobile-app/requirements.md`

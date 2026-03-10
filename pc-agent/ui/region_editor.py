@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from enum import IntEnum, auto
+from typing import Callable
 
 from PyQt6 import sip
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QGuiApplication, QPixmap
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QGuiApplication, QPixmap, QImage
 from PyQt6.QtWidgets import QWidget
 
 from utils.i18n import t  # pyright: ignore[reportImplicitRelativeImport]
@@ -121,6 +123,22 @@ class _EditorPane(QWidget):
                 )
             )
 
+        # detected bar region (red fill + border)
+        bar_global = self._owner._detected_bar_global
+        if bar_global is not None:
+            bar_rr = bar_global.intersected(self._geo)
+            if not bar_rr.isEmpty():
+                bar_local = QRect(
+                    bar_rr.x() - self._geo.x(),
+                    bar_rr.y() - self._geo.y(),
+                    bar_rr.width(),
+                    bar_rr.height(),
+                )
+                painter.setPen(QPen(QColor(255, 60, 60), 2))
+                painter.setBrush(QColor(255, 0, 0, 50))
+                painter.drawRect(bar_local)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+
         if self._owner._hint_geo == self._geo:
             self._owner._draw_hud(painter, self._geo)
 
@@ -152,13 +170,24 @@ class RegionEditor(QWidget):
     cancelled = pyqtSignal()
 
     def __init__(
-        self, region_id: str, area: dict[str, object], parent: QWidget | None = None
+        self,
+        region_id: str,
+        area: dict[str, object],
+        bar_detect_fn: Callable | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._region_id = region_id
         self._area = area
+        self._bar_detect_fn = bar_detect_fn
+        self._detected_bar_global: QRect | None = None
         self._panes: list[_EditorPane] = []
         self._hint_geo: QRect | None = None
+
+        self._bar_detect_timer = QTimer(self)
+        self._bar_detect_timer.setSingleShot(True)
+        self._bar_detect_timer.setInterval(300)
+        self._bar_detect_timer.timeout.connect(self._run_bar_detection)
 
         primary = QGuiApplication.primaryScreen()
         self._virtual_geo = (
@@ -215,6 +244,8 @@ class RegionEditor(QWidget):
             pane.activateWindow()
         if self._panes:
             self._panes[0].setFocus()
+        if self._bar_detect_fn is not None:
+            self._bar_detect_timer.start()
 
     def hide(self) -> None:  # noqa: A003
         for pane in self._panes:
@@ -277,12 +308,16 @@ class RegionEditor(QWidget):
             self._dragging = True
             self._drag_origin = pos
             self._rect_origin = QRect(self._selection_global)
+            self._bar_detect_timer.stop()
+            self._detected_bar_global = None
             return
         if self._selection_global.contains(pos):
             self._active_handle = None
             self._dragging = True
             self._drag_origin = pos
             self._rect_origin = QRect(self._selection_global)
+            self._bar_detect_timer.stop()
+            self._detected_bar_global = None
 
     def _mouse_move_global(self, event) -> None:
         pos = event.globalPosition().toPoint()
@@ -309,6 +344,66 @@ class RegionEditor(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             self._active_handle = None
+            if self._bar_detect_fn is not None:
+                self._bar_detect_timer.start()
+
+    def _run_bar_detection(self) -> None:
+        """현재 선택 영역에서 바를 탐지하고 결과를 오버레이에 표시한다 (백그라운드)."""
+        if self._bar_detect_fn is None:
+            return
+        sel = self._selection_global
+        # 선택 영역을 포함하는 첫 번째 패인 찾기
+        pane_data = None
+        for pane in self._panes:
+            rr = sel.intersected(pane._geo)
+            if not rr.isEmpty():
+                pane_data = (pane, rr)
+                break
+        if pane_data is None:
+            return
+        pane, rr = pane_data
+        # 패인 스크린샷에서 선택 영역 크롭
+        src = QRect(
+            int((rr.x() - pane._geo.x()) * pane._sx),
+            int((rr.y() - pane._geo.y()) * pane._sy),
+            max(1, int(rr.width() * pane._sx)),
+            max(1, int(rr.height() * pane._sy)),
+        )
+        src = src.intersected(QRect(0, 0, pane._shot.width(), pane._shot.height()))
+        if src.isEmpty():
+            return
+        cropped = pane._shot.copy(src)
+        qimage = cropped.toImage().convertToFormat(QImage.Format.Format_RGB888)
+        w, h = qimage.width(), qimage.height()
+        ptr = qimage.bits()
+        ptr.setsize(qimage.bytesPerLine() * h)
+        raw = bytes(ptr)
+        sx, sy = pane._sx, pane._sy
+        rx, ry = rr.x(), rr.y()
+        fn = self._bar_detect_fn
+
+        def _detect() -> None:
+            try:
+                from PIL import Image as PILImage  # pyright: ignore[reportImplicitRelativeImport]
+                pil_img = PILImage.frombuffer("RGB", (w, h), raw)
+                result = fn(pil_img)
+            except Exception:
+                result = None
+            detected: QRect | None = None
+            if result is not None:
+                detected = QRect(
+                    int(rx + result.left / sx),
+                    int(ry + result.top / sy),
+                    max(1, int((result.right - result.left) / sx)),
+                    max(1, int((result.bottom - result.top) / sy)),
+                )
+            QTimer.singleShot(0, lambda: self._apply_bar_result(detected))
+
+        threading.Thread(target=_detect, daemon=True).start()
+
+    def _apply_bar_result(self, detected: QRect | None) -> None:
+        self._detected_bar_global = detected
+        self._update_panes()
 
     def _key_press_global(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:

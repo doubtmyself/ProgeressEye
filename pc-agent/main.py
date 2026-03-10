@@ -204,6 +204,7 @@ class ProgressEyeApp:
         self._main_window = MainWindow(show_test_buttons=debug_mode)
         self._area_selector: AreaSelector | None = None
         self._region_viewer: RegionViewer | None = None
+        self._region_editor = None  # RegionEditor | None
         self._task_counter = len(self._config.regions)
         self._selection_mode: str = "bar"  # "bar" 또는 "ocr"
         self._bar_selection_guide_shown = False
@@ -2168,9 +2169,38 @@ class ProgressEyeApp:
                     except Exception:
                         pass
             elif dialog.reselect_requested:
-                # 재선택 — 영역 선택 후 기존 작업 업데이트
-                self._editing_region_id = region_id
-                QTimer.singleShot(100, self._start_area_selection)
+                # 재선택 — RegionEditor로 기존 영역 편집
+                QTimer.singleShot(100, lambda: self._start_bar_area_edit(region_id, area))
+
+    def _start_bar_area_edit(self, region_id: str, area: dict) -> None:
+        """Bar 타입 영역을 RegionEditor로 편집 (바 탐지 미리보기 포함)."""
+        if self._region_editor is not None:
+            self._region_editor.close()
+            self._region_editor = None
+        QTimer.singleShot(200, lambda: self._create_region_editor(region_id, area))
+
+    def _create_region_editor(self, region_id: str, area: dict) -> None:
+        from ui.region_editor import RegionEditor  # pyright: ignore[reportImplicitRelativeImport]
+
+        self._region_editor = RegionEditor(
+            region_id=region_id,
+            area=area,
+            bar_detect_fn=self._bar_finder.find,
+        )
+        self._region_editor.area_edited.connect(self._on_region_editor_confirmed)
+        self._region_editor.cancelled.connect(self._on_region_editor_cancelled)
+        self._region_editor.show()
+
+    def _on_region_editor_confirmed(self, region_id: str, new_area: dict) -> None:
+        if self._region_editor is not None:
+            self._region_editor.deleteLater()
+            self._region_editor = None
+        self._update_region_area(region_id, new_area)
+
+    def _on_region_editor_cancelled(self) -> None:
+        if self._region_editor is not None:
+            self._region_editor.deleteLater()
+            self._region_editor = None
 
     def _show_region_view(self, region_id: str) -> None:
         """영역의 바 탐지 결과를 전체 화면에 표시한다."""

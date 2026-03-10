@@ -21,14 +21,14 @@ PC Agent 관련 문서를 기능 항목별로 정리한 안내 문서입니다.
 
 ## 2) 실행/빌드/배포
 - 로컬 실행/초기설정: `docs/pc-agent/topics/build-deploy.md`
-- Tesseract 설치(OCR 모드): `docs/pc-agent/topics/build-deploy.md`
 - EXE/MSIX 패키징: `docs/pc-agent/topics/build-deploy.md`
 - Microsoft Store 설명/메타 문안: `docs/pc-agent/topics/store-listing.md`
 
 ## 3) 감지 파이프라인
-- 영역 선택/바 탐지/OCR 모드: `docs/pc-agent/technical-spec.md` -> 핵심 플로우 3.2~3.5
-- 모니터링 중 분석 경로(bar_analyzer 중심): `docs/pc-agent/technical-spec.md` -> 3.2b
-- 성능/최적화: `docs/pc-agent/topics/monitoring.md`
+- 영역 선택/바 탐지/OCR 모드: `docs/pc-agent/technical-spec.md` → 핵심 플로우 3.2~3.5
+- 모니터링 중 분석 경로(bar_analyzer 중심, 병렬 처리): `docs/pc-agent/technical-spec.md` → 3.2b
+- 기존 바 영역 재선택(RegionEditor + 바 탐지 미리보기): `docs/pc-agent/technical-spec.md` → 3.6
+- 성능/최적화/작업 상태 규칙: `docs/pc-agent/topics/monitoring.md`
 - 진행률 바 선택 안내(이미지 상단/설명 하단, 4초 샘플 순환): `docs/pc-agent/topics/monitoring.md`
 - OCR 퍼센트/최대수치 모드 규칙: `docs/pc-agent/topics/monitoring.md`
 

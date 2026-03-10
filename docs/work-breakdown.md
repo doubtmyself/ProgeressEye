@@ -26,7 +26,7 @@
 | 1.6 | 화면 영역 선택 UI | PyQt6 반투명 오버레이, 마우스 드래그 영역 지정 | P0 | ✅ 완료 |
 | 1.7 | 색상 자동 감지 | 선택 영역에서 채움 색상 / 빈 색상 자동 판별, 수동 조정 UI | P0 | ✅ 완료 |
 | 1.8 | 화면 캡처 모듈 | mss 기반 지정 영역 캡처, 주기적 실행 (스케줄러) | P0 | ✅ 완료 |
-| 1.9 | OpenCV 바 탐지 + pytesseract OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + pytesseract OCR 숫자 감지 | P0 | ✅ 완료 |
+| 1.9 | OpenCV 바 탐지 + OCR 이중 엔진 | OpenCV 4전략 바 탐지 + 전환점 분석 + RapidOCR(ONNX Runtime) 숫자 감지 | P0 | ✅ 완료 |
 | 1.10 | Firebase 데이터 전송 | `users/{uid}/devices/{pcId}/tasks/{taskId}` 에 진행률 쓰기 | P0 | ✅ 완료 |
 | 1.11 | 시스템 트레이 | pystray 기반 트레이 아이콘, 기본 메뉴 (시작/정지/로그아웃/종료) | P0 | ⚠️ 제거됨 (현재 트레이 미사용) |
 
@@ -111,7 +111,7 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 3.6 | 홈 위젯 | Glance 기반 진행률 위젯 | P2 | ❌ 미구현 |
-| 3.7 | 다국어 지원 | 한국어/영어 strings 분리 | P2 | ❌ 미구현 |
+| 3.7 | 다국어 지원 | 한국어/영어 strings 분리 (values-ko/strings.xml) | P2 | ✅ 완료 |
 | 3.8 | Play Store 준비 | 스토어 등록 정보, 스크린샷, 설명 | P1 | ✅ 완료 (GPP 설정 완료) |
 | 3.9 | 성능 최적화 | 배터리/데이터 최적화 검증 | P1 | ❌ 미구현 |
 
@@ -140,6 +140,11 @@
 | A.10 | 자동 배포 (Android) | GPP 4.0.0, R8 난독화, version.properties 자동 증가 | ✅ 완료 |
 | A.11 | 개인정보처리방침 | Firebase Hosting에 계정 삭제 안내 추가 | ✅ 완료 |
 | A.12 | MSIX 패키징 (PC) | Nuitka 빌드 + MSIX 패키지, Microsoft Store 배포 | ✅ 완료 |
+| A.13 | RapidOCR 엔진 마이그레이션 | pytesseract → RapidOCR(ONNX Runtime). lazy threshold fallback, 디버그 OCR 크롭 저장 | ✅ 완료 |
+| A.14 | 분석 병렬 처리 | ThreadPoolExecutor(max_workers=CPU코어수), 영역별 중복 실행 스킵 가드 | ✅ 완료 |
+| A.15 | 작업 상태 시스템 | running/completed/stopped 상태, 모든 작업 종료 시 모니터링 자동 중단, PC카드+모바일 표시 | ✅ 완료 |
+| A.16 | RegionEditor 바 탐지 미리보기 | 바 영역 재선택 시 RegionEditor 오버레이 + 선택 영역 내 바 탐지 결과 빨간 사각형 표시 | ✅ 완료 |
+| A.17 | HW 통계 즉시 표시 | CPU/GPU/RAM 샘플러를 앱 시작 5초 후 자동 시작 (Firebase 로그인 불필요) | ✅ 완료 |
 
 ---
 
@@ -171,15 +176,15 @@
 |------|-----------|-----------|
 | 인증 | 익명 인증 + 6자리 페어링 코드 | **Google OAuth 2.0** |
 | 연결 | pairs/ + links/ 노드 | **같은 uid = 자동 연결** |
-| 감지 방식 | Tesseract OCR 숫자 인식 | **바 탐지(OpenCV) + OCR(pytesseract) 이중 모드** |
+| 감지 방식 | Tesseract OCR 숫자 인식 | **바 탐지(OpenCV) + OCR(RapidOCR ONNX) 이중 모드** |
 | DB 구조 | 최상위에 분산 | **`users/{uid}/` 아래 통합** |
-| 외부 의존성 | Tesseract OCR 번들 (30MB+) | **바 탐지: 순수 Python (opencv-python-headless), OCR: Tesseract 번들 선택** |
-| exe 크기 | ~50MB | **~15MB (바 탐지만) / ~160MB (OCR 포함)** |
+| 외부 의존성 | Tesseract OCR 번들 (30MB+) | **바 탐지: opencv-python-headless, OCR: rapidocr-onnxruntime** |
+| exe 크기 | ~50MB | **~30MB (바 탐지 + RapidOCR ONNX 포함)** |
 | 범용성 | 숫자 텍스트 있는 진행바만 | **텍스트 없는 진행바도 지원, 숫자 있으면 OCR도 사용 가능** |
 | 삭제된 항목 | 페어링 코드, cleanupExpiredPairs | — |
 | UI 테마 | 기본 OS 스타일 | **다크 테마 (#0f0f1a 배경, 커스텀 색상 팔레트)** |
 | OCR 매칭 | fullmatch (정확 일치만) | **search (앞뒤 문자 포함 감지)** |
-| 추가된 항목 | — | 바 탐지 엔진(OpenCV), OCR 엔진(pytesseract), Tesseract 번들, 색상 감지, Google Auth, onUserCreate |
+| 추가된 항목 | — | 바 탐지 엔진(OpenCV), OCR 엔진(RapidOCR), 색상 감지, Google Auth, onUserCreate, 병렬 분석, 작업 상태 시스템, RegionEditor |
 | Firebase 연동 | firebase-admin SDK | **Firebase REST API (requests)** |
 | 인증 토큰 교환 | 미정 | **Google OAuth → signInWithIdp REST API → keyring 저장** |
 | 패키징 (PC) | PyInstaller (.exe) | **Nuitka (네이티브 C 컴파일) + MSIX** |
