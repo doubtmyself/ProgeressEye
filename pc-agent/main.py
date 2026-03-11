@@ -822,12 +822,17 @@ class ProgressEyeApp:
             self._last_stats_synced_at_ms = now_ms
 
     def _check_plan_worker(self, dm: DeviceManager, device_id: str) -> None:
-        """워커 스레드: Firestore 플랜 조회 + Free 단일기기 강제."""
+        """워커 스레드: Firestore 플랜 조회 + Free 단일기기 강제.
+
+        - free + 광고 미해제: PC 1대 제한 (activeDevice 충돌 시 경고)
+        - pro 또는 광고 해제(adFreeModeGlobal): 다중 PC 허용
+        """
         try:
             plan = dm.get_user_plan()
             self._config.set("plan", plan)
             log.info("유저 플랜: %s", plan)
-            if plan == "free":
+            is_adfree = dm.get_global_adfree_policy()
+            if plan == "free" and not is_adfree:
                 # 최초 로그인/누락 케이스: Firestore users/{uid} free 문서 보정 생성
                 dm.ensure_free_user_registered()
                 active = dm.get_active_device()

@@ -63,6 +63,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -132,10 +133,12 @@ private const val PC_APP_STORE_URL = "https://apps.microsoft.com/detail/9NGF92B1
 fun DashboardContent(
     uiState: DashboardUiState,
     userPlan: String = "free",
+    isAdFreeMode: Boolean = false,
     onRequestScreenshot: (deviceId: String) -> Unit = {},
     onSleep: (deviceId: String) -> Unit = {},
     onShutdown: (deviceId: String) -> Unit = {},
     onRefresh: () -> Unit = {},
+    onUpgradeToPro: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -202,6 +205,10 @@ fun DashboardContent(
         }
 
         else -> {
+            val isFreeWithMultiPc = userPlan == "free" && !isAdFreeMode && uiState.devices.size > 1
+            var selectedDeviceIndex by rememberSaveable { mutableIntStateOf(0) }
+            val safeDeviceIndex = selectedDeviceIndex.coerceIn(0, uiState.devices.lastIndex)
+
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
                 onRefresh = {
@@ -211,19 +218,43 @@ fun DashboardContent(
                 modifier = modifier.fillMaxSize(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    if (isFreeWithMultiPc) {
+                        DeviceSelectorTabs(
+                            devices = uiState.devices,
+                            selectedIndex = safeDeviceIndex,
+                            onSelect = { selectedDeviceIndex = it },
+                        )
+                    }
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        items(uiState.devices, key = { it.id }) { device ->
-                            DeviceCard(
-                                device = device,
-                                isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
-                                onRequestScreenshot = { onRequestScreenshot(device.id) },
-                                onSleep = { onSleep(device.id) },
-                                onShutdown = { onShutdown(device.id) },
-                            )
+                        if (isFreeWithMultiPc) {
+                            uiState.devices.getOrNull(safeDeviceIndex)?.let { device ->
+                                item(key = device.id) {
+                                    DeviceCard(
+                                        device = device,
+                                        isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                                        onRequestScreenshot = { onRequestScreenshot(device.id) },
+                                        onSleep = { onSleep(device.id) },
+                                        onShutdown = { onShutdown(device.id) },
+                                    )
+                                }
+                            }
+                            item(key = "pro-upgrade-banner") {
+                                ProUpgradeBanner(onUpgrade = onUpgradeToPro)
+                            }
+                        } else {
+                            items(uiState.devices, key = { it.id }) { device ->
+                                DeviceCard(
+                                    device = device,
+                                    isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                                    onRequestScreenshot = { onRequestScreenshot(device.id) },
+                                    onSleep = { onSleep(device.id) },
+                                    onShutdown = { onShutdown(device.id) },
+                                )
+                            }
                         }
                         item(key = "pc-app-install-link") {
                             PcAppInstallLinkCard(
@@ -234,6 +265,93 @@ fun DashboardContent(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceSelectorTabs(
+    devices: List<DeviceData>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        devices.forEachIndexed { index, device ->
+            val isSelected = index == selectedIndex
+            Surface(
+                onClick = { onSelect(index) },
+                shape = RoundedCornerShape(20.dp),
+                color = if (isSelected) Primary else SurfaceContainerDark,
+                border = if (!isSelected) BorderStroke(1.dp, Color(0xFF2A2A45)) else null,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DesktopWindows,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = if (isSelected) Color.White else Slate400,
+                    )
+                    Text(
+                        text = device.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isSelected) Color.White else Slate400,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProUpgradeBanner(
+    onUpgrade: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF12122A),
+        border = BorderStroke(1.dp, Primary.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "여러 PC를 동시에 보려면",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Slate400,
+                )
+                Text(
+                    text = "Pro로 업그레이드하세요",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+            Button(
+                onClick = onUpgrade,
+                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "Pro 구독",
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }

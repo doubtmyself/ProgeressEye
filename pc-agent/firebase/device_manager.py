@@ -220,6 +220,35 @@ class DeviceManager:
             log.debug("get_user_plan 조회 실패: %s", exc)
             return "free"
 
+    def get_global_adfree_policy(self, project_id: str = "progresseye-49244") -> bool:
+        """Firestore appConfig/policies 문서에서 adFreeModeGlobal 값을 반환한다.
+
+        true이면 모든 유저가 광고 없이 사용 가능하므로 Free 플랜도 다중 기기 허용.
+        조회 실패 시 false를 반환한다.
+        """
+        import requests as _requests
+
+        token = self._db.get_id_token()
+        if not token:
+            return False
+        url = (
+            f"https://firestore.googleapis.com/v1/"
+            f"projects/{project_id}/databases/progress/documents/appConfig/policies"
+        )
+        try:
+            resp = _requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                return False
+            fields = resp.json().get("fields", {})
+            return bool(fields.get("adFreeModeGlobal", {}).get("booleanValue", False))
+        except Exception as exc:
+            log.debug("get_global_adfree_policy 조회 실패: %s", exc)
+            return False
+
     def ensure_free_user_registered(
         self, project_id: str = "progresseye-49244"
     ) -> None:

@@ -182,6 +182,7 @@ fun MainScreen(
                 0 -> DashboardContent(
                     uiState = dashboardState,
                     userPlan = userPlan,
+                    isAdFreeMode = isAdFreeModeEnabled,
                     onRequestScreenshot = { deviceId ->
                         if (userPlan == "free" && !isAdFreeModeEnabled && activity != null) {
                             dashboardViewModel.showRewardedAdThenScreenshot(activity, deviceId)
@@ -192,6 +193,7 @@ fun MainScreen(
                     onSleep = { deviceId -> dashboardViewModel.sendSleepCommand(deviceId) },
                     onShutdown = { deviceId -> dashboardViewModel.sendShutdownCommand(deviceId) },
                     onRefresh = { dashboardViewModel.refresh() },
+                    onUpgradeToPro = { selectedTab = 2 },
                     modifier = Modifier.padding(padding),
                 )
                 1 -> AlertsContent(modifier = Modifier.padding(padding))
