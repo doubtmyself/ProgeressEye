@@ -28,6 +28,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.chg.progeresseye.FirebaseConstants
 import com.chg.progeresseye.auth.AuthViewModel
 import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
@@ -282,7 +283,7 @@ class MainActivity : ComponentActivity() {
         stopWithdrawalStatusListener()
         isHandlingWithdrawalLogout = false
 
-        val listener = FirebaseFirestore.getInstance("progress")
+        val listener = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
             .collection("users")
             .document(uid)
             .addSnapshotListener { snapshot, error ->
@@ -318,7 +319,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkMinVersion() {
-        FirebaseFirestore.getInstance("progress")
+        FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
             .collection("appConfig").document("android").get()
             .addOnSuccessListener { document ->
                 val minVersion = document.getString("minVersion") ?: return@addOnSuccessListener

@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import timber.log.Timber
 import androidx.core.app.NotificationCompat
+import com.chg.progeresseye.NotificationPrefs
 import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
@@ -30,9 +31,9 @@ class FCMService : FirebaseMessagingService() {
         val title = data["title"] ?: "ProgressEye"
         val body = data["body"] ?: return
 
-        val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val completionEnabled = prefs.getBoolean(KEY_COMPLETION_ALERTS, true)
-        val stallEnabled = prefs.getBoolean(KEY_STALL_WARNINGS, true)
+        val prefs = applicationContext.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
+        val completionEnabled = prefs.getBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, true)
+        val stallEnabled = prefs.getBoolean(NotificationPrefs.KEY_STALL_WARNINGS, true)
 
         val shouldNotify = when (type) {
             "completion", "image_change" -> completionEnabled
@@ -81,9 +82,6 @@ class FCMService : FirebaseMessagingService() {
 
     companion object {
         private const val CHANNEL_ID = "progress_alerts"
-        private const val PREFS_NAME = "settings"
-        private const val KEY_COMPLETION_ALERTS = "completionAlerts"
-        private const val KEY_STALL_WARNINGS = "stallWarnings"
 
         fun registerToken() {
             FirebaseMessaging.getInstance().token

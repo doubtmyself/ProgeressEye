@@ -101,7 +101,6 @@
     <string name="settings_subscription_purchase_pending">Purchase is pending. Pro will activate after approval.</string>
     <string name="settings_subscription_billing_unavailable">Billing service is unavailable.</string>
     <string name="settings_subscription_not_ready">Subscription details are still loading. Please try again.</string>
-    <string name="settings_ad_free_mode_admin_active">Ad-free mode is enabled by an administrator.</string>
     <string name="settings_logout">Log out</string>
     <string name="settings_completion_alerts">Completion alerts</string>
     <string name="settings_stall_warnings">Stall warnings</string>

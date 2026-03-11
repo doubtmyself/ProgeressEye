@@ -244,7 +244,8 @@ class DeviceManager:
             if resp.status_code != 200:
                 return False
             fields = resp.json().get("fields", {})
-            return bool(fields.get("adFreeModeGlobal", {}).get("booleanValue", False))
+            # return bool(fields.get("adFreeModeGlobal", {}).get("booleanValue", False))
+            return False
         except Exception as exc:
             log.debug("get_global_adfree_policy 조회 실패: %s", exc)
             return False

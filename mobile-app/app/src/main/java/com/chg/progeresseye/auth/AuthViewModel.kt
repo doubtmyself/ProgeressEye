@@ -1,8 +1,9 @@
 package com.chg.progeresseye.auth
 
 import android.content.Context
-import com.chg.progeresseye.R
 import com.chg.progeresseye.BuildConfig
+import com.chg.progeresseye.FirebaseConstants
+import com.chg.progeresseye.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
@@ -51,7 +52,7 @@ class AuthViewModel(
     }
 
     private val db = FirebaseDatabase.getInstance()
-    private val firestore = FirebaseFirestore.getInstance("progress")
+    private val firestore = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
     private var pendingUser: FirebaseUser? = null
     private var pendingUid: String? = null
     private var pendingWithdrawalUser: FirebaseUser? = null
@@ -432,7 +433,7 @@ class AuthViewModel(
             "lastLoginAt" to System.currentTimeMillis(),
         )
         try {
-            FirebaseFirestore.getInstance("progress")
+            firestore
                 .collection("users").document(uid)
                 .set(userData, SetOptions.merge())
                 .await()

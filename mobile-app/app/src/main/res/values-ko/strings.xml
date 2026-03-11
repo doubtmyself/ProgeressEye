@@ -93,7 +93,6 @@
     <string name="settings_subscription_purchase_pending">결제가 대기 중입니다. 승인 후 Pro가 활성화됩니다.</string>
     <string name="settings_subscription_billing_unavailable">결제 서비스에 연결할 수 없습니다.</string>
     <string name="settings_subscription_not_ready">구독 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.</string>
-    <string name="settings_ad_free_mode_admin_active">관리자에 의해 광고 비표시 모드가 활성화되어 있습니다.</string>
     <string name="settings_logout">로그아웃</string>
     <string name="settings_completion_alerts">완료 알림</string>
     <string name="settings_stall_warnings">멈춤 경고</string>

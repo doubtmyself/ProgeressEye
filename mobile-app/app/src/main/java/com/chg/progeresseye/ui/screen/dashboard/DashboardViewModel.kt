@@ -19,8 +19,8 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
+import com.chg.progeresseye.data.repository.PolicyRepository
+import com.chg.progeresseye.data.repository.UserPlanRepository
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
@@ -74,8 +74,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Mobile heartbeat job (60초 간격 RTDB 갱신)
     private var mobileHeartbeatJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
-    private var planListener: ListenerRegistration? = null
-    private var globalPolicyListener: ListenerRegistration? = null
+    private var planJob: Job? = null
+    private var policyJob: Job? = null
     private var refreshStartedAtMs: Long = 0L
 
     // Local caches
@@ -105,8 +105,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
         bootstrapInitialState(uid)
 
-        observeUserPlan(uid)
-        observeGlobalPolicy()
+        UserPlanRepository.startListening(uid)
+        planJob = viewModelScope.launch {
+            UserPlanRepository.userPlan.collect { applyUserEntitlement(it) }
+        }
+        PolicyRepository.startListening()
+        policyJob = viewModelScope.launch {
+            PolicyRepository.adFreeModeGlobal.collect { applyGlobalAdFreeMode(it) }
+        }
 
         // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
         startMobileHeartbeat(uid)
@@ -619,40 +625,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _isAdFreeModeEnabled.value = false
         isAdFreeMode = false
 
-        planListener?.remove()
-        planListener = null
+        planJob?.cancel()
+        planJob = null
+        UserPlanRepository.reset()
 
-        globalPolicyListener?.remove()
-        globalPolicyListener = null
-    }
-
-    private fun observeUserPlan(uid: String) {
-        planListener?.remove()
-        planListener = FirebaseFirestore.getInstance("progress")
-            .collection("users")
-            .document(uid)
-            .addSnapshotListener { document, error ->
-                if (error != null) {
-                    Timber.e(error, "firestore:plan:listen:onFailure")
-                    return@addSnapshotListener
-                }
-                val plan = document?.getString("plan")?.lowercase() ?: "free"
-                applyUserEntitlement(plan)
-            }
-    }
-
-    private fun observeGlobalPolicy() {
-        globalPolicyListener?.remove()
-        globalPolicyListener = FirebaseFirestore.getInstance("progress")
-            .collection("appConfig")
-            .document("policies")
-            .addSnapshotListener { document, error ->
-                if (error != null) {
-                    Timber.e(error, "firestore:policy:listen:onFailure")
-                    return@addSnapshotListener
-                }
-                applyGlobalAdFreeMode(document?.getBoolean("adFreeModeGlobal") == true)
-            }
+        policyJob?.cancel()
+        policyJob = null
+        PolicyRepository.reset()
     }
 
     override fun onCleared() {

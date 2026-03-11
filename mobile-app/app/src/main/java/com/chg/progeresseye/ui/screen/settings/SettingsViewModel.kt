@@ -4,6 +4,12 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.chg.progeresseye.FirebaseConstants
+import com.chg.progeresseye.NotificationPrefs
+import com.chg.progeresseye.data.repository.PolicyRepository
+import com.chg.progeresseye.data.repository.UserPlanRepository
+import kotlinx.coroutines.launch
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -19,7 +25,6 @@ import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import timber.log.Timber
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,18 +45,16 @@ data class SettingsUiState(
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
     private val auth = FirebaseAuth.getInstance()
-    private val firestore = FirebaseFirestore.getInstance("progress")
-    private var userPlanListener: ListenerRegistration? = null
-    private var globalPolicyListener: ListenerRegistration? = null
+    private val firestore = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
     private var billingClient: BillingClient? = null
     private var subscriptionProductDetails: ProductDetails? = null
 
     private val _uiState = MutableStateFlow(
         SettingsUiState(
-            completionAlerts = prefs.getBoolean(KEY_COMPLETION_ALERTS, true),
-            stallWarnings = prefs.getBoolean(KEY_STALL_WARNINGS, true),
+            completionAlerts = prefs.getBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, true),
+            stallWarnings = prefs.getBoolean(NotificationPrefs.KEY_STALL_WARNINGS, true),
         ),
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -93,15 +96,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     init {
-        observeUserPlan()
-        observeGlobalPolicy()
+        auth.currentUser?.uid?.let { uid ->
+            UserPlanRepository.startListening(uid)
+            viewModelScope.launch {
+                UserPlanRepository.userPlan.collect { plan ->
+                    _uiState.update { state ->
+                        state.copy(currentPlan = if (plan == "pro") "pro" else "free")
+                    }
+                }
+            }
+        }
+        PolicyRepository.startListening()
+        viewModelScope.launch {
+            PolicyRepository.adFreeModeGlobal.collect { adFreeMode ->
+                _uiState.update { state ->
+                    state.copy(isAdFreeMode = adFreeMode, isPolicyLoaded = true)
+                }
+            }
+        }
         setupBillingClient()
     }
 
     fun toggleCompletionAlerts() {
         _uiState.update { current ->
             val updated = current.copy(completionAlerts = !current.completionAlerts)
-            prefs.edit().putBoolean(KEY_COMPLETION_ALERTS, updated.completionAlerts).apply()
+            prefs.edit().putBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, updated.completionAlerts).apply()
             updated
         }
     }
@@ -109,7 +128,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun toggleStallWarnings() {
         _uiState.update { current ->
             val updated = current.copy(stallWarnings = !current.stallWarnings)
-            prefs.edit().putBoolean(KEY_STALL_WARNINGS, updated.stallWarnings).apply()
+            prefs.edit().putBoolean(NotificationPrefs.KEY_STALL_WARNINGS, updated.stallWarnings).apply()
             updated
         }
     }
@@ -179,37 +198,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearBillingMessage() {
         _uiState.update { it.copy(billingMessage = null) }
-    }
-
-    private fun observeUserPlan() {
-        val uid = auth.currentUser?.uid ?: return
-        userPlanListener?.remove()
-        userPlanListener = firestore.collection("users")
-            .document(uid)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Timber.e(error, "observeUserPlan: Firestore listener error")
-                    return@addSnapshotListener
-                }
-                val plan = snapshot?.getString("plan")?.lowercase() ?: "free"
-                _uiState.update { state ->
-                    state.copy(
-                        currentPlan = if (plan == "pro") "pro" else "free",
-                    )
-                }
-            }
-    }
-
-    private fun observeGlobalPolicy() {
-        globalPolicyListener?.remove()
-        globalPolicyListener = firestore.collection("appConfig")
-            .document("policies")
-            .addSnapshotListener { snapshot, _ ->
-                val globalAdFreeMode = snapshot?.getBoolean("adFreeModeGlobal") == true
-                _uiState.update { state ->
-                    state.copy(isAdFreeMode = globalAdFreeMode, isPolicyLoaded = true)
-                }
-            }
     }
 
     private fun setupBillingClient() {
@@ -422,18 +410,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        userPlanListener?.remove()
-        userPlanListener = null
-        globalPolicyListener?.remove()
-        globalPolicyListener = null
         billingClient?.endConnection()
         billingClient = null
     }
 
     companion object {
-        private const val PREFS_NAME = "settings"
-        private const val KEY_COMPLETION_ALERTS = "completionAlerts"
-        private const val KEY_STALL_WARNINGS = "stallWarnings"
         private const val PRO_SUBSCRIPTION_PRODUCT_ID = "pro_monthly_3000"
     }
 }
