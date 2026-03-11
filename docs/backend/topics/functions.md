@@ -4,8 +4,9 @@
 배포된 함수와 역할을 빠르게 확인한다.
 
 ## 구현 파일
-- `functions/index.js`
+- `functions/src/index.ts` (TypeScript — 빌드 결과물: `functions/lib/`)
 - Runtime baseline: Node.js 22 (`functions/package.json` -> `engines.node`)
+- 빌드: `npm --prefix functions run build` (firebase.json predeploy 훅에서 자동 실행)
 
 ## 현재 함수
 - `onAlertCreated`

@@ -157,6 +157,18 @@ PC Agent는 Windows 데스크탑에서 동작하는 Python 기반 경량 프로�
 |  | - UI: RegionCard에 `⏱ 완료 확인 [0-60] 분` SpinBox |
 | 우선순위 | **구현 완료** |
 
+### FR-PC-014: 플랜 기반 PC 접속 제한 (Plan-based Device Limit)
+
+| 항목 | 내용 |
+|------|------|
+| 설명 | 사용자 플랜에 따라 동시 접속 가능한 PC 수를 제한 |
+| 상세 | - `free` 플랜: 1대만 허용. 다른 PC가 이미 `activeDevice`로 등록되어 있고 온라인 상태이면 기기 충돌 다이얼로그 표시 |
+|  | - `pro` 플랜 또는 `adFreeModeGlobal == true`: 제한 없음 |
+|  | - 충돌 다이얼로그: "로그아웃" (현재 PC 로그아웃) / "이 PC로 전환" (activeDevice 갱신) 선택 |
+|  | - `adFreeModeGlobal` 값은 Firestore `appConfig/policies` 문서에서 REST API로 조회 |
+|  | - 플랜/기기 확인은 로그인 후 백그라운드 스레드(`_check_plan_worker`)에서 실행 |
+| 우선순위 | **구현 완료** |
+
 ### FR-PC-012: 강제 버전 체크 (Forced Version Check)
 
 | 항목 | 내용 |

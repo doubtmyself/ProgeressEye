@@ -125,6 +125,17 @@ ProgressEye 모바일 앱은 Android 기반으로, **Google 로그인**으로 �
 |  | - 권한 거부 시에도 앱 사용 가능 (FCM 알림만 비활성) |
 | 우선순위 | **구현 완료** |
 
+### FR-MOB-011: 멀티 PC UI — Free 플랜 제한 (Multi-PC UI for Free Plan)
+
+| 항목 | 내용 |
+|------|------|
+| 설명 | Free 플랜 사용자가 2대 이상의 PC를 등록했을 때 PC 선택 UI와 Pro 업그레이드 유도 배너를 표시 |
+| 상세 | - `free` 플랜 + `adFreeModeGlobal == false` + 등록 PC 2대 이상: PC 선택 탭(`DeviceSelectorTabs`) 표시 |
+|  | - 탭 형태의 가로 스크롤 칩 목록으로 PC 이름 표시, 선택된 PC만 카드 표시 |
+|  | - Pro 업그레이드 배너(`ProUpgradeBanner`): "여러 PC를 동시에 보려면 Pro로 업그레이드하세요" + "Pro 구독" 버튼 → 구독 탭으로 이동 |
+|  | - `pro` 플랜 또는 `adFreeModeGlobal == true`: 탭/배너 없이 모든 PC 카드 동시 표시 |
+| 우선순위 | **구현 완료** |
+
 ### FR-MOB-010: 구독 상태 조회 (Plan Query)
 
 | 항목 | 내용 |

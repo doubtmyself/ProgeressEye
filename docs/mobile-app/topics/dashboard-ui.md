@@ -31,6 +31,13 @@ PC Agent에서 Firebase `tasks/{taskId}.s` 에 쓰는 상태 코드를 모바일
 - 상태별 배지(`StatusBadge`)와 진행바(`GradientProgressBar`) 색상이 각각 독립 처리된다.
 - stopped 상태는 `DashboardModels.kt`의 `TaskStatus.STOPPED = "s"` 상수로 관리한다.
 
+## 멀티 PC UI 컴포넌트 (Free 플랜)
+
+- **조건**: `userPlan == "free"` + `!isAdFreeMode` + 등록 PC 2대 이상
+- **`DeviceSelectorTabs`**: 가로 스크롤 가능한 칩 목록. 선택된 PC는 파란 테두리+배경, 나머지는 기본 칩 스타일. 선택 인덱스는 `rememberSaveable(mutableIntStateOf(0))`로 유지.
+- **`ProUpgradeBanner`**: 다크 카드 형태. "여러 PC를 동시에 보려면 / Pro로 업그레이드하세요" 문구 + "Pro 구독" 버튼 (탭하면 구독 탭으로 이동).
+- **Pro/Ad-free 플랜**: 탭/배너 없이 모든 PC 카드 동시 표시.
+
 ## 관련 문서
 - UI 설계: `docs/mobile-app/ui-design.md`
 - 요구사항: `docs/mobile-app/requirements.md`

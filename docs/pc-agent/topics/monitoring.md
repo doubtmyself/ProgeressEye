@@ -57,6 +57,12 @@
 ### 로컬 시스템 알림 규칙 (Windows)
 - `화면 변경으로 중지`, `작업 완료`, `프리징 감지` 이벤트에서 Windows 시스템 알림을 표시한다.
 - RTDB/FCM 모바일 알림과 별개로 동작한다.
+- 알림 타이틀은 `DeviceManager.name`(PC 호스트 이름, `platform.node()`)을 사용한다. 고정 문자열 "ProgressEye"가 아니다.
+
+### 모니터링 재시작 규칙
+- 영역이 `completed` 또는 `stopped` 상태가 되면 스케줄러에서 해당 영역을 제거(`_scheduler.remove_region()`)한다.
+- config 파일의 해당 영역 `enabled` 값은 변경하지 않는다. (이전 구현에서 `enabled: false`로 설정했다가 재시작 시 빈 영역 목록 문제가 발생했으나 수정됨)
+- 모니터링 재시작 시 `_alerted_regions`를 비워 이미 완료 알림을 보낸 영역을 다시 처리하지 않도록 방지하는 별도 가드가 존재한다.
 
 ### OCR 런타임 백엔드 규칙
 - 기본 1순위는 RapidOCR(ONNX Runtime)이다.

@@ -145,6 +145,12 @@
 | A.15 | 작업 상태 시스템 | running/completed/stopped 상태, 모든 작업 종료 시 모니터링 자동 중단, PC카드+모바일 표시 | ✅ 완료 |
 | A.16 | RegionEditor 바 탐지 미리보기 | 바 영역 재선택 시 RegionEditor 오버레이 + 선택 영역 내 바 탐지 결과 빨간 사각형 표시 | ✅ 완료 |
 | A.17 | HW 통계 즉시 표시 | CPU/GPU/RAM 샘플러를 앱 시작 5초 후 자동 시작 (Firebase 로그인 불필요) | ✅ 완료 |
+| A.18 | 알림 타이틀에 PC 이름 표시 | 로컬/푸시 알림 타이틀을 "ProgressEye" 고정 → PC 호스트 이름(`platform.node()`)으로 변경 | ✅ 완료 |
+| A.19 | 플랜 기반 PC 접속 제한 | free=1대 / pro·광고제거=무제한. 충돌 시 다이얼로그 제공 (로그아웃 / 이 PC로 전환). adFreeModeGlobal은 Firestore appConfig/policies에서 조회 | ✅ 완료 |
+| A.20 | 모바일 멀티 PC UI (Free 플랜) | Free 플랜에서 2대 이상 PC 연결 시 PC 선택 탭 + Pro 업그레이드 배너 표시. Pro/광고제거 모드에서는 모든 PC 동시 표시 | ✅ 완료 |
+| A.21 | Cloud Functions TypeScript 마이그레이션 | functions/index.js → functions/src/index.ts. firebase.json predeploy 빌드 훅 추가 | ✅ 완료 |
+| A.22 | 기기 충돌 다이얼로그 로그아웃 버튼 | "취소" 버튼 → "로그아웃" 버튼으로 변경, 실제 로그아웃 동작 연결 | ✅ 완료 |
+| A.23 | 모니터링 재시작 버그 수정 | 영역 완료 시 config에서 enabled=false로 설정하던 로직 제거 → 재시작 시 체크박스 상태와 실제 동작 불일치 해소 | ✅ 완료 |
 
 ---
 
@@ -195,6 +201,9 @@
 | 알림 구조 | settings/notifications | **alerts/{alertId} + fcmTokens/{tokenId}** |
 | 회원 탈퇴 | 미구현 | **모바일에서 삭제: forceLogout → RTDB 삭제 → Auth 삭제** |
 | 모니터링 | bar_finder 매 사이클 | **영역 선택 시에만 bar_finder, 모니터링 중 bar_analyzer만** |
+| 알림 타이틀 | "ProgressEye" 고정 | **PC 호스트 이름 (`platform.node()`)** |
+| PC 접속 제한 | 없음 | **free=1대, pro·광고제거=무제한. 충돌 시 로그아웃/전환 다이얼로그** |
+| Cloud Functions | JavaScript (index.js) | **TypeScript (src/index.ts), predeploy 빌드 훅** |
 
 ---
 
