@@ -2671,7 +2671,7 @@ class ProgressEyeApp:
                     )
                     if self._device_manager:
                         self._device_manager.push_alert(
-                            "image_change", "ProgressEye", complete_msg
+                            "image_change", self._device_manager.name, complete_msg
                         )
                     # 완료 처리된 작업은 스케줄러에서 제거 (반복 알림 방지)
                     self._scheduler.remove_region(region_id)
@@ -2700,7 +2700,7 @@ class ProgressEyeApp:
                     )
                     if self._device_manager:
                         self._device_manager.push_alert(
-                            "image_change", "ProgressEye", warn_msg
+                            "image_change", self._device_manager.name, warn_msg
                         )
                     # UI에 작업 중지 상태 표시, Firebase에 stopped 상태 기록
                     _stopped_p = round(last_progress, 1)
@@ -2756,7 +2756,7 @@ class ProgressEyeApp:
                         )
                         if self._device_manager:
                             self._device_manager.push_alert(
-                                "completion", "ProgressEye", closed_msg
+                                "completion", self._device_manager.name, closed_msg
                             )
                 else:
                     last_state = self._last_firebase_state.get(region_id, {})
@@ -2916,7 +2916,7 @@ class ProgressEyeApp:
                 )
                 if self._device_manager:
                     self._device_manager.push_alert(
-                        "completion", "ProgressEye", alert_msg
+                        "completion", self._device_manager.name, alert_msg
                     )
                 # 완료 확정 → 해당 영역 모니터링 체크 해제
                 self._action_queue.put(
@@ -2955,7 +2955,7 @@ class ProgressEyeApp:
                     )
                 )
                 if self._device_manager:
-                    self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
+                    self._device_manager.push_alert("stall", self._device_manager.name, stall_msg)
 
     def _on_cycle_complete(self) -> None:
         """캐프쳐 사이클 완료 — 배치 Firebase 전송을 워커 스레드에서 수행."""
@@ -3041,7 +3041,7 @@ class ProgressEyeApp:
                 label = r.get("label", region_id)
                 break
         stall_msg = t("stall_detected").format(label=label, minutes=5)
-        self._device_manager.push_alert("stall", "ProgressEye", stall_msg)
+        self._device_manager.push_alert("stall", self._device_manager.name, stall_msg)
         self._notify(f"[TEST] {stall_msg}")
         log.info("[TEST] 프리징 알림 전송: %s", region_id)
 
@@ -3056,7 +3056,7 @@ class ProgressEyeApp:
                 label = r.get("label", region_id)
                 break
         alert_msg = t("alert_triggered").format(label=label, progress=100.0)
-        self._device_manager.push_alert("completion", "ProgressEye", alert_msg)
+        self._device_manager.push_alert("completion", self._device_manager.name, alert_msg)
         self._notify(f"[TEST] {alert_msg}")
         log.info("[TEST] 완료 알림 전송: %s", region_id)
 

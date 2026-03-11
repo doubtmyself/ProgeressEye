@@ -21,6 +21,11 @@ class DeviceManager:
         self._db = db
         self._uid = uid
         self._device_id = device_id
+        self._name: str = platform.node()
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     @staticmethod
     def _email_key(email: str) -> str:
@@ -61,8 +66,9 @@ class DeviceManager:
     def register(self, device_name: str = "") -> None:
         """기기를 등록하고 online 상태를 기록한다."""
         now = int(time.time() * 1000)
+        self._name = device_name or platform.node()
         payload = {
-            "name": device_name or platform.node(),
+            "name": self._name,
             "platform": platform.platform(),
             "appVersion": APP_VERSION,
             "createdAt": now,
