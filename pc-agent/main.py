@@ -2926,10 +2926,6 @@ class ProgressEyeApp:
                     self._device_manager.push_alert(
                         "completion", self._device_manager.name, alert_msg
                     )
-                # 완료 확정 → 해당 영역 모니터링 체크 해제
-                self._action_queue.put(
-                    lambda _id=region_id: self._config.update_region(_id, {"enabled": False})
-                )
                 self._scheduler.remove_region(region_id)
                 self._action_queue.put(
                     lambda _id=region_id: self._main_window.set_region_task_status(_id, "completed")
