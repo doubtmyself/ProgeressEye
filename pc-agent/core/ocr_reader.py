@@ -9,12 +9,21 @@ import hashlib
 import importlib
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    import numpy as np
+
+# numpy/cv2/PIL은 런타임에 동적으로 로드되는 선택적 의존성
 np = importlib.import_module("numpy")
 cv2 = importlib.import_module("cv2")
 PILImage = importlib.import_module("PIL.Image")
 log = importlib.import_module("utils.logger").log
+
+# 동적 import로 인해 정적 타입 검사가 불가능한 타입들을 명시적으로 alias 처리
+NpArray = Any          # numpy.ndarray — 이미지 픽셀 배열
+BBox = Any             # list[list[float]] — OCR 바운딩 박스 좌표점
+RawOcrLine = tuple[BBox, str, float]  # (bbox_points, text, confidence)
 
 _rapidocr_import_error: Exception | None = None
 try:
@@ -76,26 +85,28 @@ class OcrReader:
         log.error("OCR backend init failed: RapidOCR unavailable (%s)", detail)
         return None
 
-    def _extract_raw_lines(self, image_bgr: Any) -> list[tuple[Any, str, float]]:
+    def _extract_raw_lines(self, image_bgr: NpArray) -> list[RawOcrLine]:
         if self._ocr is None:
             return []
-        try:
-            raw = self._ocr(image_bgr, use_det=True, use_cls=False, use_rec=True)
-            if isinstance(raw, tuple) and len(raw) >= 1:
-                raw = raw[0]
-        except Exception as exc:
-            try:
-                raw = self._ocr(image_bgr)
-                if isinstance(raw, tuple) and len(raw) >= 1:
-                    raw = raw[0]
-            except Exception as retry_exc:
-                log.error("RapidOCR execution failed: %s", retry_exc)
-                return []
-
+        raw = self._run_ocr(image_bgr)
+        if raw is None:
+            return []
         return self._normalize_raw_output(raw)
 
+    def _run_ocr(self, image_bgr: NpArray) -> Any:
+        """명시적 파라미터로 OCR 실행하고, 실패 시 기본값으로 재시도한다."""
+        try:
+            raw = self._ocr(image_bgr, use_det=True, use_cls=False, use_rec=True)
+        except Exception:
+            try:
+                raw = self._ocr(image_bgr)
+            except Exception as exc:
+                log.error("RapidOCR execution failed: %s", exc)
+                return None
+        return raw[0] if isinstance(raw, tuple) and raw else raw
+
     @staticmethod
-    def _normalize_raw_output(raw: Any) -> list[tuple[Any, str, float]]:
+    def _normalize_raw_output(raw: Any) -> list[RawOcrLine]:
         """Normalize OCR outputs across format variants.
 
         Supported shapes:
@@ -104,7 +115,7 @@ class OcrReader:
         - direct dict: {"dt_polys": ..., "rec_texts": ..., "rec_scores": ...}
         """
 
-        def collect_from_dict(payload: Any) -> list[tuple[Any, str, float]]:
+        def collect_from_dict(payload: Any) -> list[RawOcrLine]:
             if not isinstance(payload, dict):
                 return []
 
@@ -209,7 +220,7 @@ class OcrReader:
         return normalized
 
     @staticmethod
-    def _make_threshold_variant(image_bgr: Any) -> tuple[Any, float]:
+    def _make_threshold_variant(image_bgr: NpArray) -> tuple[NpArray, float]:
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
         thresholded = cv2.adaptiveThreshold(
             gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 9
@@ -383,7 +394,7 @@ class OcrReader:
         self._prev_results.pop(region_id, None)
 
     @staticmethod
-    def _compute_hash(image: Any) -> str:
+    def _compute_hash(image: NpArray) -> str:
         small = image.resize((32, 32), PILImage.Resampling.LANCZOS).convert("L")
         pixels = np.array(small, dtype=np.uint8)
         return hashlib.md5(pixels.tobytes()).hexdigest()

@@ -89,10 +89,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         if (devicesChildListener != null) return // already listening
         val uid = auth.currentUser?.uid
         if (uid == null) {
-            _uiState.value = DashboardUiState(
-                isLoading = false,
-                error = "Not signed in",
-            )
+            _uiState.value = DashboardUiState(isLoading = false, error = "Not signed in")
             return
         }
 
@@ -101,9 +98,22 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         heartbeatCache.clear()
         shouldPreloadRewardedAd = true
 
-        // ── Listener A: devices (ChildEventListener) — 태스크/스크린샷 ──
-        devicesRef = db.reference.child("users").child(uid).child("devices")
+        setupDevicesListener(uid)
+        setupStatusListener(uid)
 
+        // ChildEventListener만 사용하면 노드가 비어 있을 때 콜백이 오지 않아
+        // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
+        bootstrapInitialState(uid)
+
+        observeUserPlan(uid)
+        observeGlobalPolicy()
+
+        // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
+        startMobileHeartbeat(uid)
+    }
+
+    private fun setupDevicesListener(uid: String) {
+        devicesRef = db.reference.child("users").child(uid).child("devices")
         devicesChildListener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val device = parseDevice(snapshot) ?: return
@@ -123,44 +133,27 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 emitState()
             }
 
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
-                // 순서 변경 — 무시
-            }
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) = Unit
 
             override fun onCancelled(error: DatabaseError) {
-                if (error.code == DatabaseError.PERMISSION_DENIED) {
-                    Timber.w(error.toException(), "devices:onCancelled permission denied -> force sign-out")
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        requiresForcedSignOut = true,
-                        error = null,
-                    )
-                } else {
-                    Timber.e(error.toException(), "devices:onCancelled")
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = error.message,
-                    )
-                }
+                handleListenerCancelled(error, tag = "devices", updateError = true)
             }
         }
         devicesRef?.addChildEventListener(devicesChildListener!!)
+    }
 
-        // ── Listener B: deviceStatus (ChildEventListener) — 증분 업데이트 ──
+    private fun setupStatusListener(uid: String) {
         statusRef = db.reference.child("users").child(uid).child("deviceStatus")
-
         statusChildListener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val deviceId = snapshot.key ?: return
-                val status = snapshot.getValue(String::class.java) ?: "offline"
-                statusCache[deviceId] = status
+                statusCache[deviceId] = snapshot.getValue(String::class.java) ?: "offline"
                 emitState()
             }
 
             override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
                 val deviceId = snapshot.key ?: return
-                val status = snapshot.getValue(String::class.java) ?: "offline"
-                statusCache[deviceId] = status
+                statusCache[deviceId] = snapshot.getValue(String::class.java) ?: "offline"
                 emitState()
             }
 
@@ -170,34 +163,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 emitState()
             }
 
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
-                // No-op
-            }
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) = Unit
 
             override fun onCancelled(error: DatabaseError) {
-                if (error.code == DatabaseError.PERMISSION_DENIED) {
-                    Timber.w(error.toException(), "deviceStatus:child:onCancelled permission denied -> force sign-out")
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        requiresForcedSignOut = true,
-                        error = null,
-                    )
-                } else {
-                    Timber.e(error.toException(), "deviceStatus:child:onCancelled")
-                }
+                handleListenerCancelled(error, tag = "deviceStatus", updateError = false)
             }
         }
         statusRef?.addChildEventListener(statusChildListener!!)
+    }
 
-        // ChildEventListener만 사용하면 노드가 비어 있을 때 콜백이 오지 않아
-        // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
-        bootstrapInitialState(uid)
-
-        observeUserPlan(uid)
-        observeGlobalPolicy()
-
-        // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
-        startMobileHeartbeat(uid)
+    private fun handleListenerCancelled(error: DatabaseError, tag: String, updateError: Boolean) {
+        if (error.code == DatabaseError.PERMISSION_DENIED) {
+            Timber.w(error.toException(), "$tag:onCancelled permission denied -> force sign-out")
+            _uiState.value = _uiState.value.copy(isLoading = false, requiresForcedSignOut = true, error = null)
+        } else {
+            Timber.e(error.toException(), "$tag:onCancelled")
+            if (updateError) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = error.message)
+            }
+        }
     }
 
     fun loadRewardedAd(context: Context) {

@@ -18,6 +18,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import timber.log.Timber
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -187,6 +188,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .document(uid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
+                    Timber.e(error, "observeUserPlan: Firestore listener error")
                     return@addSnapshotListener
                 }
                 val plan = snapshot?.getString("plan")?.lowercase() ?: "free"

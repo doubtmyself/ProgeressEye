@@ -88,29 +88,21 @@ class AuthViewModel(
                     if (withdrawalState.pending && deleteAt > now) {
                         pendingWithdrawalUser = result.user
                         pendingWithdrawalUid = uid
-                        val dateText = java.text.SimpleDateFormat(
-                            "yyyy-MM-dd",
-                            java.util.Locale.getDefault(),
-                        ).format(java.util.Date(deleteAt))
                         _uiState.value = AuthUiState(
                             isLoading = false,
                             requiresWithdrawalCancel = true,
-                            withdrawalGraceEndDate = dateText,
+                            withdrawalGraceEndDate = deleteAt.toYmdString(),
                         )
                         return@launch
                     }
                     if (rejoinAllowedAt > now) {
                         repository.signOut(context)
                         MobileSessionManager.clearSession(context)
-                        val dateText = java.text.SimpleDateFormat(
-                            "yyyy-MM-dd",
-                            java.util.Locale.getDefault(),
-                        ).format(java.util.Date(rejoinAllowedAt))
                         _uiState.value = AuthUiState(
                             isLoading = false,
                             error = context.getString(
                                 R.string.auth_withdrawal_rejoin_blocked,
-                                dateText,
+                                rejoinAllowedAt.toYmdString(),
                             ),
                         )
                         return@launch
@@ -142,11 +134,11 @@ class AuthViewModel(
     fun confirmSessionTakeover(context: Context) {
         viewModelScope.launch {
             val user = pendingUser ?: repository.getCurrentUser()
-            val uid = pendingUid ?: user?.uid
-            if (user == null || uid == null) {
+            if (user == null) {
                 _uiState.value = AuthUiState(error = context.getString(R.string.auth_session_takeover_failed))
                 return@launch
             }
+            val uid = pendingUid ?: user.uid
 
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
@@ -224,13 +216,10 @@ class AuthViewModel(
             pendingWithdrawalUid = null
 
             val blockUntil = if (uid.isNullOrBlank()) 0L else getWithdrawalState(uid, email).rejoinAllowedAt
-            val dateText = java.text.SimpleDateFormat(
-                "yyyy-MM-dd",
-                java.util.Locale.getDefault(),
-            ).format(java.util.Date(blockUntil.takeIf { it > 0 } ?: System.currentTimeMillis()))
+            val blockDate = (blockUntil.takeIf { it > 0 } ?: System.currentTimeMillis()).toYmdString()
             _uiState.value = AuthUiState(
                 isLoading = false,
-                error = context.getString(R.string.auth_withdrawal_rejoin_blocked, dateText),
+                error = context.getString(R.string.auth_withdrawal_rejoin_blocked, blockDate),
             )
         }
     }
@@ -346,6 +335,10 @@ class AuthViewModel(
             }
         }
     }
+
+    private fun Long.toYmdString(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date(this))
 
     private fun emailKey(email: String?): String {
         val normalized = email?.trim()?.lowercase().orEmpty()

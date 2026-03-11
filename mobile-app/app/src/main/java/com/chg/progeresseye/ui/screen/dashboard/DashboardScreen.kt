@@ -360,27 +360,7 @@ private fun DeviceCard(
 
             val isActive = device.isOnline && device.isMonitoring
 
-            if (device.tasks.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.dashboard_no_tasks),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Slate400,
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                ) {
-                    device.tasks.forEach { task -> TaskItem(task = task, isActive = isActive) }
-                }
-            }
+            DeviceTasksSection(tasks = device.tasks, isActive = isActive)
 
             // Screenshot preview (if available)
             if (device.screenshotUrl != null) {
@@ -869,7 +849,63 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
 
 // ═════════════════════════════════════════════════════════
 // Screenshot Button (card footer)
+@Composable
+private fun DeviceTasksSection(tasks: List<TaskData>, isActive: Boolean) {
+    if (tasks.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.dashboard_no_tasks),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Slate400,
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            tasks.forEach { task -> TaskItem(task = task, isActive = isActive) }
+        }
+    }
+}
+
 // ═════════════════════════════════════════════════════════
+
+@Composable
+private fun PcControlButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable (alpha: Float) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val alpha = if (enabled) 1f else 0.38f
+    Surface(
+        onClick = { if (enabled) onClick() },
+        shape = RoundedCornerShape(12.dp),
+        color = SurfaceContainerDark,
+        border = BorderStroke(1.dp, SurfaceContainerHighDark),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon(alpha)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = OnSurfaceDark.copy(alpha = alpha),
+            )
+        }
+    }
+}
 
 @Composable
 private fun PcControlRow(
@@ -879,6 +915,7 @@ private fun PcControlRow(
     onSleep: () -> Unit,
     onShutdown: () -> Unit,
 ) {
+    val screenshotEnabled = isOnline && !isScreenshotLoading
     Surface {
         Row(
             modifier = Modifier
@@ -886,21 +923,10 @@ private fun PcControlRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Screenshot
-            val screenshotEnabled = isOnline && !isScreenshotLoading
-            Surface(
-                onClick = { if (screenshotEnabled) onRequestScreenshot() },
-                shape = RoundedCornerShape(12.dp),
-                color = SurfaceContainerDark,
-                border = BorderStroke(1.dp, SurfaceContainerHighDark),
-                modifier = Modifier.weight(1f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val alpha = if (screenshotEnabled) 1f else 0.38f
+            PcControlButton(
+                enabled = screenshotEnabled,
+                onClick = onRequestScreenshot,
+                icon = { alpha ->
                     if (isScreenshotLoading) {
                         CircularProgressIndicator(
                             color = OnSurfaceDark.copy(alpha = alpha),
@@ -910,67 +936,28 @@ private fun PcControlRow(
                     } else {
                         Icon(Icons.Outlined.CameraAlt, null, tint = OnSurfaceDark.copy(alpha = alpha), modifier = Modifier.size(18.dp))
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            isScreenshotLoading -> stringResource(R.string.dashboard_capturing)
-                            !isOnline -> stringResource(R.string.dashboard_pc_offline)
-                            else -> stringResource(R.string.dashboard_screenshot)
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurfaceDark.copy(alpha = alpha),
-                    )
-                }
-            }
-            // Sleep
-            Surface(
-                onClick = { if (isOnline) onSleep() },
-                shape = RoundedCornerShape(12.dp),
-                color = SurfaceContainerDark,
-                border = BorderStroke(1.dp, SurfaceContainerHighDark),
+                },
+                label = when {
+                    isScreenshotLoading -> stringResource(R.string.dashboard_capturing)
+                    !isOnline -> stringResource(R.string.dashboard_pc_offline)
+                    else -> stringResource(R.string.dashboard_screenshot)
+                },
                 modifier = Modifier.weight(1f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val alpha = if (isOnline) 1f else 0.38f
-                    Icon(Icons.Outlined.Bedtime, null, tint = StatusSleep.copy(alpha = alpha), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.dashboard_sleep),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurfaceDark.copy(alpha = alpha),
-                    )
-                }
-            }
-            // Shutdown
-            Surface(
-                onClick = { if (isOnline) onShutdown() },
-                shape = RoundedCornerShape(12.dp),
-                color = SurfaceContainerDark,
-                border = BorderStroke(1.dp, SurfaceContainerHighDark),
+            )
+            PcControlButton(
+                enabled = isOnline,
+                onClick = onSleep,
+                icon = { alpha -> Icon(Icons.Outlined.Bedtime, null, tint = StatusSleep.copy(alpha = alpha), modifier = Modifier.size(18.dp)) },
+                label = stringResource(R.string.dashboard_sleep),
                 modifier = Modifier.weight(1f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val alpha = if (isOnline) 1f else 0.38f
-                    Icon(Icons.Outlined.PowerSettingsNew, null, tint = Color(0xFFEF4444).copy(alpha = alpha), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.dashboard_shutdown),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OnSurfaceDark.copy(alpha = alpha),
-                    )
-                }
-            }
+            )
+            PcControlButton(
+                enabled = isOnline,
+                onClick = onShutdown,
+                icon = { alpha -> Icon(Icons.Outlined.PowerSettingsNew, null, tint = Color(0xFFEF4444).copy(alpha = alpha), modifier = Modifier.size(18.dp)) },
+                label = stringResource(R.string.dashboard_shutdown),
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

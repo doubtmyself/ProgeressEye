@@ -37,6 +37,25 @@ class BarAnalyzer:
     색상 지정 없이 동작하며 그라데이션도 지원한다.
     """
 
+    # 스무딩 커널 크기 = width // _SMOOTH_DIVISOR (최소 3)
+    # 값이 클수록 강한 스무딩 → 노이즈에 강하지만 경계 뭉개짐
+    _SMOOTH_DIVISOR = 30
+
+    # 슬라이딩 윈도우 크기 = width // _WINDOW_DIVISOR (최소 3)
+    # 값이 클수록 넓은 윈도우 → 경계를 더 넓게 탐지
+    _WINDOW_DIVISOR = 15
+
+    # 노이즈 바닥 = max(median * _NOISE_MEDIAN_MULT, _NOISE_ABS_MIN)
+    # 피크 점수가 이 값 미만이면 전환점 없음(균일 바)으로 판정
+    _NOISE_MEDIAN_MULT = 3.0
+    _NOISE_ABS_MIN = 12.0
+
+    # 채도 차이가 이 값 이상이면 우→좌 채움으로 판정
+    _FILL_DIRECTION_SAT_THRESHOLD = 15
+
+    # 피크 점수를 신뢰도(0~1)로 정규화하는 기준값
+    _CONFIDENCE_NORMALIZER = 80.0
+
     def analyze(
         self,
         image: Image.Image,
@@ -76,11 +95,11 @@ class BarAnalyzer:
         col_means = pixels.mean(axis=0)
 
         # 스무딩 (노이즈 제거)
-        k = max(3, width // 30)
+        k = max(3, width // self._SMOOTH_DIVISOR)
         smoothed = self._smooth_columns(col_means, k)
 
         # 슬라이딩 윈도우 전환 점수
-        window = max(3, width // 15)
+        window = max(3, width // self._WINDOW_DIVISOR)
         scores = self._transition_scores(smoothed, window)
 
         if len(scores) == 0:
@@ -94,7 +113,7 @@ class BarAnalyzer:
 
         # 유의미한 전환인지 판단 (노이즈 바닥 대비)
         median_score = float(np.median(scores))
-        noise_floor = max(median_score * 3.0, 12.0)
+        noise_floor = max(median_score * self._NOISE_MEDIAN_MULT, self._NOISE_ABS_MIN)
 
         if peak_score < noise_floor:
             return self._judge_uniform(col_means, width)
@@ -110,14 +129,14 @@ class BarAnalyzer:
         left_sat = self._saturation(left_avg)
         right_sat = self._saturation(right_avg)
 
-        if right_sat > left_sat + 15:
+        if right_sat > left_sat + self._FILL_DIRECTION_SAT_THRESHOLD:
             # 오른쪽이 더 채도 높음 → 우→좌 채움 (반전)
             filled_count = width - transition_col
         else:
             filled_count = transition_col
 
         progress = round((filled_count / width) * 100, 1)
-        confidence = round(min(peak_score / 80.0, 1.0), 2)
+        confidence = round(min(peak_score / self._CONFIDENCE_NORMALIZER, 1.0), 2)
 
         log.debug(
             "전환점 분석: %.1f%% (전환 col=%d/%d, 점수=%.1f, 신뢰도=%.2f)",
@@ -142,7 +161,12 @@ class BarAnalyzer:
         col_means: NDArray[np.float64],
         k: int,
     ) -> NDArray[np.float64]:
-        """열 평균 색상을 이동평균으로 스무딩한다."""
+        """열 평균 색상을 이동평균으로 스무딩한다.
+
+        각 채널에 독립적으로 1D 컨볼루션을 적용한다.
+        k 값이 클수록 강한 스무딩 → 노이즈에 강하지만 경계가 뭉개질 수 있다.
+        mode="same"으로 출력 크기를 입력과 동일하게 유지한다.
+        """
         kernel = np.ones(k) / k
         smoothed = np.empty_like(col_means)
         for ch in range(col_means.shape[1]):
@@ -154,9 +178,11 @@ class BarAnalyzer:
         smoothed: NDArray[np.float64],
         window: int,
     ) -> NDArray[np.float64]:
-        """각 열 위치의 좌/우 윈도우 간 색상 차이를 계산한다.
+        """각 열 위치의 좌/우 윈도우 간 색상 차이(유클리드 거리)를 계산한다.
 
-        누적합으로 O(W) 시간에 윈도우 평균을 산출한다.
+        누적합(cumsum)으로 슬라이딩 윈도우 평균을 O(W)에 산출한다.
+        반환값이 클수록 해당 위치에서 색상 변화가 급격함 → 채움/빈 경계 후보.
+        유효 탐지 범위: [window, W-window) — 양 끝단 window 크기만큼 제외.
         """
         w = len(smoothed)
         if w < 2 * window + 1:

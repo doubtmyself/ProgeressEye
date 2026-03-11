@@ -11,7 +11,7 @@ from typing import Any
 from .realtime_db import RealtimeDB
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
-APP_VERSION = "1.0.3"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
+APP_VERSION = "1.0.4"  # NOTE: 버전 변경 시 여기만 수정 (main.py에서 import)
 
 
 class DeviceManager:
@@ -418,106 +418,19 @@ class DeviceManager:
         rejoin_days: int = 30,
         email: str = "",
     ) -> None:
-        """디버그: 탈퇴 후 grace_days가 지난 상태를 강제로 만든다."""
-        import requests as _requests
-
-        token = self._db.get_id_token()
-        if not token:
-            raise RuntimeError("id_token unavailable")
-
+        """디버그: 탈퇴 후 grace_days가 지난 상태(삭제 기한 만료)를 강제로 만든다."""
         now = int(time.time() * 1000)
         requested_at = now - grace_days * 24 * 60 * 60 * 1000
-        delete_at = now - 60 * 1000
+        delete_at = now - 60 * 1000  # 1분 전 = 이미 만료
         rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000
         if rejoin_allowed_at <= now:
-            rejoin_allowed_at = now + 24 * 60 * 60 * 1000
-        email_lower = email.strip().lower()
-        email_key = self._email_key(email_lower)
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        user_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/users/{self._uid}"
+            rejoin_allowed_at = now + 24 * 60 * 60 * 1000  # 아직 재가입 금지 유지
+        self._debug_patch_withdrawal_tombstones(
+            project_id=project_id,
+            delete_at=delete_at,
+            rejoin_allowed_at=rejoin_allowed_at,
+            email=email,
         )
-        user_body = {
-            "fields": {
-                "withdrawalStatus": {"stringValue": "pending"},
-                "deleteAt": {"integerValue": str(delete_at)},
-                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-            }
-        }
-        user_mask = ["withdrawalStatus", "deleteAt", "rejoinAllowedAt"]
-        if email_lower:
-            user_body["fields"]["emailLower"] = {"stringValue": email_lower}
-            user_mask.append("emailLower")
-        if email_key:
-            user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
-            user_mask.append("withdrawalEmailKey")
-        resp_user = _requests.patch(
-            user_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": user_mask},
-            json=user_body,
-            timeout=5,
-        )
-        if resp_user.status_code not in (200, 201):
-            raise RuntimeError(
-                f"users doc debug update failed: {resp_user.status_code} {resp_user.text[:200]}"
-            )
-
-        tomb_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
-        )
-        tomb_body = {
-            "fields": {
-                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-            }
-        }
-        tomb_mask = ["rejoinAllowedAt"]
-        if email_key:
-            tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
-            tomb_mask.append("emailKey")
-        resp_tomb = _requests.patch(
-            tomb_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": tomb_mask},
-            json=tomb_body,
-            timeout=5,
-        )
-        if resp_tomb.status_code not in (200, 201):
-            raise RuntimeError(
-                f"withdrawnUsers doc debug update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
-            )
-
-        if email_key:
-            email_tomb_url = (
-                f"https://firestore.googleapis.com/v1/projects/{project_id}"
-                f"/databases/progress/documents/withdrawnEmails/{email_key}"
-            )
-            email_tomb_body = {
-                "fields": {
-                    "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-                    "uid": {"stringValue": self._uid},
-                }
-            }
-            email_tomb_mask = ["rejoinAllowedAt", "uid"]
-            resp_email_tomb = _requests.patch(
-                email_tomb_url,
-                headers=headers,
-                params={"updateMask.fieldPaths": email_tomb_mask},
-                json=email_tomb_body,
-                timeout=5,
-            )
-            if resp_email_tomb.status_code not in (200, 201):
-                raise RuntimeError(
-                    "withdrawnEmails doc debug update failed: "
-                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
-                )
 
     def debug_mark_rejoin_expired(
         self,
@@ -525,30 +438,42 @@ class DeviceManager:
         rejoin_days: int = 30,
         email: str = "",
     ) -> None:
-        """디버그: 탈퇴 후 rejoin_days가 지난 상태를 강제로 만든다."""
+        """디버그: 탈퇴 후 rejoin_days가 지난 상태(재가입 금지 만료)를 강제로 만든다."""
+        now = int(time.time() * 1000)
+        requested_at = now - (rejoin_days + 1) * 24 * 60 * 60 * 1000
+        delete_at = requested_at + 7 * 24 * 60 * 60 * 1000
+        rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000  # 이미 과거
+        self._debug_patch_withdrawal_tombstones(
+            project_id=project_id,
+            delete_at=delete_at,
+            rejoin_allowed_at=rejoin_allowed_at,
+            email=email,
+        )
+
+    def _debug_patch_withdrawal_tombstones(
+        self,
+        project_id: str,
+        delete_at: int,
+        rejoin_allowed_at: int,
+        email: str,
+    ) -> None:
+        """디버그 전용: 탈퇴 관련 Firestore 문서 3개를 PATCH로 일괄 업데이트한다."""
         import requests as _requests
 
         token = self._db.get_id_token()
         if not token:
             raise RuntimeError("id_token unavailable")
 
-        now = int(time.time() * 1000)
-        requested_at = now - (rejoin_days + 1) * 24 * 60 * 60 * 1000
-        delete_at = requested_at + 7 * 24 * 60 * 60 * 1000
-        rejoin_allowed_at = requested_at + rejoin_days * 24 * 60 * 60 * 1000
         email_lower = email.strip().lower()
         email_key = self._email_key(email_lower)
-
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
+        base_url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/progress/documents"
 
-        user_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/users/{self._uid}"
-        )
-        user_body = {
+        # users/{uid}
+        user_body: dict = {
             "fields": {
                 "withdrawalStatus": {"stringValue": "pending"},
                 "deleteAt": {"integerValue": str(delete_at)},
@@ -562,67 +487,54 @@ class DeviceManager:
         if email_key:
             user_body["fields"]["withdrawalEmailKey"] = {"stringValue": email_key}
             user_mask.append("withdrawalEmailKey")
-        resp_user = _requests.patch(
-            user_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": user_mask},
-            json=user_body,
-            timeout=5,
+        self._firestore_patch(
+            _requests, f"{base_url}/users/{self._uid}",
+            headers, user_body, user_mask, "users doc",
         )
-        if resp_user.status_code not in (200, 201):
-            raise RuntimeError(
-                f"users doc debug rejoin update failed: {resp_user.status_code} {resp_user.text[:200]}"
-            )
 
-        tomb_url = (
-            f"https://firestore.googleapis.com/v1/projects/{project_id}"
-            f"/databases/progress/documents/withdrawnUsers/{self._uid}"
-        )
-        tomb_body = {
-            "fields": {
-                "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
-            }
-        }
+        # withdrawnUsers/{uid}
+        tomb_body: dict = {"fields": {"rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)}}}
         tomb_mask = ["rejoinAllowedAt"]
         if email_key:
             tomb_body["fields"]["emailKey"] = {"stringValue": email_key}
             tomb_mask.append("emailKey")
-        resp_tomb = _requests.patch(
-            tomb_url,
-            headers=headers,
-            params={"updateMask.fieldPaths": tomb_mask},
-            json=tomb_body,
-            timeout=5,
+        self._firestore_patch(
+            _requests, f"{base_url}/withdrawnUsers/{self._uid}",
+            headers, tomb_body, tomb_mask, "withdrawnUsers doc",
         )
-        if resp_tomb.status_code not in (200, 201):
-            raise RuntimeError(
-                f"withdrawnUsers doc debug rejoin update failed: {resp_tomb.status_code} {resp_tomb.text[:200]}"
-            )
 
+        # withdrawnEmails/{emailKey}
         if email_key:
-            email_tomb_url = (
-                f"https://firestore.googleapis.com/v1/projects/{project_id}"
-                f"/databases/progress/documents/withdrawnEmails/{email_key}"
-            )
-            email_tomb_body = {
+            email_body = {
                 "fields": {
                     "rejoinAllowedAt": {"integerValue": str(rejoin_allowed_at)},
                     "uid": {"stringValue": self._uid},
                 }
             }
-            email_tomb_mask = ["rejoinAllowedAt", "uid"]
-            resp_email_tomb = _requests.patch(
-                email_tomb_url,
-                headers=headers,
-                params={"updateMask.fieldPaths": email_tomb_mask},
-                json=email_tomb_body,
-                timeout=5,
+            self._firestore_patch(
+                _requests, f"{base_url}/withdrawnEmails/{email_key}",
+                headers, email_body, ["rejoinAllowedAt", "uid"], "withdrawnEmails doc",
             )
-            if resp_email_tomb.status_code not in (200, 201):
-                raise RuntimeError(
-                    "withdrawnEmails doc debug rejoin update failed: "
-                    f"{resp_email_tomb.status_code} {resp_email_tomb.text[:200]}"
-                )
+
+    @staticmethod
+    def _firestore_patch(
+        requests_mod: object,
+        url: str,
+        headers: dict,
+        body: dict,
+        mask: list[str],
+        label: str,
+    ) -> None:
+        """Firestore REST PATCH 요청을 실행하고, 실패 시 RuntimeError를 발생시킨다."""
+        resp = requests_mod.patch(  # type: ignore[attr-defined]
+            url,
+            headers=headers,
+            params={"updateMask.fieldPaths": mask},
+            json=body,
+            timeout=5,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"{label} update failed: {resp.status_code} {resp.text[:200]}")
 
     def get_active_device(self) -> str | None:
         """현재 활성 디바이스 ID를 조회한다."""
