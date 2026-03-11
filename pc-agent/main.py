@@ -628,7 +628,7 @@ class ProgressEyeApp:
         take_over = dialog.addButton(
             t("device_conflict_takeover"), QMessageBox.ButtonRole.AcceptRole
         )
-        dialog.addButton(t("device_conflict_cancel"), QMessageBox.ButtonRole.RejectRole)
+        dialog.addButton(t("device_conflict_logout"), QMessageBox.ButtonRole.RejectRole)
         self._exec_foreground_dialog(dialog)
         if dialog.clickedButton() == take_over:
             log.info(
@@ -638,6 +638,9 @@ class ProgressEyeApp:
             )
             if self._device_manager:
                 self._device_manager.set_active_device()
+        else:
+            log.info("기기 충돌 → 로그아웃")
+            self._action_queue.put(self._do_logout)
 
     def _do_login(self) -> None:
         """Google OAuth와 Firebase Auth를 통해 로그인한다."""
