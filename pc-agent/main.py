@@ -141,7 +141,7 @@ class ProgressEyeApp:
         # initialization conflicts between Qt runtime and onnxruntime.
         self._ocr_reader = OcrReader()
         self._app = QApplication(sys.argv)
-        self._system_notifier = SystemNotifier(self._app)
+        self._system_notifier = SystemNotifier()
         self._config = Config()
         self._capturer = ScreenCapturer()
         self._analyzer = BarAnalyzer()
