@@ -39,11 +39,15 @@ class RemoteCommandDialog(QDialog):
         layout.addWidget(self._body)
 
         buttons = QDialogButtonBox()
+        cmd_name = (
+            t("remote_shutdown_title") if cmd_type == "shutdown"
+            else t("remote_sleep_title")
+        )
         self._btn_now = buttons.addButton(
             t("remote_cmd_now"), QDialogButtonBox.ButtonRole.AcceptRole
         )
         self._btn_cancel = buttons.addButton(
-            t("remote_cmd_cancel"), QDialogButtonBox.ButtonRole.RejectRole
+            t("remote_cmd_cancel").format(cmd=cmd_name), QDialogButtonBox.ButtonRole.RejectRole
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
