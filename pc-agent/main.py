@@ -82,6 +82,7 @@ from ui.ocr_preview import OcrPreviewDialog  # pyright: ignore[reportImplicitRel
 from ui.region_viewer import RegionViewer  # pyright: ignore[reportImplicitRelativeImport]
 from ui.main_window import MainWindow  # pyright: ignore[reportImplicitRelativeImport]
 from ui.system_notifier import SystemNotifier  # pyright: ignore[reportImplicitRelativeImport]
+from ui.remote_command_dialog import RemoteCommandDialog  # pyright: ignore[reportImplicitRelativeImport]
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
@@ -937,12 +938,12 @@ class ProgressEyeApp:
                 log.info("[CMD] 원격 절전모드 명령 수신")
                 uid = str(self._config.get("auth.uid", ""))
                 self._cleanup_pc_command(uid, "sleep")
-                self._handle_sleep_command()
+                self._action_queue.put(lambda: self._confirm_and_execute("sleep"))
             elif cmd_type == "shutdown":
                 log.info("[CMD] 원격 종료 명령 수신")
                 uid = str(self._config.get("auth.uid", ""))
                 self._cleanup_pc_command(uid, "shutdown")
-                self._handle_shutdown_command()
+                self._action_queue.put(lambda: self._confirm_and_execute("shutdown"))
             elif cmd_type == "forceLogout":
                 log.info("[CMD] 원격 강제 로그아웃 수신 — 앱을 종료합니다.")
                 uid = str(self._config.get("auth.uid", ""))
@@ -1105,6 +1106,17 @@ class ProgressEyeApp:
                 self._realtime_db.delete(f"users/{uid}/commands/{cmd_name}")
         except Exception as exc:
             log.debug("%s 명령 삭제 실패: %s", cmd_name, exc)
+
+    def _confirm_and_execute(self, cmd_type: str) -> None:
+        """원격 명령 확인 다이얼로그를 띄우고 수락 시 실행한다 (메인 스레드)."""
+        dialog = RemoteCommandDialog(cmd_type, self._main_window)
+        if dialog.exec() == RemoteCommandDialog.DialogCode.Accepted:
+            if cmd_type == "sleep":
+                self._handle_sleep_command()
+            elif cmd_type == "shutdown":
+                self._handle_shutdown_command()
+        else:
+            log.info("[CMD] 원격 %s 명령 취소됨 (사용자)", cmd_type)
 
     def _handle_sleep_command(self) -> None:
         """PC를 절전모드로 전환한다."""
