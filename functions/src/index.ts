@@ -13,7 +13,7 @@ import { getFunctions } from "firebase-admin/functions";
 import { getMessaging } from "firebase-admin/messaging";
 import * as crypto from "crypto";
 import { onRequest, Request } from "firebase-functions/v2/https";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onValueCreated, onValueWritten } from "firebase-functions/v2/database";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onTaskDispatched, Request as TaskRequest } from "firebase-functions/v2/tasks";
@@ -242,6 +242,95 @@ export const onAlertCreated = onValueCreated(
       logger.info("Removed stale tokens", { count: staleTokenKeys.length });
     }
 
+    return null;
+  },
+);
+
+/**
+ * errorReports/{reportId} 문서 생성 시 개발자(masterUid)에게 FCM 알림을 보낸다.
+ *
+ * appConfig/developer.masterUid 에 개발자 uid가 설정되어 있어야 한다.
+ */
+export const onErrorReport = onDocumentCreated(
+  { document: "errorReports/{reportId}", region: CLEANUP_REGION, database: FIRESTORE_DB_ID },
+  async (event) => {
+    const reportId = event.params.reportId;
+    const data = event.data?.data() ?? {};
+
+    const error = String(data["error"] || "unknown error");
+    const appVersion = String(data["appVersion"] || "?");
+    const uid = String(data["uid"] || "");
+    const tracebackStr = String(data["traceback"] || "");
+
+    logger.info("New error report", { reportId, uid, error });
+
+    const db = getFirestore(FIRESTORE_DB_ID);
+    const rtdb = getDatabase();
+
+    // 개발자 masterUid 조회
+    const devSnap = await db.collection("appConfig").doc("developer").get();
+    const masterUid = String((devSnap.data() ?? {})["masterUid"] || "");
+    if (!masterUid) {
+      logger.warn("onErrorReport: masterUid not set in appConfig/developer");
+      return null;
+    }
+
+    // masterUid의 FCM 토큰 조회
+    const tokensSnapshot = await rtdb.ref(`users/${masterUid}/fcmTokens`).once("value");
+    if (!tokensSnapshot.exists()) {
+      logger.info("onErrorReport: no FCM tokens for masterUid", { masterUid });
+      return null;
+    }
+
+    const tokens: Array<{ key: string; token: string }> = [];
+    tokensSnapshot.forEach((child) => {
+      const tokenData = child.val() as FcmTokenEntry | null;
+      if (tokenData?.token) tokens.push({ key: child.key!, token: tokenData.token });
+    });
+
+    if (tokens.length === 0) return null;
+
+    const title = `[오류] v${appVersion} — ${uid.slice(0, 8)}`;
+    const body = error.slice(0, 200);
+    const messaging = getMessaging();
+    const staleTokenKeys: string[] = [];
+
+    await Promise.all(
+      tokens.map(async ({ key, token }) => {
+        try {
+          await messaging.send({
+            token,
+            notification: { title, body },
+            data: {
+              type: "error_report",
+              title,
+              body,
+              reportId,
+              traceback: tracebackStr.slice(0, 3000),
+              ts: String(Date.now()),
+            },
+          });
+        } catch (err: unknown) {
+          const code = (err as { code?: string }).code;
+          if (
+            code === "messaging/registration-token-not-registered" ||
+            code === "messaging/invalid-registration-token"
+          ) {
+            staleTokenKeys.push(key);
+          } else {
+            logger.error("FCM send error (errorReport)", { error: String(err) });
+          }
+        }
+      }),
+    );
+
+    if (staleTokenKeys.length > 0) {
+      const updates: Record<string, null> = {};
+      staleTokenKeys.forEach((k) => { updates[`users/${masterUid}/fcmTokens/${k}`] = null; });
+      await rtdb.ref().update(updates);
+    }
+
+    logger.info("Error report FCM sent", { reportId, masterUid });
     return null;
   },
 );

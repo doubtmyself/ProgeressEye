@@ -86,6 +86,7 @@ from ui.remote_command_dialog import RemoteCommandDialog  # pyright: ignore[repo
 
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 from utils.i18n import set_language, t  # pyright: ignore[reportImplicitRelativeImport]
+from utils import error_reporter  # pyright: ignore[reportImplicitRelativeImport]
 
 _HEARTBEAT_INTERVAL_MS = 60_000
 _STATS_SYNC_INTERVAL_MS = 30_000
@@ -761,6 +762,9 @@ class ProgressEyeApp:
             self._realtime_db.patch(f"users/{uid}/profile", profile_data)
         except Exception as exc:
             log.debug("프로필 저장 실패: %s", exc)
+
+        # 오류 보고 초기화
+        error_reporter.init(uid=uid, get_id_token=get_token)
 
         # 하트비트 타이머 (60초)
         if self._heartbeat_timer:
@@ -1870,6 +1874,8 @@ class ProgressEyeApp:
         if self._command_listener:
             self._command_listener.stop_nowait()
             self._command_listener = None
+
+        error_reporter.reset()
 
         # Firebase 정리를 별도 스레드에서 수행 (메인 스레드 블로킹 방지)
         dm = self._device_manager

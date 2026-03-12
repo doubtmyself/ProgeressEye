@@ -2,8 +2,14 @@ package com.chg.progeresseye.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
+import android.widget.Toast
 import timber.log.Timber
 import androidx.core.app.NotificationCompat
 import com.chg.progeresseye.NotificationPrefs
@@ -31,6 +37,12 @@ class FCMService : FirebaseMessagingService() {
         val title = data["title"] ?: "ProgressEye"
         val body = data["body"] ?: return
 
+        if (type == "error_report") {
+            val traceback = data["traceback"] ?: body
+            showErrorReportNotification(title, body, traceback)
+            return
+        }
+
         val prefs = applicationContext.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
         val completionEnabled = prefs.getBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, true)
         val stallEnabled = prefs.getBoolean(NotificationPrefs.KEY_STALL_WARNINGS, true)
@@ -44,6 +56,42 @@ class FCMService : FirebaseMessagingService() {
         if (shouldNotify) {
             showNotification(title, body)
         }
+    }
+
+    private fun showErrorReportNotification(title: String, body: String, traceback: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                ERROR_CHANNEL_ID,
+                "Error Reports",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = "Developer error report notifications" }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // 탭 시 traceback 클립보드 복사
+        val copyIntent = Intent(applicationContext, CopyToClipboardReceiver::class.java).apply {
+            putExtra(EXTRA_COPY_TEXT, traceback)
+        }
+        val copyPendingIntent = PendingIntent.getBroadcast(
+            applicationContext,
+            System.currentTimeMillis().toInt(),
+            copyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val notification = NotificationCompat.Builder(this, ERROR_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(copyPendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
     private fun showNotification(title: String, body: String) {
@@ -82,6 +130,8 @@ class FCMService : FirebaseMessagingService() {
 
     companion object {
         private const val CHANNEL_ID = "progress_alerts"
+        private const val ERROR_CHANNEL_ID = "error_reports"
+        const val EXTRA_COPY_TEXT = "extra_copy_text"
 
         fun registerToken() {
             FirebaseMessaging.getInstance().token
@@ -101,5 +151,14 @@ class FCMService : FirebaseMessagingService() {
             val hash = digest.digest(input.toByteArray())
             return hash.take(8).joinToString("") { "%02x".format(it) }
         }
+    }
+}
+
+class CopyToClipboardReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val text = intent.getStringExtra(FCMService.EXTRA_COPY_TEXT) ?: return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("error_report", text))
+        Toast.makeText(context, "오류 내용이 복사되었습니다", Toast.LENGTH_SHORT).show()
     }
 }
