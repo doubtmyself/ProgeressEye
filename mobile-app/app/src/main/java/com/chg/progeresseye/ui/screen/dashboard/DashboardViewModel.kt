@@ -105,6 +105,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
         bootstrapInitialState(uid)
 
+        // 앱 진입 시 heartbeat 체크 → 크래시 감지 → deviceStatus "offline" 전환
+        checkHeartbeat(uid)
+
         UserPlanRepository.startListening(uid)
         planJob = viewModelScope.launch {
             UserPlanRepository.userPlan.collect { applyUserEntitlement(it) }
