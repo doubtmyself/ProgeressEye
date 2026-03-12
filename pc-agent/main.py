@@ -12,6 +12,7 @@ import threading
 import os
 from concurrent.futures import ThreadPoolExecutor
 import pathlib
+import signal
 import sys
 import uuid
 import ctypes
@@ -347,6 +348,13 @@ class ProgressEyeApp:
             self._show_welcome()
         self._main_window.show()
         self._maybe_show_ocr_runtime_guide()
+
+        # Ctrl+C 처리: Qt 이벤트 루프 중 Python이 시그널을 확인하도록 주기적 tick
+        _sigint_timer = QTimer()
+        _sigint_timer.setInterval(200)
+        _sigint_timer.timeout.connect(lambda: None)
+        _sigint_timer.start()
+
         return self._app.exec()
 
     def _maybe_show_ocr_runtime_guide(self) -> None:
@@ -2267,8 +2275,9 @@ class ProgressEyeApp:
                     except Exception:
                         pass
             elif dialog.reselect_requested:
-                # 재선택 — RegionEditor로 기존 영역 편집
-                QTimer.singleShot(100, lambda: self._start_bar_area_edit(region_id, area))
+                # 재선택 — 드래그로 새 영역 선택 후 기존 작업 업데이트
+                self._editing_region_id = region_id
+                QTimer.singleShot(100, self._start_area_selection)
 
     def _start_bar_area_edit(self, region_id: str, area: dict) -> None:
         """Bar 타입 영역을 RegionEditor로 편집 (바 탐지 미리보기 포함)."""
@@ -2822,7 +2831,7 @@ class ProgressEyeApp:
 
             if self._debug_mode:
                 self._debug_save_bar(
-                    region_id, bar_image, progress,
+                    region_id, image, progress,
                     region_config.get("bar_mode", "auto"),
                     target_color_raw,
                 )
@@ -3346,6 +3355,9 @@ def main() -> None:
             handler.setLevel(logging.DEBUG)
         log.debug("디버그 모드 활성화")
     app = ProgressEyeApp(debug_mode=debug_mode)
+
+    # Ctrl+C (SIGINT) → QApplication 종료 (200ms 타이머와 함께 동작)
+    signal.signal(signal.SIGINT, lambda *_: app._app.quit())
     sys.exit(app.run())
 
 

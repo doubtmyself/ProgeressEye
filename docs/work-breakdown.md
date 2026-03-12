@@ -118,7 +118,7 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 3.10 | CI/CD 파이프라인 | GitHub Actions: 린트, 테스트, 빌드 자동화 | P1 | 🚫 구현 안 함 |
-| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ⚠️ 부분 완료 (Android Crashlytics 활성화됨, PC Sentry 구현 안 함) |
+| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ✅ 완료 (Android Crashlytics 활성화됨, PC: sys.excepthook → Firestore errorReports → FCM 개발자 알림) |
 
 ---
 
@@ -149,6 +149,7 @@
 | A.21 | Cloud Functions TypeScript 마이그레이션 | functions/index.js → functions/src/index.ts. firebase.json predeploy 빌드 훅 추가 | ✅ 완료 |
 | A.22 | 기기 충돌 다이얼로그 로그아웃 버튼 | "취소" 버튼 → "로그아웃" 버튼으로 변경, 실제 로그아웃 동작 연결 | ✅ 완료 |
 | A.23 | 모니터링 재시작 버그 수정 | 영역 완료 시 config에서 enabled=false로 설정하던 로직 제거 → 재시작 시 체크박스 상태와 실제 동작 불일치 해소 | ✅ 완료 |
+| A.24 | PC 오류 개발자 알림 | PC 미처리 예외 → Firestore errorReports → onErrorReport CF → masterUid FCM. 안드로이드 알림 탭 시 트레이스백 클립보드 복사 | ✅ 완료 |
 
 ---
 
