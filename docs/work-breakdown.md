@@ -67,8 +67,8 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 2.1 | 멈춤 감지 (Freeze Detection) | 진행률 미변화 감지 → status "freeze" 전환 | P0 | ✅ 완료 |
-| 2.2 | 원격 명령 수신 | `users/{uid}/commands/` SSE 리스너, screenshot/monitor ✅, shutdown/sleep ❌ | P1 | ⚠️ 부분 완료 |
-| 2.3 | 명령 확인 팝업 | 명령 수신 시 사용자 확인 UI | P1 | ❌ 미구현 |
+| 2.2 | 원격 명령 수신 | `users/{uid}/commands/` SSE 리스너, screenshot/monitor/shutdown/sleep 모두 구현 | P1 | ✅ 완료 |
+| 2.3 | 명령 확인 팝업 | 원격 shutdown/sleep 수신 시 PC 측 사용자 확인 UI (현재 즉시 실행됨) | P1 | ❌ 미구현 |
 | 2.4 | 네트워크 오프라인 큐 | 연결 끊김 시 로컬 큐잉, 재연결 시 일괄 전송 | P1 | ❌ 미구현 |
 | 2.5 | 설정 창 UI | 캡처 주기, 색상 허용 오차, 자동 시작, 계정 정보 | P1 | ✅ 완료 |
 | 2.6 | 로그인 안내 창 | 최초 실행 시 Google 로그인 안내 UI | P1 | ✅ 완료 |
@@ -78,8 +78,8 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 2.7 | onTaskComplete 함수 | 완료 감지 → FCM 발송 | P0 | ✅ 완료 (onAlertCreated로 대체) |
-| 2.8 | onTaskFreeze 함수 | 멈춤 감지 → FCM 발송 | P0 | ❌ 미구현 (onAlertCreated가 처리) |
-| 2.9 | onDeviceOffline 함수 | PC 오프라인 → 2분 유예 후 FCM 발송 | P1 | ❌ 미구현 (onAlertCreated가 처리) |
+| 2.8 | onTaskFreeze 함수 | 멈춤 감지 → FCM 발송 | P0 | ✅ 완료 (PC push_alert("stall") → onAlertCreated로 대체) |
+| 2.9 | onDeviceOffline 함수 | PC 오프라인 → FCM 발송 | P1 | ❌ 미구현 (set_offline()이 alert 미작성, 앱 내 UI 표시만 됨) |
 
 ### Mobile App
 
@@ -88,7 +88,7 @@
 | 2.10 | FCM 푸시 알림 | 서비스 등록, 알림 채널, 알림 탭 → 상세 이동 | P0 | ✅ 완료 |
 | 2.11 | 작업 상세 화면 | 개별 작업 상세 정보, 상태별 UI | P1 | ❌ 미구현 |
 | 2.12 | 진행 추이 차트 | Vico 차트 연동, 시간별 진행률 그래프 | P1 | ❌ 미구현 |
-| 2.13 | 원격 명령 전송 | 모니터링 시작/정지 ✅, 종료/절전 ❌ | P1 | ⚠️ 부분 완료 |
+| 2.13 | 원격 명령 전송 | 모니터링 시작/정지, 종료/절전 모두 구현. shutdown 확인 다이얼로그 포함 | P1 | ✅ 완료 |
 | 2.14 | 설정 화면 | 알림 설정, PC 관리, 계정 (로그아웃/전환), 테마 | P1 | ✅ 완료 |
 | 2.15 | 오프라인 캐시 | 마지막 데이터 캐시, 연결 상태 표시 | P1 | ❌ 미구현 |
 
@@ -101,7 +101,7 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 3.1 | PyInstaller 빌드 | 단일 .exe 패키징 | P1 | ✅ 완료 (Nuitka로 변경) |
-| 3.2 | Windows 시작프로그램 등록 | 자동 시작 옵션 구현 | P1 | ❌ 미구현 |
+| 3.2 | Windows 시작프로그램 등록 | 자동 시작 옵션 구현 | P1 | 🚫 구현 안 함 |
 | 3.3 | 멀티 모니터 지원 | 다중 모니터 영역 선택 | P2 | ✅ 완료 |
 | 3.4 | 멀티 태스크 모니터링 | 동시 5개 영역 모니터링 | P2 | ✅ 완료 |
 | 3.5 | 자동 업데이트 | 새 버전 확인 및 업데이트 | P2 | ✅ 완료 (강제 버전 체크) |
@@ -120,7 +120,7 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 3.10 | CI/CD 파이프라인 | GitHub Actions: 린트, 테스트, 빌드 자동화 | P1 | ❌ 미구현 |
-| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ❌ 미구현 |
+| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ⚠️ 부분 완료 (Android Crashlytics 활성화됨, PC Sentry 미구현) |
 
 ---
 
@@ -196,7 +196,7 @@
 | 패키징 (PC) | PyInstaller (.exe) | **Nuitka (네이티브 C 컴파일) + MSIX** |
 | 패키징 (Mobile) | 수동 빌드 | **Gradle Play Publisher (GPP) 자동 배포** |
 | plan 저장소 | Realtime Database | **Firestore users/{uid}** |
-| Cloud Functions | onTaskComplete, onTaskFreeze, onDeviceOffline, onUserCreate | **onAlertCreated (alerts 트리거 → FCM, 1개만 구현)** |
+| Cloud Functions | onTaskComplete, onTaskFreeze, onDeviceOffline, onUserCreate | **onAlertCreated (alerts 트리거 → FCM) + onUserCreate. onDeviceOffline FCM 미구현** |
 | 명령 구조 | commands/{pcId}/{type} | **commands/{type} (flat 구조)** |
 | 알림 구조 | settings/notifications | **alerts/{alertId} + fcmTokens/{tokenId}** |
 | 회원 탈퇴 | 미구현 | **모바일에서 삭제: forceLogout → RTDB 삭제 → Auth 삭제** |

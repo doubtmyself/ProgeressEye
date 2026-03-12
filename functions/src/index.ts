@@ -14,7 +14,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import * as crypto from "crypto";
 import { onRequest, Request } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { onValueCreated } from "firebase-functions/v2/database";
+import { onValueCreated, onValueWritten } from "firebase-functions/v2/database";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onTaskDispatched, Request as TaskRequest } from "firebase-functions/v2/tasks";
 import { logger } from "firebase-functions";
@@ -242,6 +242,47 @@ export const onAlertCreated = onValueCreated(
       logger.info("Removed stale tokens", { count: staleTokenKeys.length });
     }
 
+    return null;
+  },
+);
+
+/**
+ * users/{uid}/deviceStatus/{deviceId} 가 "offline"으로 전환되면 FCM 알림을 보낸다.
+ *
+ * 커버 케이스:
+ *  - PC 크래시: Android heartbeat 만료 감지 → deviceStatus 쓰기 → 트리거
+ *  - PC 정상 종료: PC set_offline() → deviceStatus 쓰기 → 트리거
+ */
+export const onDeviceStatusOffline = onValueWritten(
+  { ref: "/users/{uid}/deviceStatus/{deviceId}", region: "us-central1" },
+  async (event) => {
+    const uid = event.params.uid;
+    const deviceId = event.params.deviceId;
+    const before = event.data.before?.val() as string | null;
+    const after = event.data.after?.val() as string | null;
+
+    // "offline"으로 전환될 때만 처리 (이미 offline이면 skip)
+    if (after !== "offline" || before === "offline") return null;
+
+    logger.info("Device went offline", { uid, deviceId, before });
+
+    const db = getDatabase();
+
+    // 기기 이름 조회
+    const nameSnap = await db.ref(`users/${uid}/devices/${deviceId}/name`).once("value");
+    const deviceName = (nameSnap.val() as string | null) || deviceId;
+
+    // alert 작성 → onAlertCreated → FCM
+    const alertId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+    await db.ref(`users/${uid}/alerts/${alertId}`).set({
+      type: "device_offline",
+      title: deviceName,
+      body: "PC 에이전트가 오프라인 상태입니다",
+      deviceId,
+      ts: Date.now(),
+    });
+
+    logger.info("Device offline alert written", { uid, deviceId, deviceName, alertId });
     return null;
   },
 );

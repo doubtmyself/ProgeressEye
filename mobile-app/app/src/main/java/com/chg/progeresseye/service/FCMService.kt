@@ -37,7 +37,7 @@ class FCMService : FirebaseMessagingService() {
 
         val shouldNotify = when (type) {
             "completion", "image_change" -> completionEnabled
-            "stall" -> stallEnabled
+            "stall", "device_offline" -> stallEnabled
             else -> false
         }
 
