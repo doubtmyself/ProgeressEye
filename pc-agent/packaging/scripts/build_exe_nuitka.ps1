@@ -372,6 +372,7 @@ try {
         "--include-package=google_auth_oauthlib",
         "--include-package=rapidocr_onnxruntime",
         "--include-package=onnxruntime",
+        "--include-package=winotify",
         "--include-package-data=google.auth",
         "--include-package-data=google_auth_oauthlib",
         "--include-data-dir=templates=templates",
