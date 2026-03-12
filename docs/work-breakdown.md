@@ -68,8 +68,8 @@
 |---|------|------|----------|------|
 | 2.1 | 멈춤 감지 (Freeze Detection) | 진행률 미변화 감지 → status "freeze" 전환 | P0 | ✅ 완료 |
 | 2.2 | 원격 명령 수신 | `users/{uid}/commands/` SSE 리스너, screenshot/monitor/shutdown/sleep 모두 구현 | P1 | ✅ 완료 |
-| 2.3 | 명령 확인 팝업 | 원격 shutdown/sleep 수신 시 PC 측 사용자 확인 UI (현재 즉시 실행됨) | P1 | ❌ 미구현 |
-| 2.4 | 네트워크 오프라인 큐 | 연결 끊김 시 로컬 큐잉, 재연결 시 일괄 전송 | P1 | ❌ 미구현 |
+| 2.3 | 명령 확인 팝업 | 원격 shutdown/sleep 수신 시 30초 카운트다운 확인 다이얼로그 | P1 | ✅ 완료 |
+| 2.4 | 네트워크 오프라인 큐 | 연결 끊김 시 로컬 큐잉, 재연결 시 일괄 전송 | P1 | 🚫 구현 안 함 (재시도 로직으로 충분) |
 | 2.5 | 설정 창 UI | 캡처 주기, 색상 허용 오차, 자동 시작, 계정 정보 | P1 | ✅ 완료 |
 | 2.6 | 로그인 안내 창 | 최초 실행 시 Google 로그인 안내 UI | P1 | ✅ 완료 |
 
@@ -79,7 +79,7 @@
 |---|------|------|----------|------|
 | 2.7 | onTaskComplete 함수 | 완료 감지 → FCM 발송 | P0 | ✅ 완료 (onAlertCreated로 대체) |
 | 2.8 | onTaskFreeze 함수 | 멈춤 감지 → FCM 발송 | P0 | ✅ 완료 (PC push_alert("stall") → onAlertCreated로 대체) |
-| 2.9 | onDeviceOffline 함수 | PC 오프라인 → FCM 발송 | P1 | ❌ 미구현 (set_offline()이 alert 미작성, 앱 내 UI 표시만 됨) |
+| 2.9 | onDeviceOffline 함수 | PC 오프라인 → FCM 발송 | P1 | ✅ 완료 (onDeviceStatusOffline CF + 앱 진입 시 heartbeat 체크) |
 
 ### Mobile App
 
@@ -108,17 +108,17 @@
 
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
-| 3.6 | 홈 위젯 | Glance 기반 진행률 위젯 | P2 | ❌ 미구현 |
+| 3.6 | 홈 위젯 | Glance 기반 진행률 위젯 | P2 | 🚫 구현 안 함 |
 | 3.7 | 다국어 지원 | 한국어/영어 strings 분리 (values-ko/strings.xml) | P2 | ✅ 완료 |
 | 3.8 | Play Store 준비 | 스토어 등록 정보, 스크린샷, 설명 | P1 | ✅ 완료 (GPP 설정 완료) |
-| 3.9 | 성능 최적화 | 배터리/데이터 최적화 검증 | P1 | ❌ 미구현 |
+| 3.9 | 성능 최적화 | 배터리/데이터 최적화 검증 | P1 | 🚫 구현 안 함 |
 
 ### 공통
 
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
-| 3.10 | CI/CD 파이프라인 | GitHub Actions: 린트, 테스트, 빌드 자동화 | P1 | ❌ 미구현 |
-| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ⚠️ 부분 완료 (Android Crashlytics 활성화됨, PC Sentry 미구현) |
+| 3.10 | CI/CD 파이프라인 | GitHub Actions: 린트, 테스트, 빌드 자동화 | P1 | 🚫 구현 안 함 |
+| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ⚠️ 부분 완료 (Android Crashlytics 활성화됨, PC Sentry 구현 안 함) |
 
 ---
 
