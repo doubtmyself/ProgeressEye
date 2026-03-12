@@ -131,9 +131,12 @@ class DeviceManager:
             log.warning("push_alert 실패 [%s]: %s", alert_type, exc)
 
     def set_offline(self) -> None:
-        """오프라인 상태를 기록한다."""
-        self.update_status("offline")
-        # 하트비트 경로도 0으로 설정하여 오프라인 신호
+        """오프라인 상태를 기록한다.
+
+        heartbeat를 먼저 0으로 설정한 뒤 status를 쓴다.
+        Cloud Function이 "offline" 전환 감지 시 heartbeat=0을 보고
+        정상 종료로 판단하여 FCM을 보내지 않도록 하기 위함.
+        """
         try:
             self._db.patch(
                 f"users/{self._uid}/heartbeat",
@@ -141,6 +144,7 @@ class DeviceManager:
             )
         except Exception as exc:
             log.debug("set_offline heartbeat 실패: %s", exc)
+        self.update_status("offline")
 
     def heartbeat(self) -> None:
         """하트비트 전용 경로에 lastSeen만 갱신한다.
@@ -244,8 +248,8 @@ class DeviceManager:
             if resp.status_code != 200:
                 return False
             fields = resp.json().get("fields", {})
-            # return bool(fields.get("adFreeModeGlobal", {}).get("booleanValue", False))
-            return False
+            return bool(fields.get("adFreeModeGlobal", {}).get("booleanValue", False))
+            # return False
         except Exception as exc:
             log.debug("get_global_adfree_policy 조회 실패: %s", exc)
             return False

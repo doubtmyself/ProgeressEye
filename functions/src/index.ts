@@ -264,9 +264,17 @@ export const onDeviceStatusOffline = onValueWritten(
     // "offline"으로 전환될 때만 처리 (이미 offline이면 skip)
     if (after !== "offline" || before === "offline") return null;
 
-    logger.info("Device went offline", { uid, deviceId, before });
-
     const db = getDatabase();
+
+    // heartbeat=0 이면 PC가 정상 종료한 것 → FCM 불필요
+    const heartbeatSnap = await db.ref(`users/${uid}/heartbeat/${deviceId}`).once("value");
+    const heartbeat = heartbeatSnap.val() as number | null;
+    if (heartbeat === 0) {
+      logger.info("Device offline: graceful shutdown, skip FCM", { uid, deviceId });
+      return null;
+    }
+
+    logger.info("Device offline: unexpected (crash/network loss), sending FCM", { uid, deviceId, heartbeat });
 
     // 기기 이름 조회
     const nameSnap = await db.ref(`users/${uid}/devices/${deviceId}/name`).once("value");
