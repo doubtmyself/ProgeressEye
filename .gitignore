@@ -54,3 +54,6 @@ GoogleCloud
 # Code signing certificates
 pc-agent/packaging/msix/*.cer
 pc-agent/packaging/msix/*.pfx
+
+# antigravity
+.agent/
