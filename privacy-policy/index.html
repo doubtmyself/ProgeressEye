@@ -14,6 +14,8 @@
       --line: #2a3140;
       --btn: #202734;
       --btn-active: #2f67ff;
+      --gdpr: #1a2a1a;
+      --gdpr-border: #2d4a2d;
     }
     * { box-sizing: border-box; }
     body {
@@ -62,6 +64,14 @@
     ul, ol { margin: 10px 0 10px 20px; padding: 0; }
     .policy { display: none; }
     .policy.active { display: block; }
+    .gdpr-box {
+      background: var(--gdpr);
+      border: 1px solid var(--gdpr-border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 28px;
+    }
+    .gdpr-box h2 { margin-top: 0; color: #7ecf7e; }
   </style>
 </head>
 <body>
@@ -72,9 +82,10 @@
         <button id="btn-en" class="lang-btn" type="button">English</button>
       </div>
 
+      <!-- ══════════════════════════════════════════════════════ KOREAN -->
       <article id="policy-ko" class="policy" lang="ko">
         <h1>ProgressEye 개인정보처리방침</h1>
-        <p class="muted">시행일: 2026-03-06</p>
+        <p class="muted">시행일: 2026-03-19</p>
         <p>ProgressEye(이하 "서비스")는 이용자의 개인정보를 중요하게 생각하며, 관련 법령을 준수합니다. 본 방침은 모바일 앱(안드로이드)과 PC 앱(Windows) 공통 기준으로 적용됩니다.</p>
 
         <h2>1. 수집 항목</h2>
@@ -82,7 +93,8 @@
           <li>계정/식별 정보: 이메일, 표시 이름, Firebase UID</li>
           <li>기기/사용 정보: device_id, 앱 버전, 플랫폼, 모니터링 설정 및 상태</li>
           <li>원격 기능 데이터: 원격 스크린샷(JPEG), 생성 시각, 명령 데이터</li>
-          <li>광고 관련 정보(모바일): 현재 전역 광고 비표시 모드로 운영되어 광고를 노출하지 않음</li>
+          <li>광고 관련 정보(모바일): Google AdMob을 통해 광고 식별자(GAID), 기기 정보, 광고 상호작용 데이터가 수집될 수 있습니다. 유럽 경제 지역(EEA) 사용자에게는 사전 동의를 받습니다.</li>
+          <li>오류/진단 데이터: Firebase Crashlytics를 통해 앱 충돌 로그 및 기기 상태가 수집됩니다.</li>
         </ol>
 
         <h2>2. 이용 목적</h2>
@@ -90,7 +102,8 @@
           <li>로그인/본인 식별 및 계정 연동</li>
           <li>모바일-PC 동기화 및 원격 제어 기능 제공</li>
           <li>서비스 운영, 장애 대응, 보안 및 부정 이용 방지</li>
-          <li>무료 서비스 운영을 위한 광고 제공(모바일 앱, 현재 미노출)</li>
+          <li>무료 서비스 운영을 위한 광고 제공 (Google AdMob)</li>
+          <li>앱 안정성 개선을 위한 오류 분석</li>
         </ol>
 
         <h2>3. 보관 및 파기</h2>
@@ -98,13 +111,14 @@
           <li>서비스 제공에 필요한 기간 동안 보관합니다.</li>
           <li>탈퇴 요청 시 7일 유예 후 계정 관련 데이터를 삭제합니다.</li>
           <li>탈퇴 요청일로부터 30일간 재가입 제한이 적용될 수 있습니다.</li>
+          <li>광고 관련 데이터는 Google의 데이터 보존 정책에 따릅니다.</li>
         </ul>
 
-        <h2>4. 외부 서비스</h2>
+        <h2>4. 외부 서비스 및 제3자 제공</h2>
         <ul>
-          <li>Google Firebase (Authentication, Realtime Database, Cloud Storage, Cloud Messaging)</li>
-          <li>Google OAuth (로그인)</li>
-          <li>Google AdMob (모바일 광고, 현재 미노출 · 재활성화 시 적용)</li>
+          <li>Google Firebase (Authentication, Realtime Database, Cloud Storage, Cloud Messaging, Crashlytics) — 인증, 데이터 동기화, 파일 저장, 푸시 알림, 오류 수집</li>
+          <li>Google OAuth — 로그인</li>
+          <li>Google AdMob — 모바일 광고 제공 및 측정</li>
         </ul>
         <ul>
           <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google 개인정보처리방침</a></li>
@@ -112,16 +126,73 @@
           <li><a href="https://support.google.com/admob/answer/6128543" target="_blank" rel="noopener noreferrer">AdMob 데이터/정책</a></li>
         </ul>
 
-        <h2>5. 문의처</h2>
+        <h2>5. 국제 데이터 이전</h2>
+        <p>Firebase/Google Cloud 인프라 특성상 데이터는 한국 외 국가(주로 미국)의 서버에서 처리될 수 있습니다. Google은 표준 계약 조항(SCC) 등을 통해 적법한 이전 근거를 확보하고 있습니다.</p>
+
+        <h2>6. 이용자 권리</h2>
+        <ul>
+          <li>개인정보 열람, 수정, 삭제 요청</li>
+          <li>처리 제한 요청</li>
+          <li>동의 철회 및 로그아웃</li>
+          <li>계정 탈퇴 요청 (7일 유예, 30일 재가입 제한)</li>
+        </ul>
+
+        <h2>7. 아동 개인정보</h2>
+        <p>서비스는 법적 성년 미만 아동을 대상으로 하지 않습니다. 해당하는 경우 보호자 동의를 요청합니다.</p>
+
+        <h2>8. 보안 조치</h2>
+        <ul>
+          <li>전송 구간 암호화 (HTTPS/TLS)</li>
+          <li>플랫폼 보안 저장소를 이용한 토큰 보호</li>
+          <li>최소 권한 접근 제어 및 운영 모니터링</li>
+        </ul>
+
+        <h2>9. 방침 변경</h2>
+        <p>법령 또는 서비스 변경에 따라 방침이 업데이트될 수 있으며, 중요한 변경 사항은 앱 내 공지 등을 통해 안내합니다.</p>
+
+        <h2>10. 문의처</h2>
         <ul>
           <li>서비스명: ProgressEye</li>
           <li>이메일: reg132692@gmail.com</li>
         </ul>
+
+        <!-- GDPR 섹션 -->
+        <div class="gdpr-box">
+          <h2>🇪🇺 EEA/EU 이용자 추가 권리 (GDPR)</h2>
+          <p>유럽 경제 지역(EEA) 및 영국 거주 이용자는 GDPR에 따라 아래 추가 권리를 갖습니다.</p>
+
+          <h2>처리 법적 근거</h2>
+          <ul>
+            <li><strong>계약 이행</strong>: 로그인, 동기화, 원격 제어 등 서비스 핵심 기능 제공</li>
+            <li><strong>정당한 이익</strong>: 보안, 오류 분석, 서비스 개선</li>
+            <li><strong>동의</strong>: 맞춤형 광고 제공 (앱 최초 실행 시 동의 요청, 언제든지 철회 가능)</li>
+          </ul>
+
+          <h2>GDPR 권리</h2>
+          <ul>
+            <li><strong>열람권</strong>: 처리 중인 개인정보 사본 요청</li>
+            <li><strong>정정권</strong>: 부정확한 데이터 수정 요청</li>
+            <li><strong>삭제권 (잊혀질 권리)</strong>: 특정 조건 하에 데이터 삭제 요청</li>
+            <li><strong>이동권</strong>: 구조화된 형식으로 데이터 수령 요청</li>
+            <li><strong>처리 제한권</strong>: 특정 조건 하에 처리 제한 요청</li>
+            <li><strong>반대권</strong>: 정당한 이익 또는 직접 마케팅 목적 처리에 반대</li>
+            <li><strong>동의 철회권</strong>: 동의 기반 처리에 대한 동의 언제든지 철회 (광고 동의는 기기 설정에서 가능)</li>
+          </ul>
+
+          <h2>감독 기관 불만 제기</h2>
+          <p>개인정보 처리에 불만이 있는 경우 거주 국가의 데이터 보호 감독 기관에 불만을 제기할 권리가 있습니다. EU 감독 기관 목록: <a href="https://edpb.europa.eu/about-edpb/about-edpb/members_en" target="_blank" rel="noopener noreferrer">EDPB 회원 목록</a></p>
+
+          <h2>제3국 데이터 이전</h2>
+          <p>Google Firebase 및 AdMob은 미국에 본사를 둔 서비스로, 데이터가 미국 서버에서 처리됩니다. Google은 EU-미국 데이터 프라이버시 프레임워크(DPF) 인증 및 표준 계약 조항(SCC)을 통해 적법한 이전 근거를 확보하고 있습니다.</p>
+
+          <p>권리 행사 및 문의: <a href="mailto:reg132692@gmail.com">reg132692@gmail.com</a></p>
+        </div>
       </article>
 
+      <!-- ══════════════════════════════════════════════════════ ENGLISH -->
       <article id="policy-en" class="policy" lang="en">
         <h1>ProgressEye Privacy Policy</h1>
-        <p class="muted">Effective Date: 2026-03-06</p>
+        <p class="muted">Effective Date: 2026-03-19</p>
         <p>ProgressEye (the "Service") values your privacy and complies with applicable data protection laws. This policy applies to both the Android mobile app and the Windows PC app.</p>
 
         <h2>1. Data We Collect</h2>
@@ -129,7 +200,8 @@
           <li>Account/identity data: email, display name, Firebase UID</li>
           <li>Device/usage data: device_id, app version, platform, monitoring settings and status</li>
           <li>Remote feature data: remote screenshot (JPEG), created timestamp, command metadata</li>
-          <li>Advertising data (mobile): ads are currently disabled globally and not shown</li>
+          <li>Advertising data (mobile): Google AdMob may collect advertising identifiers (GAID), device information, and ad interaction data. Users in the European Economic Area (EEA) are asked for consent before ads are shown.</li>
+          <li>Error/diagnostic data: Firebase Crashlytics collects crash logs and device state for stability monitoring.</li>
         </ol>
 
         <h2>2. Purposes of Processing</h2>
@@ -137,7 +209,8 @@
           <li>Authentication and account linking</li>
           <li>Mobile-PC synchronization and remote control features</li>
           <li>Service operations, troubleshooting, security, and abuse prevention</li>
-          <li>Ad serving for free tier operation (mobile app, currently disabled)</li>
+          <li>Ad serving for free tier operation via Google AdMob</li>
+          <li>Error analysis for app stability improvement</li>
         </ol>
 
         <h2>3. Retention and Deletion</h2>
@@ -145,13 +218,14 @@
           <li>Data is retained only as long as required for service operation.</li>
           <li>After withdrawal request, data is deleted after a 7-day grace period.</li>
           <li>A 30-day rejoin restriction may apply from withdrawal request date.</li>
+          <li>Ad-related data is subject to Google's data retention policies.</li>
         </ul>
 
         <h2>4. Third-party Services</h2>
         <ul>
-          <li>Google Firebase (Authentication, Realtime Database, Cloud Storage, Cloud Messaging)</li>
-          <li>Google OAuth (sign-in)</li>
-          <li>Google AdMob (mobile advertising, currently disabled; applies if re-enabled)</li>
+          <li>Google Firebase (Authentication, Realtime Database, Cloud Storage, Cloud Messaging, Crashlytics) — authentication, data sync, file storage, push notifications, crash reporting</li>
+          <li>Google OAuth — sign-in</li>
+          <li>Google AdMob — mobile ad delivery and measurement</li>
         </ul>
         <ul>
           <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a></li>
@@ -159,11 +233,67 @@
           <li><a href="https://support.google.com/admob/answer/6128543" target="_blank" rel="noopener noreferrer">AdMob Data and Policy</a></li>
         </ul>
 
-        <h2>5. Contact</h2>
+        <h2>5. International Data Transfers</h2>
+        <p>Due to Firebase/Google Cloud infrastructure, data may be processed on servers outside your country (primarily in the United States). Google maintains lawful transfer mechanisms including Standard Contractual Clauses (SCCs).</p>
+
+        <h2>6. Your Rights</h2>
+        <ul>
+          <li>Access, correction, or deletion of personal data</li>
+          <li>Restriction of processing</li>
+          <li>Withdrawal of consent and sign-out</li>
+          <li>Account withdrawal request (7-day grace period, 30-day rejoin restriction)</li>
+        </ul>
+
+        <h2>7. Children's Data</h2>
+        <p>The Service is not intended for children below the legal age. Where required by law, guardian consent may be requested.</p>
+
+        <h2>8. Security Measures</h2>
+        <ul>
+          <li>Encryption in transit (HTTPS/TLS)</li>
+          <li>Secure token storage using platform security storage</li>
+          <li>Least-privilege access control and operational monitoring</li>
+        </ul>
+
+        <h2>9. Policy Changes</h2>
+        <p>This policy may be updated due to legal or service changes. Material updates will be announced in-app or through notice channels.</p>
+
+        <h2>10. Contact</h2>
         <ul>
           <li>Service: ProgressEye</li>
           <li>Email: reg132692@gmail.com</li>
         </ul>
+
+        <!-- GDPR section -->
+        <div class="gdpr-box">
+          <h2>🇪🇺 Additional Rights for EEA/EU Users (GDPR)</h2>
+          <p>If you are located in the European Economic Area (EEA) or United Kingdom, you have the following additional rights under the GDPR.</p>
+
+          <h2>Legal Basis for Processing</h2>
+          <ul>
+            <li><strong>Contract performance</strong>: Core service features such as sign-in, sync, and remote control</li>
+            <li><strong>Legitimate interests</strong>: Security, crash analysis, and service improvement</li>
+            <li><strong>Consent</strong>: Personalized ad delivery (requested on first launch; withdrawable at any time)</li>
+          </ul>
+
+          <h2>Your GDPR Rights</h2>
+          <ul>
+            <li><strong>Right of access</strong>: Request a copy of your personal data being processed</li>
+            <li><strong>Right to rectification</strong>: Request correction of inaccurate data</li>
+            <li><strong>Right to erasure</strong>: Request deletion of your data under certain conditions</li>
+            <li><strong>Right to data portability</strong>: Receive your data in a structured, machine-readable format</li>
+            <li><strong>Right to restriction</strong>: Request restriction of processing under certain conditions</li>
+            <li><strong>Right to object</strong>: Object to processing based on legitimate interests or direct marketing</li>
+            <li><strong>Right to withdraw consent</strong>: Withdraw consent for consent-based processing at any time (ad consent can be managed in device settings)</li>
+          </ul>
+
+          <h2>Right to Lodge a Complaint</h2>
+          <p>You have the right to lodge a complaint with your local data protection supervisory authority. For a list of EU supervisory authorities, see: <a href="https://edpb.europa.eu/about-edpb/about-edpb/members_en" target="_blank" rel="noopener noreferrer">EDPB Members</a></p>
+
+          <h2>International Data Transfers</h2>
+          <p>Google Firebase and AdMob are US-based services and your data may be processed on US servers. Google maintains compliance with the EU-US Data Privacy Framework (DPF) and Standard Contractual Clauses (SCCs) as lawful transfer mechanisms.</p>
+
+          <p>To exercise your rights or for any privacy inquiries: <a href="mailto:reg132692@gmail.com">reg132692@gmail.com</a></p>
+        </div>
       </article>
     </section>
   </main>
