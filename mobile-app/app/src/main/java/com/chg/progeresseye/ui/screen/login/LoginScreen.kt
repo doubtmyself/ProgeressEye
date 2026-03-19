@@ -513,7 +513,9 @@ private fun PreviewCard() {
         shape = RoundedCornerShape(16.dp),
         color = SurfaceDark.copy(alpha = 0.50f),
         border = BorderStroke(1.dp, WhiteAlpha5),
-        modifier = Modifier.widthIn(max = 320.dp),
+        // 고정 높이: row 2개 기준 (각 40dp) + spacer(16dp) + padding(32dp) = 128dp
+        // row 추가/제거 시 recomposition이 두 번 발생해 상위 레이아웃이 흔들리는 것을 방지
+        modifier = Modifier.widthIn(max = 320.dp).height(128.dp),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
