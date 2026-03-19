@@ -47,8 +47,8 @@ data class AuthUiState(
 
 class AuthViewModel(
     application: Application,
-    private val repository: GoogleAuthRepository = GoogleAuthRepository(),
 ) : AndroidViewModel(application) {
+    private val repository = GoogleAuthRepository()
     private companion object {
         private const val FUNCTIONS_BASE_URL = "https://us-central1-progresseye-49244.cloudfunctions.net"
     }
