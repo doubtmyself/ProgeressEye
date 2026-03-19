@@ -27,8 +27,8 @@ object PolicyRepository {
             .collection("appConfig")
             .document("policies")
             .addSnapshotListener { snapshot, _ ->
-                _adFreeModeGlobal.value = snapshot?.getBoolean("adFreeModeGlobal") == true
-//                _adFreeModeGlobal.value = false
+//                _adFreeModeGlobal.value = snapshot?.getBoolean("adFreeModeGlobal") == true
+                _adFreeModeGlobal.value = false
             }
     }
 

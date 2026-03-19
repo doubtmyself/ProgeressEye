@@ -307,17 +307,18 @@ private fun AccountCard(
         }
 
         HorizontalDivider(color = OutlineVariantDark)
-
-        if (isPolicyLoaded && !isAdFreeMode) {
-            SubscriptionSection(
-                isProPlan = isProPlan,
-                subscriptionPrice = subscriptionPrice,
-                canStartSubscription = canStartSubscription,
-                isPurchaseLoading = isPurchaseLoading,
-                onStartSubscription = onStartSubscription,
-            )
-            HorizontalDivider(color = OutlineVariantDark)
-        }
+// PRO 구독 제거 임시
+//        if (isPolicyLoaded && !isAdFreeMode) {
+//
+//            SubscriptionSection(
+//                isProPlan = isProPlan,
+//                subscriptionPrice = subscriptionPrice,
+//                canStartSubscription = canStartSubscription,
+//                isPurchaseLoading = isPurchaseLoading,
+//                onStartSubscription = onStartSubscription,
+//            )
+//            HorizontalDivider(color = OutlineVariantDark)
+//        }
 
         // Logout button
         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
