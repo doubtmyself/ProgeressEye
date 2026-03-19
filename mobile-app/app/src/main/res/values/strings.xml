@@ -142,6 +142,12 @@ Grace end date: %1$s</string>
     <string name="login_task_sample_08">Executing long-running SQL analytics query</string>
     <string name="login_task_sample_09">Uploading raw footage archive</string>
     <string name="login_task_sample_10">Downloading model dataset snapshot</string>
+    <!-- ── Ad Consent Status (Login Screen, EEA only) ── -->
+    <string name="login_consent_loading">Checking ad consent…</string>
+    <string name="login_consent_personalized">Personalized ads agreed (1 hr reward)</string>
+    <string name="login_consent_non_personalized">Non-personalized ads (30 min reward)</string>
+    <string name="login_consent_change">Change</string>
+
     <string name="login_terms_prefix">I agree to the </string>
     <string name="login_terms_link">Terms of Service</string>
     <string name="login_terms_mid"> and acknowledge the </string>

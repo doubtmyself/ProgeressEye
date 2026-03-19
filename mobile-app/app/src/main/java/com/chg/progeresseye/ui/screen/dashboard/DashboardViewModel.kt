@@ -269,15 +269,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         return _userPlan.value == "pro" || isAdFreeMode || _adFreePassRemainingMs.value > 0L
     }
 
-    /** 광고 시청 보상: 리워드 수량 × 1시간 무료 패스 부여 */
+    /** 광고 시청 보상: 개인화 동의 시 1시간, 비개인화 시 30분 패스 부여 */
     private fun grantAdFreePass(rewardAmount: Int) {
         val prefs = getApplication<Application>()
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val isPersonalized = prefs.getBoolean(KEY_IS_PERSONALIZED_ADS, true)
+        val durationMs = rewardAmount * if (isPersonalized)
+            AD_FREE_PASS_DURATION_PERSONALIZED_MS
+        else
+            AD_FREE_PASS_DURATION_NON_PERSONALIZED_MS
         val now = System.currentTimeMillis()
         val existing = prefs.getLong(KEY_AD_FREE_UNTIL, 0L)
-        // 이미 패스가 남아있으면 거기서 연장, 아니면 지금부터 시작
         val base = if (existing > now) existing else now
-        val newExpiry = base + rewardAmount * AD_FREE_PASS_DURATION_PER_UNIT_MS
+        val newExpiry = base + durationMs
         prefs.edit().putLong(KEY_AD_FREE_UNTIL, newExpiry).apply()
         startAdFreePassCountdown(newExpiry - now)
     }
@@ -727,8 +731,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
         private const val REWARDED_AD_UNIT_ID = "ca-app-pub-6572076936506117/7864871780"
         private const val REWARDED_AD_UNIT_ID_TEST = "ca-app-pub-3940256099942544/5224354917"
-        private const val AD_FREE_PASS_DURATION_PER_UNIT_MS = 3_600_000L // 리워드 1개 = 1시간
+        private const val AD_FREE_PASS_DURATION_PERSONALIZED_MS = 3_600_000L    // 맞춤형 광고 동의 = 1시간
+        private const val AD_FREE_PASS_DURATION_NON_PERSONALIZED_MS = 1_800_000L // 비맞춤형 광고 = 30분
         private const val PREFS_NAME = "dashboard_prefs"
         private const val KEY_AD_FREE_UNTIL = "ad_free_until_ms"
+        const val KEY_IS_PERSONALIZED_ADS = "is_personalized_ads"
     }
 }

@@ -22,6 +22,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
@@ -57,6 +60,9 @@ class MainActivity : ComponentActivity() {
     private var withdrawalStatusListener: ListenerRegistration? = null
     private var isHandlingWithdrawalLogout: Boolean = false
     private var adsInitialized = false
+    private var consentObtained by mutableStateOf(false)
+    private var isPersonalizedAds by mutableStateOf(true)
+    private var isEeaUser by mutableStateOf(false)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -167,6 +173,10 @@ class MainActivity : ComponentActivity() {
                             existingDeviceName = authState.existingDeviceName,
                             requiresWithdrawalCancel = authState.requiresWithdrawalCancel,
                             withdrawalGraceEndDate = authState.withdrawalGraceEndDate,
+                            consentObtained = consentObtained,
+                            isPersonalizedAds = isPersonalizedAds,
+                            isEeaUser = isEeaUser,
+                            onChangeConsent = { onChangeAdConsent() },
                         )
                     }
                     composable("main") {
@@ -252,9 +262,39 @@ class MainActivity : ComponentActivity() {
     private fun initMobileAds() {
         if (adsInitialized) return
         adsInitialized = true
+        val personalized = isPersonalizedAdsConsented()
+        val eea = isEeaRegion()
+        isPersonalizedAds = personalized
+        isEeaUser = eea
+        consentObtained = true
+        // DashboardViewModel이 리워드 시간 계산에 사용
+        getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
+            .edit().putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized).apply()
         lifecycleScope.launch(Dispatchers.IO) {
             MobileAds.initialize(this@MainActivity) {}
         }
+    }
+
+    /** TCF v2 SharedPreferences에서 개인화 광고 동의 여부 확인 */
+    private fun isPersonalizedAdsConsented(): Boolean {
+        val prefs = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
+        if (prefs.getInt("IABTCF_gdprApplies", 0) != 1) return true // 비EEA → 맞춤형 기본값
+        val purposeConsents = prefs.getString("IABTCF_PurposeConsents", "") ?: ""
+        // Purpose 4 (index 3) = "Select personalised ads"
+        return purposeConsents.length > 3 && purposeConsents[3] == '1'
+    }
+
+    private fun isEeaRegion(): Boolean {
+        val prefs = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
+        return prefs.getInt("IABTCF_gdprApplies", 0) == 1
+    }
+
+    /** "변경" 클릭 시 동의 폼 재표시 */
+    private fun onChangeAdConsent() {
+        consentObtained = false
+        adsInitialized = false
+        UserMessagingPlatform.getConsentInformation(this).reset()
+        requestConsentAndInitAds()
     }
 
     override fun onDestroy() {

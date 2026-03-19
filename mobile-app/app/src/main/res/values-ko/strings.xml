@@ -134,6 +134,12 @@
     <string name="login_task_sample_08">장시간 SQL 분석 쿼리 실행 중</string>
     <string name="login_task_sample_09">원본 영상 아카이브 업로드 중</string>
     <string name="login_task_sample_10">모델 데이터셋 스냅샷 다운로드 중</string>
+    <!-- ── 광고 동의 상태 (로그인 화면, EEA 전용) ── -->
+    <string name="login_consent_loading">광고 동의 확인 중…</string>
+    <string name="login_consent_personalized">맞춤형 광고 동의 (리워드 1시간)</string>
+    <string name="login_consent_non_personalized">비맞춤형 광고 (리워드 30분)</string>
+    <string name="login_consent_change">변경</string>
+
     <string name="login_terms_prefix"></string>
     <string name="login_terms_link">이용약관</string>
     <string name="login_terms_mid">에 동의하고 </string>

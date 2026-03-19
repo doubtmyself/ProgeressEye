@@ -210,6 +210,10 @@ fun LoginScreen(
     existingDeviceName: String? = null,
     requiresWithdrawalCancel: Boolean = false,
     withdrawalGraceEndDate: String? = null,
+    consentObtained: Boolean = true,
+    isPersonalizedAds: Boolean = true,
+    isEeaUser: Boolean = false,
+    onChangeConsent: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Track the logo circle's center in root coordinates
@@ -313,7 +317,15 @@ fun LoginScreen(
             }
 
             // Bottom pinned area
-            BottomActions(onSignInClick = onSignInClick, isLoading = isLoading, error = error)
+            BottomActions(
+                onSignInClick = onSignInClick,
+                isLoading = isLoading,
+                error = error,
+                consentObtained = consentObtained,
+                isPersonalizedAds = isPersonalizedAds,
+                isEeaUser = isEeaUser,
+                onChangeConsent = onChangeConsent,
+            )
         }
     }
 }
@@ -664,6 +676,10 @@ private fun BottomActions(
     onSignInClick: () -> Unit,
     isLoading: Boolean = false,
     error: String? = null,
+    consentObtained: Boolean = true,
+    isPersonalizedAds: Boolean = true,
+    isEeaUser: Boolean = false,
+    onChangeConsent: () -> Unit = {},
 ) {
     var termsAccepted by remember { mutableStateOf(false) }
 
@@ -691,11 +707,62 @@ private fun BottomActions(
             )
         }
         TermsRow(checked = termsAccepted, onCheckedChange = { termsAccepted = it })
+        if (isEeaUser) {
+            AdConsentRow(
+                consentObtained = consentObtained,
+                isPersonalizedAds = isPersonalizedAds,
+                onChangeConsent = onChangeConsent,
+            )
+        }
         GoogleSignInButton(
             onClick = onSignInClick,
             isLoading = isLoading,
-            enabled = termsAccepted,
+            enabled = termsAccepted && consentObtained,
         )
+    }
+}
+
+@Composable
+private fun AdConsentRow(
+    consentObtained: Boolean,
+    isPersonalizedAds: Boolean,
+    onChangeConsent: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = consentObtained && isPersonalizedAds,
+            onCheckedChange = null,
+            colors = CheckboxDefaults.colors(
+                checkedColor = Primary,
+                uncheckedColor = Slate500,
+                checkmarkColor = Color.White,
+            ),
+        )
+        Text(
+            text = stringResource(
+                when {
+                    !consentObtained -> R.string.login_consent_loading
+                    isPersonalizedAds -> R.string.login_consent_personalized
+                    else -> R.string.login_consent_non_personalized
+                }
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (consentObtained) Slate400 else Slate500,
+            modifier = Modifier.weight(1f),
+        )
+        if (consentObtained) {
+            Text(
+                text = stringResource(R.string.login_consent_change),
+                style = MaterialTheme.typography.labelSmall,
+                color = Primary,
+                modifier = Modifier
+                    .clickable(onClick = onChangeConsent)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
     }
 }
 
