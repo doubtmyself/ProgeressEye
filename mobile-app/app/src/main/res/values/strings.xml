@@ -144,6 +144,8 @@ Grace end date: %1$s</string>
     <string name="login_task_sample_10">Downloading model dataset snapshot</string>
     <string name="login_terms_prefix">I agree to the </string>
     <string name="login_terms_link">Terms of Service</string>
+    <string name="login_terms_mid"> and acknowledge the </string>
+    <string name="login_terms_privacy_link">Privacy Policy</string>
     <string name="login_terms_suffix"></string>
     <string name="auth_session_check_failed">Session check failed</string>
     <string name="auth_sign_in_timeout">Sign-in timed out. Please try again.</string>

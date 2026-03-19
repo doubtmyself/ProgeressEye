@@ -71,6 +71,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -811,32 +812,36 @@ private fun TermsRow(
             ),
         )
         val prefix = stringResource(R.string.login_terms_prefix)
-        val link = stringResource(R.string.login_terms_link)
+        val tosLink = stringResource(R.string.login_terms_link)
+        val mid = stringResource(R.string.login_terms_mid)
+        val ppLink = stringResource(R.string.login_terms_privacy_link)
         val suffix = stringResource(R.string.login_terms_suffix)
-        Text(
-            text = buildAnnotatedString {
-                if (prefix.isNotEmpty()) {
-                    withStyle(SpanStyle(color = Slate500)) {
-                        append(prefix)
-                    }
-                }
-                withStyle(
-                    SpanStyle(
-                        color = Primary,
-                        textDecoration = TextDecoration.Underline,
-                    ),
-                ) {
-                    append(link)
-                }
-                if (suffix.isNotEmpty()) {
-                    withStyle(SpanStyle(color = Slate500)) {
-                        append(suffix)
-                    }
-                }
-            },
+        val privacyUrl = "https://progresseye-49244.web.app"
+
+        val annotated = buildAnnotatedString {
+            if (prefix.isNotEmpty()) withStyle(SpanStyle(color = Slate500)) { append(prefix) }
+            pushStringAnnotation(tag = "TOS", annotation = privacyUrl)
+            withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) {
+                append(tosLink)
+            }
+            pop()
+            withStyle(SpanStyle(color = Slate500)) { append(mid) }
+            pushStringAnnotation(tag = "PP", annotation = privacyUrl)
+            withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) {
+                append(ppLink)
+            }
+            pop()
+            if (suffix.isNotEmpty()) withStyle(SpanStyle(color = Slate500)) { append(suffix) }
+        }
+
+        ClickableText(
+            text = annotated,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.clickable {
-                uriHandler.openUri("https://progresseye-49244.web.app")
+            onClick = { offset ->
+                annotated.getStringAnnotations("TOS", offset, offset)
+                    .firstOrNull()?.let { uriHandler.openUri(it.item) }
+                annotated.getStringAnnotations("PP", offset, offset)
+                    .firstOrNull()?.let { uriHandler.openUri(it.item) }
             },
         )
     }
