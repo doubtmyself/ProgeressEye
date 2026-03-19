@@ -105,4 +105,9 @@ class GoogleAuthRepository(
     }
 
     fun getCurrentUser(): FirebaseUser? = auth.currentUser
+
+    /** Credential Manager 정리 없이 Firebase만 즉시 로그아웃 (init 체크용) */
+    fun signOutFirebaseOnly() {
+        auth.signOut()
+    }
 }

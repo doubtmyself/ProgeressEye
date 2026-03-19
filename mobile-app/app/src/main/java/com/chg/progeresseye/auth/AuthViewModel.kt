@@ -1,10 +1,11 @@
 package com.chg.progeresseye.auth
 
+import android.app.Application
 import android.content.Context
 import com.chg.progeresseye.BuildConfig
 import com.chg.progeresseye.FirebaseConstants
 import com.chg.progeresseye.R
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
@@ -45,8 +46,9 @@ data class AuthUiState(
 // ═════════════════════════════════════════════════════════
 
 class AuthViewModel(
+    application: Application,
     private val repository: GoogleAuthRepository = GoogleAuthRepository(),
-) : ViewModel() {
+) : AndroidViewModel(application) {
     private companion object {
         private const val FUNCTIONS_BASE_URL = "https://us-central1-progresseye-49244.cloudfunctions.net"
     }
@@ -58,10 +60,24 @@ class AuthViewModel(
     private var pendingWithdrawalUser: FirebaseUser? = null
     private var pendingWithdrawalUid: String? = null
 
-    private val _uiState = MutableStateFlow(
-        AuthUiState(user = repository.getCurrentUser()),
-    )
-    val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
+    private val _uiState: MutableStateFlow<AuthUiState>
+    val uiState: StateFlow<AuthUiState>
+
+    init {
+        val firebaseUser = repository.getCurrentUser()
+        val hasSession = MobileSessionManager.getSessionId(application) != null
+        if (firebaseUser != null && !hasSession) {
+            // Firebase 인증은 됐지만 세션이 확인되지 않은 상태
+            // (세션 탈취 다이얼로그 중 앱 종료 후 재실행 등)
+            // Firebase만 즉시 로그아웃하고 로그인 화면으로
+            repository.signOutFirebaseOnly()
+            MobileSessionManager.clearSession(application)
+            _uiState = MutableStateFlow(AuthUiState())
+        } else {
+            _uiState = MutableStateFlow(AuthUiState(user = firebaseUser))
+        }
+        uiState = _uiState.asStateFlow()
+    }
 
     /** True when user already has a valid Firebase session. */
     val isSignedIn: Boolean
@@ -361,6 +377,8 @@ class AuthViewModel(
             val existingDeviceName = snapshot.child("deviceName").getValue(String::class.java)
 
             if (!existingDeviceId.isNullOrBlank() && existingDeviceId != myDeviceId) {
+                // 세션 미확인 상태로 표시 → 앱 종료 후 재실행 시 자동 로그인 방지
+                MobileSessionManager.clearSession(context)
                 pendingUser = user
                 pendingUid = uid
                 _uiState.value = AuthUiState(

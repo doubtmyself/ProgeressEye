@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
             // EEA 테스트:  DEBUG_GEOGRAPHY_EEA
             // 미국 테스트: DEBUG_GEOGRAPHY_REGULATED_US_STATE
             // 기타(광고):  DEBUG_GEOGRAPHY_OTHER
-            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA
+            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_OTHER
             // ─────────────────────────────────────────────────────────────
             val debugSettings = ConsentDebugSettings.Builder(this)
                 .setDebugGeography(debugGeography)
