@@ -107,6 +107,8 @@ fun MainScreen(
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val userPlan by dashboardViewModel.userPlan.collectAsStateWithLifecycle()
     val isAdFreeModeEnabled by dashboardViewModel.isAdFreeModeEnabled.collectAsStateWithLifecycle()
+    val adFreePassRemainingMs by dashboardViewModel.adFreePassRemainingMs.collectAsStateWithLifecycle()
+    val isRewardedAdLoading by dashboardViewModel.isRewardedAdLoading.collectAsStateWithLifecycle()
     val requiresForcedSignOut = dashboardState.requiresForcedSignOut
     val context = LocalContext.current
     val activity = context as? Activity
@@ -166,14 +168,24 @@ fun MainScreen(
                         }
                     }
                     val currentNav = navItems[safeSelectedTab]
-                    CommonTopBar(title = stringResource(currentNav.labelResId), icon = currentNav.selectedIcon)
+                    CommonTopBar(
+                        title = stringResource(currentNav.labelResId),
+                        icon = currentNav.selectedIcon,
+                        adFreePassRemainingMs = if (safeSelectedTab == 0) adFreePassRemainingMs else 0L,
+                    )
                     HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
                 }
             },
             bottomBar = {
                 MainBottomBar(
                     selectedIndex = safeSelectedTab,
-                    onIndexSelected = { selectedTab = it },
+                    onIndexSelected = { index ->
+                        if (index == 0 && safeSelectedTab == 0) {
+                            // 대시보드 탭 재클릭 → 패스 초기화
+                            dashboardViewModel.clearAdFreePass()
+                        }
+                        selectedTab = index
+                    },
                 )
             },
             containerColor = BackgroundDark,
@@ -183,15 +195,28 @@ fun MainScreen(
                     uiState = dashboardState,
                     userPlan = userPlan,
                     isAdFreeMode = isAdFreeModeEnabled,
+                    isAdLoading = isRewardedAdLoading,
                     onRequestScreenshot = { deviceId ->
-                        if (userPlan == "free" && !isAdFreeModeEnabled && activity != null) {
-                            dashboardViewModel.showRewardedAdThenScreenshot(activity, deviceId)
+                        if (userPlan == "free" && !isAdFreeModeEnabled && adFreePassRemainingMs <= 0L && activity != null) {
+                            dashboardViewModel.showRewardedAdThen(activity) { dashboardViewModel.requestScreenshot(deviceId) }
                         } else {
                             dashboardViewModel.requestScreenshot(deviceId)
                         }
                     },
-                    onSleep = { deviceId -> dashboardViewModel.sendSleepCommand(deviceId) },
-                    onShutdown = { deviceId -> dashboardViewModel.sendShutdownCommand(deviceId) },
+                    onSleep = { deviceId ->
+                        if (userPlan == "free" && !isAdFreeModeEnabled && adFreePassRemainingMs <= 0L && activity != null) {
+                            dashboardViewModel.showRewardedAdThen(activity) { dashboardViewModel.sendSleepCommand(deviceId) }
+                        } else {
+                            dashboardViewModel.sendSleepCommand(deviceId)
+                        }
+                    },
+                    onShutdown = { deviceId ->
+                        if (userPlan == "free" && !isAdFreeModeEnabled && adFreePassRemainingMs <= 0L && activity != null) {
+                            dashboardViewModel.showRewardedAdThen(activity) { dashboardViewModel.sendShutdownCommand(deviceId) }
+                        } else {
+                            dashboardViewModel.sendShutdownCommand(deviceId)
+                        }
+                    },
                     onRefresh = { dashboardViewModel.refresh() },
                     onUpgradeToPro = { selectedTab = 2 },
                     modifier = Modifier.padding(padding),
@@ -208,7 +233,7 @@ fun MainScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CommonTopBar(title: String, icon: ImageVector) {
+private fun CommonTopBar(title: String, icon: ImageVector, adFreePassRemainingMs: Long = 0L) {
     TopAppBar(
         title = {
             Row(
@@ -235,6 +260,27 @@ private fun CommonTopBar(title: String, icon: ImageVector) {
                     fontSize = 20.sp,
                     letterSpacing = (-0.3).sp,
                 )
+                if (adFreePassRemainingMs > 0L) {
+                    val totalSec = adFreePassRemainingMs / 1000
+                    val h = totalSec / 3600
+                    val m = (totalSec % 3600) / 60
+                    val s = totalSec % 60
+                    val timeText = if (h > 0) "%d:%02d:%02d".format(h, m, s)
+                                   else "%d:%02d".format(m, s)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF4ADE80).copy(alpha = 0.15f))
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = "Free $timeText",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF4ADE80),
+                        )
+                    }
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(

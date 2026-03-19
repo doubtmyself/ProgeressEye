@@ -134,6 +134,7 @@ fun DashboardContent(
     uiState: DashboardUiState,
     userPlan: String = "free",
     isAdFreeMode: Boolean = false,
+    isAdLoading: Boolean = false,
     onRequestScreenshot: (deviceId: String) -> Unit = {},
     onSleep: (deviceId: String) -> Unit = {},
     onShutdown: (deviceId: String) -> Unit = {},
@@ -236,6 +237,7 @@ fun DashboardContent(
                                     DeviceCard(
                                         device = device,
                                         isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                                        isAdLoading = isAdLoading,
                                         onRequestScreenshot = { onRequestScreenshot(device.id) },
                                         onSleep = { onSleep(device.id) },
                                         onShutdown = { onShutdown(device.id) },
@@ -250,6 +252,7 @@ fun DashboardContent(
                                 DeviceCard(
                                     device = device,
                                     isScreenshotLoading = uiState.screenshotLoadingDeviceId == device.id,
+                                    isAdLoading = isAdLoading,
                                     onRequestScreenshot = { onRequestScreenshot(device.id) },
                                     onSleep = { onSleep(device.id) },
                                     onShutdown = { onShutdown(device.id) },
@@ -439,6 +442,7 @@ private fun copyPcAppInstallLink(context: android.content.Context) {
 private fun DeviceCard(
     device: DeviceData,
     isScreenshotLoading: Boolean,
+    isAdLoading: Boolean = false,
     onRequestScreenshot: () -> Unit,
     onSleep: () -> Unit = {},
     onShutdown: () -> Unit = {},
@@ -493,6 +497,7 @@ private fun DeviceCard(
             PcControlRow(
                 isOnline = device.isOnline,
                 isScreenshotLoading = isScreenshotLoading,
+                isAdLoading = isAdLoading,
                 onRequestScreenshot = onRequestScreenshot,
                 onSleep = onSleep,
                 onShutdown = { showShutdownConfirm = true },
@@ -1029,11 +1034,12 @@ private fun PcControlButton(
 private fun PcControlRow(
     isOnline: Boolean,
     isScreenshotLoading: Boolean,
+    isAdLoading: Boolean = false,
     onRequestScreenshot: () -> Unit,
     onSleep: () -> Unit,
     onShutdown: () -> Unit,
 ) {
-    val screenshotEnabled = isOnline && !isScreenshotLoading
+    val screenshotEnabled = isOnline && !isScreenshotLoading && !isAdLoading
     Surface {
         Row(
             modifier = Modifier
@@ -1063,14 +1069,14 @@ private fun PcControlRow(
                 modifier = Modifier.weight(1f),
             )
             PcControlButton(
-                enabled = isOnline,
+                enabled = isOnline && !isAdLoading,
                 onClick = onSleep,
                 icon = { alpha -> Icon(Icons.Outlined.Bedtime, null, tint = StatusSleep.copy(alpha = alpha), modifier = Modifier.size(18.dp)) },
                 label = stringResource(R.string.dashboard_sleep),
                 modifier = Modifier.weight(1f),
             )
             PcControlButton(
-                enabled = isOnline,
+                enabled = isOnline && !isAdLoading,
                 onClick = onShutdown,
                 icon = { alpha -> Icon(Icons.Outlined.PowerSettingsNew, null, tint = Color(0xFFEF4444).copy(alpha = alpha), modifier = Modifier.size(18.dp)) },
                 label = stringResource(R.string.dashboard_shutdown),

@@ -2,7 +2,6 @@ package com.chg.progeresseye.ui.screen.dashboard
 
 import android.app.Application
 import android.app.Activity
-import android.content.Context
 import timber.log.Timber
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -30,6 +29,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
+import android.content.Context
+import com.chg.progeresseye.BuildConfig
 
 // ═════════════════════════════════════════════════════════
 // DashboardViewModel — RTDB listener for devices + tasks
@@ -56,7 +57,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private var isAdFreeMode: Boolean = false
 
     private val _isRewardedAdReady = MutableStateFlow(false)
-    val isRewardedAdReady: StateFlow<Boolean> = _isRewardedAdReady.asStateFlow()
+
+    // 광고 1회 시청 → 리워드 수량 × 1시간 무료 패스
+    private val _adFreePassRemainingMs = MutableStateFlow(0L)
+    val adFreePassRemainingMs: StateFlow<Long> = _adFreePassRemainingMs.asStateFlow()
+    private var adFreePassJob: Job? = null
 
     // Listener A: devices (ChildEventListener — 태스크/스크린샷 변경)
     private var devicesRef: DatabaseReference? = null
@@ -68,8 +73,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Rewarded ad state
     private var rewardedAd: RewardedAd? = null
-    private var isRewardedAdLoading = false
+    private val _isRewardedAdLoading = MutableStateFlow(false)
+    val isRewardedAdLoading: StateFlow<Boolean> = _isRewardedAdLoading.asStateFlow()
     private var shouldPreloadRewardedAd = false
+    // 광고 로드 중 클릭 시 대기열 — 로드 완료 후 자동 실행
+    private var pendingAdActivity: Activity? = null
+    private var pendingAdAction: (() -> Unit)? = null
 
     // Mobile heartbeat job (60초 간격 RTDB 갱신)
     private var mobileHeartbeatJob: Job? = null
@@ -97,6 +106,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         statusCache.clear()
         heartbeatCache.clear()
         shouldPreloadRewardedAd = true
+        restoreAdFreePass()
 
         setupDevicesListener(uid)
         setupStatusListener(uid)
@@ -195,26 +205,37 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadRewardedAd(context: Context) {
         if (shouldSkipRewardedAds()) return
-        if (isRewardedAdLoading || rewardedAd != null) return
+        if (_isRewardedAdLoading.value || rewardedAd != null) return
 
-        isRewardedAdLoading = true
+        _isRewardedAdLoading.value = true
+        val adUnitId = if (BuildConfig.DEBUG) REWARDED_AD_UNIT_ID_TEST else REWARDED_AD_UNIT_ID
         RewardedAd.load(
             context,
-            REWARDED_TEST_AD_UNIT_ID,
+            adUnitId,
             AdRequest.Builder().build(),
             object : RewardedAdLoadCallback() {
                 override fun onAdLoaded(ad: RewardedAd) {
                     rewardedAd = ad
-                    isRewardedAdLoading = false
+                    _isRewardedAdLoading.value = false
                     shouldPreloadRewardedAd = false
                     _isRewardedAdReady.value = true
+                    // 대기 중인 액션이 있으면 자동으로 광고 표시
+                    val activity = pendingAdActivity
+                    val action = pendingAdAction
+                    if (activity != null && action != null) {
+                        pendingAdActivity = null
+                        pendingAdAction = null
+                        showRewardedAdThen(activity, action)
+                    }
                 }
 
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
                     Timber.w("rewarded:onAdFailedToLoad: ${loadAdError.message}")
                     rewardedAd = null
-                    isRewardedAdLoading = false
+                    _isRewardedAdLoading.value = false
                     _isRewardedAdReady.value = false
+                    pendingAdActivity = null
+                    pendingAdAction = null
                 }
             },
         )
@@ -239,25 +260,75 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             rewardedAd = null
             _isRewardedAdReady.value = false
             shouldPreloadRewardedAd = false
-        } else if (shouldPreloadRewardedAd && rewardedAd == null && !isRewardedAdLoading) {
+        } else if (shouldPreloadRewardedAd && rewardedAd == null && !_isRewardedAdLoading.value) {
             loadRewardedAd(db.app.applicationContext)
         }
     }
 
     private fun shouldSkipRewardedAds(): Boolean {
-        return _userPlan.value == "pro" || isAdFreeMode
+        return _userPlan.value == "pro" || isAdFreeMode || _adFreePassRemainingMs.value > 0L
     }
 
-    fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) {
+    /** 광고 시청 보상: 리워드 수량 × 1시간 무료 패스 부여 */
+    private fun grantAdFreePass(rewardAmount: Int) {
+        val prefs = getApplication<Application>()
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val existing = prefs.getLong(KEY_AD_FREE_UNTIL, 0L)
+        // 이미 패스가 남아있으면 거기서 연장, 아니면 지금부터 시작
+        val base = if (existing > now) existing else now
+        val newExpiry = base + rewardAmount * AD_FREE_PASS_DURATION_PER_UNIT_MS
+        prefs.edit().putLong(KEY_AD_FREE_UNTIL, newExpiry).apply()
+        startAdFreePassCountdown(newExpiry - now)
+    }
+
+    /** 앱 재시작 시 저장된 패스 복원 */
+    private fun restoreAdFreePass() {
+        val prefs = getApplication<Application>()
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val remaining = prefs.getLong(KEY_AD_FREE_UNTIL, 0L) - System.currentTimeMillis()
+        if (remaining > 0L) {
+            startAdFreePassCountdown(remaining)
+        }
+    }
+
+    fun clearAdFreePass() {
+        adFreePassJob?.cancel()
+        _adFreePassRemainingMs.value = 0L
+        getApplication<Application>()
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().remove(KEY_AD_FREE_UNTIL).apply()
+        syncAdGateState()
+    }
+
+    private fun startAdFreePassCountdown(remainingMs: Long) {
+        adFreePassJob?.cancel()
+        _adFreePassRemainingMs.value = remainingMs
+        adFreePassJob = viewModelScope.launch {
+            var left = remainingMs
+            while (left > 0L) {
+                delay(1_000L)
+                left -= 1_000L
+                _adFreePassRemainingMs.value = maxOf(0L, left)
+            }
+            // 만료 — 광고 미리 로드
+            syncAdGateState()
+        }
+    }
+
+    /** 광고 게이트 통과 후 [action] 실행. 패스/Pro이면 바로 실행. */
+    fun showRewardedAdThen(activity: Activity, action: () -> Unit) {
         if (shouldSkipRewardedAds()) {
-            requestScreenshot(deviceId)
+            action()
             return
         }
 
         val ad = rewardedAd
         if (ad == null) {
+            // 광고 로드 중 — 대기열에 저장, 로드 완료 시 자동 실행
+            pendingAdActivity = activity
+            pendingAdAction = action
             loadRewardedAd(activity.applicationContext)
-            requestScreenshot(deviceId)
             return
         }
 
@@ -268,22 +339,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
                 if (rewardEarned) {
-                    requestScreenshot(deviceId)
+                    grantAdFreePass(1) // 광고 1회 시청 = 1시간 (콘솔 amount 무시)
+                    action()
                 }
                 loadRewardedAd(activity.applicationContext)
             }
 
             override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
                 Timber.w("rewarded:onAdFailedToShow: ${adError.message}")
-                requestScreenshot(deviceId)
+                action()
                 loadRewardedAd(activity.applicationContext)
             }
         }
 
-        ad.show(activity) {
-            rewardEarned = true
-        }
+        ad.show(activity) { rewardEarned = true }
     }
+
+    // 하위 호환 래퍼
+    fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) =
+        showRewardedAdThen(activity) { requestScreenshot(deviceId) }
 
         // ── Mobile heartbeat (60초 간격) ─────────────────────────
 
@@ -623,7 +697,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         rewardedAd = null
         _isRewardedAdReady.value = false
-        isRewardedAdLoading = false
+        _isRewardedAdLoading.value = false
         shouldPreloadRewardedAd = false
         _isAdFreeModeEnabled.value = false
         isAdFreeMode = false
@@ -651,6 +725,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         private const val MIN_REFRESH_DISPLAY_MS = 900L
         /** Screenshot request timeout. */
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
-        private const val REWARDED_TEST_AD_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"
+        private const val REWARDED_AD_UNIT_ID = "ca-app-pub-6572076936506117/7864871780"
+        private const val REWARDED_AD_UNIT_ID_TEST = "ca-app-pub-3940256099942544/5224354917"
+        private const val AD_FREE_PASS_DURATION_PER_UNIT_MS = 3_600_000L // 리워드 1개 = 1시간
+        private const val PREFS_NAME = "dashboard_prefs"
+        private const val KEY_AD_FREE_UNTIL = "ad_free_until_ms"
     }
 }

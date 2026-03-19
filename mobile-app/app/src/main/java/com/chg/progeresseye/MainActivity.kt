@@ -36,6 +36,7 @@ import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
+import com.google.android.ump.ConsentDebugSettings
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
 import com.google.firebase.database.DatabaseReference
@@ -191,7 +192,23 @@ class MainActivity : ComponentActivity() {
 
     private fun requestConsentAndInitAds() {
         val consentInformation = UserMessagingPlatform.getConsentInformation(this)
-        val params = ConsentRequestParameters.Builder().build()
+
+        val params = if (BuildConfig.DEBUG) {
+            // 디버그 빌드: EEA 지역으로 강제 설정해 동의 폼 테스트
+            // 기기 해시 ID는 logcat에서 확인:
+            //   "Use new ConsentDebugSettings.Builder().addTestDeviceHashedId("XXXX")"
+            val debugSettings = ConsentDebugSettings.Builder(this)
+                .setDebugGeography(ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA)
+                // TODO: logcat에서 확인한 기기 해시 ID로 교체
+                 .addTestDeviceHashedId("83FD2E2863804C0E51D7CB9BEFB41759")
+                .build()
+            consentInformation.reset() // 매 실행마다 동의 폼 재표시
+            ConsentRequestParameters.Builder()
+                .setConsentDebugSettings(debugSettings)
+                .build()
+        } else {
+            ConsentRequestParameters.Builder().build()
+        }
 
         // For returning users who already have consent, init immediately.
         if (consentInformation.canRequestAds()) {
@@ -209,6 +226,9 @@ class MainActivity : ComponentActivity() {
                     }
                     if (consentInformation.canRequestAds()) {
                         initMobileAds()
+                    } else {
+                        // 동의 거부 → 광고 없이 앱 운영 불가 안내 후 종료
+                        showConsentRequiredDialog()
                     }
                 }
             },
@@ -218,6 +238,15 @@ class MainActivity : ComponentActivity() {
                 initMobileAds()
             },
         )
+    }
+
+    private fun showConsentRequiredDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.consent_required_title))
+            .setMessage(getString(R.string.consent_required_message))
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.consent_required_close)) { _, _ -> finish() }
+            .show()
     }
 
     private fun initMobileAds() {

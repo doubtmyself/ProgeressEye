@@ -160,6 +160,11 @@ Grace end date: %1$s</string>
     <string name="auth_logged_out_by_other_device">You were logged out because this account signed in on another mobile device.</string>
     <string name="auth_logged_out_by_withdrawal">This account has entered withdrawal grace period, so you have been logged out.</string>
 
+    <!-- ── Ad Consent ── -->
+    <string name="consent_required_title" translatable="false">Ad Consent Required</string>
+    <string name="consent_required_message" translatable="false">ProgressEye is free and supported by ads. Ad consent is required to use the app. Please reopen the app and accept the consent to continue.</string>
+    <string name="consent_required_close" translatable="false">Close App</string>
+
     <!-- ── Force Update ── -->
     <string name="update_required_title">Update Required</string>
     <string name="update_required_message">A new version of ProgressEye is available. Please update to continue using the app.</string>
