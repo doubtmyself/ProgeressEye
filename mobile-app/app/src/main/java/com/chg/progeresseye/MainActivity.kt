@@ -36,6 +36,8 @@ import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
+import com.google.android.ump.ConsentRequestParameters
+import com.google.android.ump.UserMessagingPlatform
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var handledForceLogoutCmdId: String? = null
     private var withdrawalStatusListener: ListenerRegistration? = null
     private var isHandlingWithdrawalLogout: Boolean = false
+    private var adsInitialized = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -183,6 +186,43 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        requestConsentAndInitAds()
+    }
+
+    private fun requestConsentAndInitAds() {
+        val consentInformation = UserMessagingPlatform.getConsentInformation(this)
+        val params = ConsentRequestParameters.Builder().build()
+
+        // For returning users who already have consent, init immediately.
+        if (consentInformation.canRequestAds()) {
+            initMobileAds()
+        }
+
+        consentInformation.requestConsentInfoUpdate(
+            this,
+            params,
+            {
+                // EU users: show form if required; non-EU: form not shown, consent auto-obtained.
+                UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { formError ->
+                    if (formError != null) {
+                        Timber.w("UMP form error: %s", formError.message)
+                    }
+                    if (consentInformation.canRequestAds()) {
+                        initMobileAds()
+                    }
+                }
+            },
+            { requestError ->
+                // Network error or other issue — init ads anyway (graceful degradation).
+                Timber.w("UMP consent request error: %s", requestError.message)
+                initMobileAds()
+            },
+        )
+    }
+
+    private fun initMobileAds() {
+        if (adsInitialized) return
+        adsInitialized = true
         lifecycleScope.launch(Dispatchers.IO) {
             MobileAds.initialize(this@MainActivity) {}
         }

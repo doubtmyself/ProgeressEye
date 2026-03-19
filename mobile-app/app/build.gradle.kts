@@ -135,6 +135,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.play.services.ads)
+    implementation(libs.user.messaging.platform)
     implementation(libs.play.billing.ktx)
     // Pin WorkManager runtime (transitive from Ads/Messaging) to avoid old Room DB init issues
     implementation(libs.androidx.work.runtime.ktx)

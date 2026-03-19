@@ -18,6 +18,7 @@ googleServices = "4.4.4"
 firebaseCrashlytics = "3.0.6"
 coil = "3.4.0"
 playServicesAds = "25.0.0"
+userMessagingPlatform = "3.1.0"
 gradlePlayPublisher = "4.0.0"
 timber = "5.0.1"
 fragmentKtx = "1.8.9"
@@ -57,6 +58,7 @@ googleid = { group = "com.google.android.libraries.identity.googleid", name = "g
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 play-services-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "playServicesAds" }
+user-messaging-platform = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "userMessagingPlatform" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragmentKtx" }
 androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime", version.ref = "runtime" }
