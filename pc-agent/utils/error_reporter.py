@@ -13,7 +13,7 @@ from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 _PROJECT_ID = "progresseye-49244"
 _FIRESTORE_URL = (
     f"https://firestore.googleapis.com/v1/projects/{_PROJECT_ID}"
-    f"/databases/progress/documents/errorReports"
+    f"/databases/(default)/documents/errorReports"
 )
 
 # 로그인 후 main.py에서 설정

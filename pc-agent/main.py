@@ -284,6 +284,7 @@ class ProgressEyeApp:
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
         self._main_window.test_stall_requested.connect(self._on_test_stall)
         self._main_window.test_complete_requested.connect(self._on_test_complete)
+        self._main_window.test_crash_requested.connect(self._on_test_crash)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -1838,7 +1839,7 @@ class ProgressEyeApp:
     def _open_settings(self) -> None:
         """설정 오버레이를 표시한다."""
         self._main_window.show_settings(
-            interval=self._config.get("capture.interval_seconds", 30),
+            interval=self._config.get("capture.interval_seconds", 1),
             language=self._config.get("language", "en"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
@@ -1852,7 +1853,7 @@ class ProgressEyeApp:
         new_freeze: int,
     ) -> None:
         """설정 저장 시 반영한다."""
-        current_interval = self._config.get("capture.interval_seconds", 30)
+        current_interval = self._config.get("capture.interval_seconds", 1)
         current_lang = self._config.get("language", "en")
         current_freeze = self._config.get("freeze_detection.timeout_minutes", 5)
         if new_interval != current_interval:
@@ -2034,7 +2035,7 @@ class ProgressEyeApp:
     def _show_welcome(self) -> None:
         """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
         self._main_window.show_settings(
-            interval=self._config.get("capture.interval_seconds", 30),
+            interval=self._config.get("capture.interval_seconds", 1),
             language=self._config.get("language", "en"),
             email=self._config.get("auth.email", ""),
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
@@ -2511,7 +2512,7 @@ class ProgressEyeApp:
             if not regions:
                 self._notify(t("no_checked_regions"))
                 return
-            interval = self._config.get("capture.interval_seconds", 30)
+            interval = self._config.get("capture.interval_seconds", 1)
             self._freeze_detector.reset_all()
             self._alerted_regions.clear()
             self._post_completion_fails.clear()
@@ -2601,8 +2602,8 @@ class ProgressEyeApp:
         apply_image_change_guard = region_type in {"bar", "ocr"}
 
         # ── 이미지 변경 감지 ──
-        IMAGE_CHANGE_THRESHOLD_BAR = 0.85
-        IMAGE_CHANGE_THRESHOLD_OCR = 0.85
+        IMAGE_CHANGE_THRESHOLD_BAR = 0.98
+        IMAGE_CHANGE_THRESHOLD_OCR = 0.98
         image_change_threshold = (
             IMAGE_CHANGE_THRESHOLD_OCR
             if region_type == "ocr"
@@ -2619,17 +2620,13 @@ class ProgressEyeApp:
                     bl = region_config.get("bar_left")
                     br = region_config.get("bar_right")
                     if bl is not None and br is not None:
-                        # 탐지된 바 경계가 게이지 내부를 가리킬 수 있으므로
-                        # 바깥쪽으로 확장해 border 픽셀이 UI 프레임 위에 오도록 한다.
-                        _EXPAND = 6
+                        _EXPAND = 2
                         _bbox = (
                             max(0, bl - _EXPAND),
                             max(0, region_config.get("bar_top", 0) - _EXPAND),
                             min(image.width, br + _EXPAND),
                             min(image.height, region_config.get("bar_bottom", image.height) + _EXPAND),
                         )
-                        # bar_bbox가 캡처 이미지의 70% 이상을 덮으면 마스킹 생략
-                        # (전체가 바 영역이면 마스킹 후 양쪽 다 회색 → 유사도 항상 높음)
                         _img_area = image.width * image.height
                         _bbox_area = (_bbox[2] - _bbox[0]) * (_bbox[3] - _bbox[1])
                         if _img_area > 0 and _bbox_area / _img_area < 0.70:
@@ -2667,7 +2664,7 @@ class ProgressEyeApp:
                 log.warning("[%s] 이미지 유사도 계산 실패: %s", region_id, exc)
                 similarity = 1.0  # 실패 시 유사하다고 간주하고 모니터링 계속
             log.info(
-                "[%s] 이미지 유사도: %.4f (threshold: %.1f)",
+                "[%s] 이미지 유사도: %.4f (threshold: %.2f)",
                 region_id,
                 similarity,
                 image_change_threshold,
@@ -3091,6 +3088,13 @@ class ProgressEyeApp:
         self._notify(f"[TEST] {alert_msg}")
         log.info("[TEST] 완료 알림 전송: %s", region_id)
 
+    def _on_test_crash(self) -> None:
+        """의도적인 크래시 발생 테스트."""
+        log.info("[TEST] 의도적인 ZeroDivisionError 발생")
+        # 이 코드가 실행되면 sys.excepthook(_handle_exception)이 호출되어
+        # Firestore로 오류가 전송되고 앱이 종료됩니다.
+        _ = 1 / 0
+
     def _quit(self) -> None:
         """애플리케이션을 종료한다."""
         if self._quitting:
@@ -3245,20 +3249,33 @@ class ProgressEyeApp:
     ) -> float:
         """두 이미지의 유사도를 반환한다 (0.0~1.0).
 
+        원본 해상도(또는 최대 1024px)에서 비교하여 세밀한 변화를 감지한다.
         bar_bbox가 주어지면 해당 영역을 동일 상수로 마스킹하여
         게이지 변화가 유사도에 영향을 주지 않도록 한다.
-        64x64 grayscale 다운스케일 후 numpy 상관계수로 비교.
-        cache_key가 주어지면 img1(template) 쪽 gray 배열을 캐시에서 재사용한다.
         """
         import cv2
         import numpy as np
 
-        size = (64, 64)
+        # 원본 해상도 유지, 최대 1024px로 제한
+        MAX_DIM = 1024
+        max_dim = max(img1.width, img1.height, img2.width, img2.height)
+        if max_dim > MAX_DIM:
+            ratio = MAX_DIM / max_dim
+        else:
+            ratio = 1.0
+        # img1/img2 크기를 항상 동일하게 맞춤 (크기 불일치 시 corrcoef 실패 방지)
+        target_size = (int(img1.width * ratio), int(img1.height * ratio))
+        if img1.size != target_size:
+            img1 = img1.resize(target_size, PILImage.Resampling.LANCZOS)
+        if img2.size != target_size:
+            img2 = img2.resize(target_size, PILImage.Resampling.LANCZOS)
+        if bar_bbox and ratio != 1.0:
+            l, t, r, b = bar_bbox
+            bar_bbox = (int(l * ratio), int(t * ratio), int(r * ratio), int(b * ratio))
 
-        # img1(template) — 캐시 히트 시 resize/cvtColor 생략
+        # img1(template) — 캐시 히트 시 마스킹/cvtColor 생략
         flat1: np.ndarray | None = self._template_gray_cache.get(cache_key) if cache_key is not None else None
         if flat1 is None:
-            # 진행률 바/OCR의 동적 영역을 마스킹해 오탐을 줄인다.
             if bar_bbox is not None:
                 from PIL import ImageDraw
                 left, top, right, bottom = bar_bbox
@@ -3271,7 +3288,7 @@ class ProgressEyeApp:
                     img1 = img1.copy()
                     draw1 = ImageDraw.Draw(img1)
                     draw1.rectangle([left, top, right, bottom], fill=(128, 128, 128))
-            arr1 = cv2.cvtColor(np.array(img1.resize(size)), cv2.COLOR_RGB2GRAY)
+            arr1 = cv2.cvtColor(np.array(img1), cv2.COLOR_RGB2GRAY)
             flat1 = arr1.astype(np.float32).flatten()
             if cache_key is not None:
                 self._template_gray_cache[cache_key] = flat1
@@ -3289,7 +3306,7 @@ class ProgressEyeApp:
                 img2 = img2.copy()
                 draw2 = ImageDraw.Draw(img2)
                 draw2.rectangle([left, top, right, bottom], fill=(128, 128, 128))
-        arr2 = cv2.cvtColor(np.array(img2.resize(size)), cv2.COLOR_RGB2GRAY)
+        arr2 = cv2.cvtColor(np.array(img2), cv2.COLOR_RGB2GRAY)
         flat2 = arr2.astype(np.float32).flatten()
 
         # 표준편차가 0이면 동일 이미지 (단색)

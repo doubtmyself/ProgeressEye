@@ -331,7 +331,7 @@ class SettingsOverlay(QWidget):
         inv.addWidget(self._interval_label)
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 600)
-        self._interval_spin.setValue(30)
+        self._interval_spin.setValue(1)
         self._interval_spin.setSuffix(t("settings_interval_suffix"))
         self._interval_spin.setStyleSheet(input_style)
         self._interval_spin.setFixedHeight(36)

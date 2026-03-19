@@ -498,6 +498,7 @@ class MainWindow(QMainWindow):
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
+    test_crash_requested = pyqtSignal()  # FCM 크래시 보고 테스트용 시그널
     login_start_requested = pyqtSignal()
     login_cancel_requested = pyqtSignal()
     close_requested = pyqtSignal()  # 창 닫기 시 cleanup 요청
@@ -741,6 +742,28 @@ class MainWindow(QMainWindow):
         self._btn_toggle.setToolTip(t("tooltip_start"))
         btn_layout.addWidget(self._btn_toggle)
 
+        # ── Test crash button (Debug mode only) ──
+        if self._show_test_buttons:
+            self._btn_crash = QPushButton("Crash")
+            self._btn_crash.setFixedHeight(36)
+            self._btn_crash.setStyleSheet(
+                "QPushButton {"
+                "  background-color: #f44336;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 8px;"
+                "  font-weight: bold;"
+                "  font-size: 11px;"
+                "  padding: 0 10px;"
+                "}"
+                "QPushButton:hover {"
+                "  background-color: #d32f2f;"
+                "}"
+            )
+            self._btn_crash.clicked.connect(self.test_crash_requested.emit)
+            self._btn_crash.setToolTip("의도적인 오류 발생 (FCM 보고 테스트용)")
+            btn_layout.addWidget(self._btn_crash)
+
         app_layout.addLayout(btn_layout)
 
         layout.addWidget(self._login_panel, stretch=1)
@@ -919,6 +942,11 @@ class MainWindow(QMainWindow):
             card.set_buttons_visible(not active)
             if active:
                 card.set_task_status("running")
+
+        # 모니터링 중에는 설정 버튼 숨기기, 설정창이 열려있으면 닫기
+        self._btn_settings.setVisible(not active)
+        if active and self._settings_overlay.isVisible():
+            self._settings_overlay.hide()
 
     def update_hw_stats(self, stats: dict) -> None:
         """CPU/GPU/RAM 사용량 표시를 갱신한다."""
