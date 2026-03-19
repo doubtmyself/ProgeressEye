@@ -19,6 +19,15 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "cleanUrls": true
+    "cleanUrls": true,
+    "headers": [
+      {
+        "source": "/app-ads.txt",
+        "headers": [
+          { "key": "Content-Type", "value": "text/plain" },
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      }
+    ]
   }
 }

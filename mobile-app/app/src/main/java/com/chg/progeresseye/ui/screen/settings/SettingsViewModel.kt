@@ -25,9 +25,10 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.FirebaseFirestore
-import timber.log.Timber
 import com.google.firebase.firestore.SetOptions
+import timber.log.Timber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,6 +56,7 @@ class SettingsViewModel @Inject constructor(
     private val prefs = application.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
+    private val rtdb = FirebaseDatabase.getInstance()
     private var billingClient: BillingClient? = null
     private var subscriptionProductDetails: ProductDetails? = null
 
@@ -283,7 +285,12 @@ class SettingsViewModel @Inject constructor(
                 .setProductType(BillingClient.ProductType.SUBS)
                 .build(),
         ) { billingResult, purchases ->
-            if (billingResult.responseCode != BillingClient.BillingResponseCode.OK || purchases.isNullOrEmpty()) {
+            if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) return@queryPurchasesAsync
+
+            if (purchases.isNullOrEmpty()) {
+                // 활성 구독 없음 → RTDB plan을 free로 갱신 (취소/만료 시 자동 반영)
+                val uid = auth.currentUser?.uid ?: return@queryPurchasesAsync
+                rtdb.reference.child("users").child(uid).child("plan").setValue("free")
                 return@queryPurchasesAsync
             }
             processPurchases(purchases, showSuccessMessage = false)
@@ -303,7 +310,7 @@ class SettingsViewModel @Inject constructor(
         when (target.purchaseState) {
             Purchase.PurchaseState.PURCHASED -> {
                 if (target.isAcknowledged) {
-                    grantProEntitlement(showSuccessMessage)
+                    grantProEntitlement(target, showSuccessMessage)
                 } else {
                     acknowledgePurchase(target, showSuccessMessage)
                 }
@@ -342,7 +349,7 @@ class SettingsViewModel @Inject constructor(
                 .build(),
         ) { billingResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                grantProEntitlement(showSuccessMessage)
+                grantProEntitlement(purchase, showSuccessMessage)
             } else {
                 _uiState.update {
                     it.copy(
@@ -355,7 +362,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun grantProEntitlement(showSuccessMessage: Boolean) {
+    private fun grantProEntitlement(purchase: Purchase, showSuccessMessage: Boolean) {
         if (_uiState.value.currentPlan == "pro" && !showSuccessMessage) {
             _uiState.update { it.copy(isPurchaseLoading = false) }
             return
@@ -372,16 +379,20 @@ class SettingsViewModel @Inject constructor(
             return
         }
 
-        firestore.collection("users")
-            .document(uid)
-            .set(
-                mapOf(
-                    "plan" to "pro",
-                    "planUpdatedAt" to System.currentTimeMillis(),
-                ),
-                SetOptions.merge(),
-            )
+        // Google Play 확인 후 RTDB에 plan: "pro" 기록 (PC 앱에서도 읽을 수 있도록)
+        rtdb.reference.child("users").child(uid).child("plan").setValue("pro")
             .addOnSuccessListener {
+                // Firestore에 purchaseToken + 결제일 백업 (서버 검증 도입 시 활용)
+                firestore.collection("users")
+                    .document(uid)
+                    .set(
+                        mapOf(
+                            "purchaseToken" to purchase.purchaseToken,
+                            "purchaseTime" to purchase.purchaseTime,
+                            "planUpdatedAt" to System.currentTimeMillis(),
+                        ),
+                        SetOptions.merge(),
+                    )
                 _uiState.update {
                     it.copy(
                         currentPlan = "pro",
