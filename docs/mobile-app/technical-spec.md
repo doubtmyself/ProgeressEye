@@ -19,101 +19,71 @@
 | 차트 | Vico | Compose 네이티브 차트 라이브러리 |
 | 위젯 | Glance | Compose 기반 앱 위젯 |
 | 이미지 로딩 | Coil | Compose 네이티브 이미지 로더 (스크린샷 표시) |
-| Firestore | Firebase Firestore SDK | plan 조회 (users/{uid}) |
 
 ---
 
 ## 2. 모듈 구조
 
+멀티 모듈 Clean Architecture — `:domain` → `:data` → `:app` 의존 방향.
+
 ```
 mobile-app/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/progresseye/
-│   │   │   ├── ProgressEyeApp.kt          # Application 클래스
-│   │   │   ├── MainActivity.kt             # 단일 Activity
-│   │   │   │
-│   │   │   ├── data/
-│   │   │   │   ├── repository/
-│   │   │   │   │   ├── AuthRepository.kt       # Google 인증 레포지토리
-│   │   │   │   │   ├── TaskRepository.kt       # 작업 데이터 레포지토리
-│   │   │   │   │   ├── DeviceRepository.kt     # 기기 관리 레포지토리
-│   │   │   │   │   └── SettingsRepository.kt   # 설정 레포지토리
-│   │   │   │   ├── remote/
-│   │   │   │   │   ├── FirebaseAuthSource.kt   # Firebase Auth + Google Sign-In
-│   │   │   │   │   ├── FirebaseDataSource.kt   # Firebase Realtime DB
-│   │   │   │   │   ├── FirebaseStorageSource.kt # Firebase Storage (스크린샷)
-│   │   │   │   │   └── FirebaseMessaging.kt    # FCM 서비스
-│   │   │   │   ├── local/
-│   │   │   │   │   └── PreferencesDataStore.kt # 로컬 설정 저장
-│   │   │   │   └── model/
-│   │   │   │       ├── User.kt                 # 사용자 모델
-│   │   │   │       ├── Device.kt               # PC 기기 모델
-│   │   │   │       ├── Task.kt                 # 작업 모델
-│   │   │   │       ├── Command.kt              # 원격 명령 모델
-│   │   │   │       └── Screenshot.kt           # 스크린샷 모델 (url, ts)
-│   │   │   │
-│   │   │   ├── domain/
-│   │   │   │   ├── usecase/
-│   │   │   │   │   ├── SignInUseCase.kt             # Google 로그인
-│   │   │   │   │   ├── SignOutUseCase.kt            # 로그아웃
-│   │   │   │   │   ├── ObserveAuthStateUseCase.kt   # 인증 상태 감시
-│   │   │   │   │   ├── ObserveDevicesUseCase.kt     # PC 목록 실시간 관찰
-│   │   │   │   │   ├── ObserveTasksUseCase.kt       # 작업 목록 실시간 관찰
-│   │   │   │   │   ├── SendCommandUseCase.kt        # 원격 명령 전송
-│   │   │   │   │   ├── RequestScreenshotUseCase.kt  # 스크린샷 요청
-│   │   │   │   │   ├── ObserveScreenshotUseCase.kt  # 스크린샷 URL 관찰
-│   │   │   │   │   └── GetProgressHistoryUseCase.kt # 진행 이력 조회
-│   │   │   │   └── model/
-│   │   │   │       └── TaskStatus.kt                # 상태 enum
-│   │   │   │
-│   │   │   ├── ui/
-│   │   │   │   ├── navigation/
-│   │   │   │   │   └── NavGraph.kt             # 네비게이션 그래프
-│   │   │   │   ├── theme/
-│   │   │   │   │   ├── Theme.kt                # MD3 테마
-│   │   │   │   │   ├── Color.kt                # 컬러 팔레트
-│   │   │   │   │   └── Type.kt                 # 타이포그래피
-│   │   │   │   ├── auth/
-│   │   │   │   │   ├── LoginScreen.kt          # Google 로그인 화면
-│   │   │   │   │   └── LoginViewModel.kt
-│   │   │   │   ├── dashboard/
-│   │   │   │   │   ├── DashboardScreen.kt      # 대시보드 화면
-│   │   │   │   │   ├── DashboardViewModel.kt
-│   │   │   │   │   └── components/
-│   │   │   │   │       ├── DeviceCard.kt       # PC 카드 컴포넌트
-│   │   │   │   │       ├── ProgressIndicator.kt # 진행률 표시
-│   │   │   │   │       └── EmptyState.kt       # PC 미등록 안내
-│   │   │   │   ├── detail/
-│   │   │   │   │   ├── TaskDetailScreen.kt     # 작업 상세 화면
-│   │   │   │   │   ├── TaskDetailViewModel.kt
-│   │   │   │   │   └── components/
-│   │   │   │   │       └── ProgressChart.kt    # 진행 추이 차트
-│   │   │   │   └── settings/
-│   │   │   │       ├── SettingsScreen.kt       # 설정 화면
-│   │   │   │       └── SettingsViewModel.kt
-│   │   │   │
-│   │   │   ├── widget/
-│   │   │   │   ├── ProgressWidget.kt           # 홈 위젯 UI
-│   │   │   │   └── WidgetUpdateWorker.kt       # 위젯 갱신
-│   │   │   │
-│   │   │   └── di/
-│   │   │       └── AppModule.kt                # Hilt DI 모듈
-│   │   │
-│   │   └── res/
-│   │       ├── values/
-│   │       │   ├── strings.xml
-│   │       │   └── themes.xml
-│   │       └── drawable/
-│   │           └── ic_launcher.xml
-│   │
-│   ├── build.gradle.kts
-│   └── proguard-rules.pro
+├── domain/                          # 순수 Kotlin (JVM 17, android 의존 없음)
+│   └── src/main/java/com/chg/progeresseye/domain/
+│       ├── model/
+│       │   └── Alert.kt             # AlertItem data class, AlertType enum
+│       ├── repository/
+│       │   ├── AlertRepository.kt   # sealed interface AlertEvent + interface
+│       │   ├── UserPlanRepository.kt
+│       │   └── PolicyRepository.kt
+│       └── usecase/
+│           ├── ObserveAlertsUseCase.kt
+│           ├── DeleteAlertUseCase.kt
+│           ├── ClearAlertsUseCase.kt
+│           ├── ObserveUserPlanUseCase.kt
+│           └── ObservePolicyUseCase.kt
 │
-├── gradle/
-├── build.gradle.kts            # 프로젝트 수준 빌드
-├── settings.gradle.kts
-└── gradle.properties
+├── data/                            # Android Library — Firebase + Hilt 구현체
+│   └── src/main/java/com/chg/progeresseye/data/
+│       ├── repository/
+│       │   ├── AlertRepositoryImpl.kt      # RTDB callbackFlow 구현
+│       │   ├── UserPlanRepositoryImpl.kt   # RTDB users/{uid}/plan
+│       │   └── PolicyRepositoryImpl.kt     # RTDB policy/isAdFreeModeEnabled
+│       ├── di/
+│       │   └── DataModule.kt              # @Binds @Singleton — Hilt 바인딩
+│       └── util/
+│           └── FirebaseConstants.kt
+│
+└── app/                             # Android Application — UI + ViewModel
+    └── src/main/java/com/chg/progeresseye/
+        ├── ProgressEyeApp.kt        # @HiltAndroidApp
+        ├── MainActivity.kt          # @AndroidEntryPoint
+        ├── AppConstants.kt          # NotificationPrefs 등 앱 상수
+        ├── auth/
+        │   └── AuthViewModel.kt
+        ├── data/model/
+        │   └── DashboardModels.kt   # UI 상태 모델 (앱 레이어에 잔류)
+        └── ui/screen/
+            ├── main/
+            │   └── MainScreen.kt
+            ├── dashboard/
+            │   ├── DashboardScreen.kt
+            │   └── DashboardViewModel.kt  # @HiltViewModel
+            ├── alerts/
+            │   ├── AlertsScreen.kt
+            │   └── AlertsViewModel.kt     # @HiltViewModel
+            └── settings/
+                ├── SettingsScreen.kt
+                └── SettingsViewModel.kt   # @HiltViewModel
+```
+
+### 의존 관계
+
+```
+:app  ──depends──>  :domain  (모델, 인터페이스, UseCase)
+:app  ──depends──>  :data    (Hilt 모듈 자동 발견)
+:data ──depends──>  :domain  (인터페이스 구현)
+:domain ── 외부 의존 없음 (javax.inject, coroutines-core만 허용)
 ```
 
 ---
@@ -355,11 +325,20 @@ users/{uid}/
           l: "작업이름"  ← label
 ```
 
+### RTDB 추가 경로 (앱 정책)
+
+```
+users/{uid}/
+  plan: "free" | "pro"              # 구독 상태 (UserPlanRepositoryImpl)
+
+policy/
+  isAdFreeModeEnabled: true | false  # 전역 광고 비표시 정책 (PolicyRepositoryImpl)
+```
+
 ### Firestore
 
 ```
-users/{uid}            → { plan: "free" | "pro" }                      # 계정 구독 상태
-appConfig/policies     → { adFreeModeGlobal: true | false }              # 전역 광고 정책(관리자 변경)
+appConfig/pc           → { minVersion: "1.0.0" }   # PC 앱 강제 업데이트 최소 버전 (공개 읽기)
 ```
 
 ### Firebase Storage 경로
@@ -379,61 +358,90 @@ https://firebasestorage.googleapis.com/v0/b/{bucket}/o/screenshots%2F{uid}%2F{ts
 
 ### 빌드 설정
 
+멀티 모듈 + Hilt(KSP) 구조. AGP 9.0은 내장 Kotlin 지원을 제공하므로 `kotlin-android` 및 `kapt` 플러그인을 사용하지 않는다.
+
 ```kotlin
-// build.gradle.kts (app) — 현재 설정
+// settings.gradle.kts — 모듈 등록
+include(":app", ":domain", ":data")
+
+// build.gradle.kts (root) — 플러그인 버전 선언
+plugins {
+    alias(libs.plugins.android.application)  apply false
+    alias(libs.plugins.android.library)      apply false
+    alias(libs.plugins.kotlin.jvm)           apply false
+    alias(libs.plugins.hilt)                 apply false
+    alias(libs.plugins.ksp)                  apply false
+    alias(libs.plugins.kotlin.compose)       apply false
+    alias(libs.plugins.google.services)      apply false
+}
+
+// domain/build.gradle.kts — 순수 Kotlin JVM 모듈
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+}
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+dependencies {
+    api(libs.kotlinx.coroutines.core)
+    implementation("javax.inject:javax.inject:1")
+}
+
+// data/build.gradle.kts — Android Library + Hilt
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
+}
+android { compileSdk = 36; defaultConfig { minSdk = 24 } }
+dependencies {
+    implementation(project(":domain"))
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.database)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+}
+
+// app/build.gradle.kts — Android Application + Hilt
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
     id("com.github.triplet.play") version libs.versions.gradlePlayPublisher.get()
 }
-
 android {
     compileSdk = 36
     defaultConfig {
         applicationId = "com.chg.progeresseye"
-        minSdk = 24
-        targetSdk = 36
-        // version.properties에서 읽기
-        val vProps = java.util.Properties().apply {
-            file("version.properties").inputStream().use { load(it) }
-        }
-        versionCode = vProps.getProperty("VERSION_CODE").toInt()
-        versionName = vProps.getProperty("VERSION_NAME_PREFIX")
+        minSdk = 24; targetSdk = 36
     }
-    signingConfigs {
-        create("release") {
-            // keystore.properties에서 읽기
-        }
-    }
+    kotlinOptions { jvmTarget = "11" }
     buildTypes {
-        release {
-            isMinifyEnabled = true      // R8 난독화
-            isShrinkResources = true    // 리소스 축소
-            signingConfig = signingConfigs.getByName("release")
-        }
+        release { isMinifyEnabled = true; isShrinkResources = true }
     }
 }
-
-play {
-    track.set("internal")
-    releaseStatus.set(com.github.triplet.gradle.androidpublisher.ReleaseStatus.COMPLETED)
-    defaultToAppBundles.set(true)
-    serviceAccountCredentials.set(file("google-play-api-key.json"))
-}
-
 dependencies {
-    // Firebase (BOM 34.9.0)
+    implementation(project(":domain"))
+    implementation(project(":data"))
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
-    implementation(libs.firebase.firestore)    // 추가됨
-    // Credential Manager
     implementation(libs.androidx.credentials)
-    implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
 }
 ```
+
+### 주요 라이브러리 버전 (libs.versions.toml)
+
+| 라이브러리 | 버전 |
+|-----------|------|
+| Hilt | 2.59.2 (AGP 9.0 호환) |
+| KSP | 2.3.6 (독립 버전, Kotlin 버전 무관) |
+| kotlinx-coroutines | 1.10.2 |
+| hilt-navigation-compose | 1.3.0 |
 
 ### CI/CD
 

@@ -32,8 +32,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.chg.progeresseye.FirebaseConstants
+import com.chg.progeresseye.data.util.FirebaseConstants
 import com.chg.progeresseye.auth.AuthViewModel
+import dagger.hilt.android.AndroidEntryPoint
 import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
@@ -52,6 +53,7 @@ import com.google.firebase.database.DataSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null

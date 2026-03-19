@@ -49,11 +49,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chg.progeresseye.R
-import com.chg.progeresseye.data.model.AlertItem
-import com.chg.progeresseye.data.model.AlertType
+import com.chg.progeresseye.domain.model.AlertItem
+import com.chg.progeresseye.domain.model.AlertType
 import com.chg.progeresseye.ui.component.PreviewAppScaffold
 import com.chg.progeresseye.ui.component.PreviewNavTab
 import com.chg.progeresseye.ui.theme.BackgroundDark
@@ -74,7 +74,7 @@ import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 
 @Composable
 fun AlertsContent(modifier: Modifier = Modifier) {
-    val viewModel: AlertsViewModel = viewModel()
+    val viewModel: AlertsViewModel = hiltViewModel()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 

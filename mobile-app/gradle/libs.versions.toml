@@ -1,32 +1,37 @@
 [versions]
 agp = "9.0.1"
-coreKtx = "1.17.0"
+coreKtx = "1.18.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.10.0"
-activityCompose = "1.12.4"
-kotlin = "2.3.10"
-composeBom = "2026.02.01"
+activityCompose = "1.13.0"
+kotlin = "2.3.20"
+composeBom = "2026.03.00"
 navigationCompose = "2.9.7"
 firebaseBom = "34.10.0"
 firebase-messaging = "24.1.2"
-datastore = "1.2.0"
+datastore = "1.2.1"
 credentials = "1.5.0"
 googleid = "1.2.0"
 googleServices = "4.4.4"
 firebaseCrashlytics = "3.0.6"
 coil = "3.4.0"
-playServicesAds = "25.0.0"
-userMessagingPlatform = "3.1.0"
+playServicesAds = "25.1.0"
+userMessagingPlatform = "4.0.0"
 gradlePlayPublisher = "4.0.0"
 timber = "5.0.1"
 fragmentKtx = "1.8.9"
-runtime = "1.10.4"
+runtime = "1.10.5"
 material3 = "1.4.0"
 playAppUpdate = "2.1.0"
 workRuntime = "2.11.1"
 billing = "8.3.0"
+jetbrainsKotlinJvm = "2.3.20"
+hilt = "2.59.2"
+ksp = "2.3.6"
+coroutines = "1.10.2"
+hiltNavigationCompose = "1.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -66,6 +71,11 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3",
 play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntime" }
 play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -73,3 +83,9 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 gradle-play-publisher = { id = "com.github.triplet.play", version.ref = "gradlePlayPublisher" }
 firebase-crashlytics-plugin = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlytics" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrainsKotlinJvm" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

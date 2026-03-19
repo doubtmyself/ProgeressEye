@@ -24,4 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "progeressEye"
 include(":app")
- 
+include(":domain")
+include(":data")

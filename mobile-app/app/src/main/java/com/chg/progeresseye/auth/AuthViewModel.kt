@@ -3,7 +3,7 @@ package com.chg.progeresseye.auth
 import android.app.Application
 import android.content.Context
 import com.chg.progeresseye.BuildConfig
-import com.chg.progeresseye.FirebaseConstants
+import com.chg.progeresseye.data.util.FirebaseConstants
 import com.chg.progeresseye.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope

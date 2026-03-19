@@ -71,7 +71,7 @@ import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.SurfaceDark
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chg.progeresseye.ui.component.BannerAd
@@ -105,7 +105,7 @@ fun MainScreen(
     onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val dashboardViewModel: DashboardViewModel = viewModel()
+    val dashboardViewModel: DashboardViewModel = hiltViewModel()
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val userPlan by dashboardViewModel.userPlan.collectAsStateWithLifecycle()
     val isAdFreeModeEnabled by dashboardViewModel.isAdFreeModeEnabled.collectAsStateWithLifecycle()

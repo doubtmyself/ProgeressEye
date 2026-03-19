@@ -6,9 +6,11 @@ import java.io.FileOutputStream
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
     alias(libs.plugins.gradle.play.publisher)
     alias(libs.plugins.firebase.crashlytics.plugin)
+    alias(libs.plugins.hilt)
 }
 
 // --- 버전 관리 로직 시작 ---
@@ -98,8 +100,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -145,6 +147,13 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.material3)
+    // Modules
+    implementation(project(":domain"))
+    implementation(project(":data"))
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

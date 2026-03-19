@@ -18,8 +18,10 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.chg.progeresseye.data.repository.PolicyRepository
-import com.chg.progeresseye.data.repository.UserPlanRepository
+import com.chg.progeresseye.domain.repository.PolicyRepository
+import com.chg.progeresseye.domain.repository.UserPlanRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import kotlinx.coroutines.Job
@@ -42,7 +44,12 @@ import com.chg.progeresseye.BuildConfig
 //   users/{uid}/mobileHeartbeat       → 30초마다 모바일 하트비트 갱신
 // ═════════════════════════════════════════════════════════
 
-class DashboardViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class DashboardViewModel @Inject constructor(
+    application: Application,
+    private val userPlanRepository: UserPlanRepository,
+    private val policyRepository: PolicyRepository,
+) : AndroidViewModel(application) {
 
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseDatabase.getInstance()
@@ -124,13 +131,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // 앱 진입 시 heartbeat 체크 → 크래시 감지 → deviceStatus "offline" 전환
         checkHeartbeat(uid)
 
-        UserPlanRepository.startListening(uid)
         planJob = viewModelScope.launch {
-            UserPlanRepository.userPlan.collect { applyUserEntitlement(it) }
+            userPlanRepository.observeUserPlan(uid).collect { applyUserEntitlement(it) }
         }
-        PolicyRepository.startListening()
         policyJob = viewModelScope.launch {
-            PolicyRepository.adFreeModeGlobal.collect { applyGlobalAdFreeMode(it) }
+            policyRepository.observePolicy().collect { applyGlobalAdFreeMode(it) }
         }
 
         // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
@@ -720,11 +725,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         planJob?.cancel()
         planJob = null
-        UserPlanRepository.reset()
+        userPlanRepository.reset()
 
         policyJob?.cancel()
         policyJob = null
-        PolicyRepository.reset()
+        policyRepository.reset()
     }
 
     override fun onCleared() {

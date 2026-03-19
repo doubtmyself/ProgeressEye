@@ -449,6 +449,16 @@ private fun DeviceCard(
 ) {
     var showFullScreenshot by rememberSaveable { mutableStateOf(false) }
     var showShutdownConfirm by remember { mutableStateOf(false) }
+    
+    val dName = device.name
+    val dIsOnline = device.isOnline
+    val dIsMonitoring = device.isMonitoring
+    val dIsSleeping = device.isSleeping
+    val dCpu = device.cpuUsage
+    val dGpu = device.gpuUsage
+    val dRam = device.ramUsage
+    val dTasks = device.tasks
+    val dUrl = device.screenshotUrl
 
     Surface(
         modifier = Modifier
@@ -470,24 +480,24 @@ private fun DeviceCard(
     ) {
         Column {
             DeviceHeader(
-                name = device.name,
-                isOnline = device.isOnline,
-                isMonitoring = device.isMonitoring,
-                isSleeping = device.isSleeping,
-                cpuUsage = device.cpuUsage,
-                gpuUsage = device.gpuUsage,
-                ramUsage = device.ramUsage,
+                name = dName,
+                isOnline = dIsOnline,
+                isMonitoring = dIsMonitoring,
+                isSleeping = dIsSleeping,
+                cpuUsage = dCpu,
+                gpuUsage = dGpu,
+                ramUsage = dRam,
             )
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
-            val isActive = device.isOnline && device.isMonitoring
+            val isActive = dIsOnline && dIsMonitoring
 
-            DeviceTasksSection(tasks = device.tasks, isActive = isActive)
+            DeviceTasksSection(tasks = dTasks, isActive = isActive)
 
             // Screenshot preview (if available)
-            if (device.screenshotUrl != null) {
+            if (dUrl != null) {
                 ScreenshotPreview(
-                    url = device.screenshotUrl,
+                    url = dUrl,
                     onClick = { showFullScreenshot = true },
                 )
             }
@@ -495,7 +505,7 @@ private fun DeviceCard(
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
             PcControlRow(
-                isOnline = device.isOnline,
+                isOnline = dIsOnline,
                 isScreenshotLoading = isScreenshotLoading,
                 isAdLoading = isAdLoading,
                 onRequestScreenshot = onRequestScreenshot,
@@ -527,10 +537,9 @@ private fun DeviceCard(
         )
     }
 
-    // Fullscreen screenshot dialog
-    if (showFullScreenshot && device.screenshotUrl != null) {
+    if (showFullScreenshot && dUrl != null) {
         FullScreenImageDialog(
-            url = device.screenshotUrl,
+            url = dUrl,
             onDismiss = { showFullScreenshot = false },
         )
     }

@@ -1,8 +1,6 @@
 package com.chg.progeresseye
 
-object FirebaseConstants {
-    const val FIRESTORE_DB = "progress"
-}
+// FirebaseConstants moved to :data module — com.chg.progeresseye.data.util.FirebaseConstants
 
 object NotificationPrefs {
     const val PREFS_NAME = "settings"

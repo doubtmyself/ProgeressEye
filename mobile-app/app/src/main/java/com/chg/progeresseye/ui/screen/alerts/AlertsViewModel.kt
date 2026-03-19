@@ -1,29 +1,34 @@
 package com.chg.progeresseye.ui.screen.alerts
 
-import timber.log.Timber
 import androidx.lifecycle.ViewModel
-import com.chg.progeresseye.data.model.AlertItem
-import com.chg.progeresseye.data.model.AlertType
+import androidx.lifecycle.viewModelScope
+import com.chg.progeresseye.domain.model.AlertItem
+import com.chg.progeresseye.domain.repository.AlertEvent
+import com.chg.progeresseye.domain.usecase.ClearAlertsUseCase
+import com.chg.progeresseye.domain.usecase.DeleteAlertUseCase
+import com.chg.progeresseye.domain.usecase.ObserveAlertsUseCase
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ChildEventListener
-import com.google.firebase.database.Query
-import com.google.firebase.database.ValueEventListener
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 // ═════════════════════════════════════════════════════════
-// AlertsViewModel — RTDB listener for user alerts
+// AlertsViewModel — observes user alerts via AlertRepository
 // ═════════════════════════════════════════════════════════
 
-class AlertsViewModel : ViewModel() {
+@HiltViewModel
+class AlertsViewModel @Inject constructor(
+    private val observeAlerts: ObserveAlertsUseCase,
+    private val deleteAlertUseCase: DeleteAlertUseCase,
+    private val clearAlertsUseCase: ClearAlertsUseCase,
+) : ViewModel() {
+
     private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseDatabase.getInstance()
 
     private val _alerts = MutableStateFlow<List<AlertItem>>(emptyList())
     val alerts: StateFlow<List<AlertItem>> = _alerts.asStateFlow()
@@ -31,18 +36,20 @@ class AlertsViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private var alertsRef: DatabaseReference? = null
-    private var alertsQuery: Query? = null
-    private var alertsListener: ChildEventListener? = null
     private val readAlertIds = mutableSetOf<String>()  // in-memory only; resets on process death
+    private var uid: String? = null
+    private var alertsJob: Job? = null
     private var authListener: FirebaseAuth.AuthStateListener? = null
 
     init {
         authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            if (firebaseAuth.currentUser != null && alertsListener == null) {
-                startListening()
-            } else if (firebaseAuth.currentUser == null) {
-                stopListening()
+            val user = firebaseAuth.currentUser
+            if (user != null && uid == null) {
+                uid = user.uid
+                startObserving(user.uid)
+            } else if (user == null) {
+                uid = null
+                stopObserving()
                 _alerts.value = emptyList()
                 _isLoading.value = false
             }
@@ -50,95 +57,36 @@ class AlertsViewModel : ViewModel() {
         auth.addAuthStateListener(authListener!!)
     }
 
-    private fun startListening() {
-        if (alertsListener != null) return
-
-        val uid = auth.currentUser?.uid
-        if (uid == null) {
-            _isLoading.value = false
-            _alerts.value = emptyList()
-            return
-        }
-
-        alertsRef = db.reference.child("users").child(uid).child("alerts")
-        alertsQuery = alertsRef?.limitToLast(MAX_ALERTS)
-
-        alertsListener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                parseAlert(snapshot)?.let { upsertAlert(it) }
-            }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                parseAlert(snapshot)?.let { upsertAlert(it) }
-            }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                val alertId = snapshot.key ?: return
-                readAlertIds.remove(alertId)
-                _alerts.update { list -> list.filter { it.id != alertId } }
-            }
-
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
-                // No-op: UI sorting is timestamp-based.
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                Timber.e(error.toException(), "alerts:onCancelled")
-                _isLoading.value = false
+    private fun startObserving(uid: String) {
+        alertsJob?.cancel()
+        alertsJob = viewModelScope.launch {
+            observeAlerts(uid).collect { event ->
+                when (event) {
+                    is AlertEvent.Added -> upsertAlert(event.alert)
+                    is AlertEvent.Changed -> upsertAlert(event.alert)
+                    is AlertEvent.Removed -> {
+                        readAlertIds.remove(event.alertId)
+                        _alerts.update { list -> list.filter { it.id != event.alertId } }
+                    }
+                    is AlertEvent.InitialLoadComplete -> _isLoading.value = false
+                }
             }
         }
-        alertsQuery?.addChildEventListener(alertsListener!!)
-        alertsQuery?.addListenerForSingleValueEvent(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                _isLoading.value = false
-            }
+    }
 
-            override fun onCancelled(error: DatabaseError) {
-                Timber.e(error.toException(), "alerts:initialLoad:onCancelled")
-                _isLoading.value = false
-            }
-        })
+    private fun stopObserving() {
+        alertsJob?.cancel()
+        alertsJob = null
     }
 
     private fun upsertAlert(alert: AlertItem) {
         _alerts.update { list ->
             val updated = list.toMutableList()
             val index = updated.indexOfFirst { it.id == alert.id }
-            val patchedAlert =
-                if (readAlertIds.contains(alert.id)) alert.copy(isRead = true) else alert
-            if (index >= 0) {
-                updated[index] = patchedAlert
-            } else {
-                updated.add(patchedAlert)
-            }
+            val patched = if (readAlertIds.contains(alert.id)) alert.copy(isRead = true) else alert
+            if (index >= 0) updated[index] = patched else updated.add(patched)
             updated.sortedByDescending { it.timestamp }
         }
-    }
-
-    private fun parseAlert(snapshot: DataSnapshot): AlertItem? {
-        val id = snapshot.key ?: return null
-        val type = when (snapshot.child("type").getValue(String::class.java)) {
-            "completion" -> AlertType.COMPLETION
-            "stall" -> AlertType.STALL
-            "image_change" -> AlertType.IMAGE_CHANGE
-            "offline" -> AlertType.OFFLINE
-            else -> return null
-        }
-
-        val title = snapshot.child("title").getValue(String::class.java) ?: "ProgressEye"
-        val body = snapshot.child("body").getValue(String::class.java) ?: return null
-        val deviceId = snapshot.child("deviceId").getValue(String::class.java) ?: ""
-        val timestamp = snapshot.child("ts").getValue(Long::class.java) ?: 0L
-
-        return AlertItem(
-            id = id,
-            type = type,
-            title = title,
-            body = body,
-            deviceName = deviceId,
-            timestamp = timestamp,
-            isRead = readAlertIds.contains(id),
-        )
     }
 
     /** Mark a single alert as read. */
@@ -151,34 +99,24 @@ class AlertsViewModel : ViewModel() {
 
     /** Delete a single alert from RTDB + local list. */
     fun deleteAlert(alertId: String) {
-        alertsRef?.child(alertId)?.removeValue()
+        val currentUid = uid ?: return
+        deleteAlertUseCase(currentUid, alertId)
         readAlertIds.remove(alertId)
         _alerts.update { list -> list.filter { it.id != alertId } }
     }
 
     /** Clear all alerts. */
     fun clearAll() {
+        val currentUid = uid ?: return
         readAlertIds.clear()
-        alertsRef?.removeValue()
+        clearAlertsUseCase(currentUid)
         _alerts.value = emptyList()
     }
 
     override fun onCleared() {
-        stopListening()
+        stopObserving()
         authListener?.let { auth.removeAuthStateListener(it) }
         authListener = null
         super.onCleared()
-    }
-
-    private fun stopListening() {
-        alertsListener?.let { listener ->
-            alertsQuery?.removeEventListener(listener)
-        }
-        alertsListener = null
-        alertsQuery = null
-    }
-
-    companion object {
-        private const val MAX_ALERTS = 50
     }
 }

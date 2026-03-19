@@ -5,10 +5,12 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.chg.progeresseye.FirebaseConstants
 import com.chg.progeresseye.NotificationPrefs
-import com.chg.progeresseye.data.repository.PolicyRepository
-import com.chg.progeresseye.data.repository.UserPlanRepository
+import com.chg.progeresseye.data.util.FirebaseConstants
+import com.chg.progeresseye.domain.repository.PolicyRepository
+import com.chg.progeresseye.domain.repository.UserPlanRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
@@ -43,7 +45,12 @@ data class SettingsUiState(
     val billingMessage: String? = null,
 )
 
-class SettingsViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    application: Application,
+    private val userPlanRepository: UserPlanRepository,
+    private val policyRepository: PolicyRepository,
+) : AndroidViewModel(application) {
 
     private val prefs = application.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
     private val auth = FirebaseAuth.getInstance()
@@ -97,18 +104,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     init {
         auth.currentUser?.uid?.let { uid ->
-            UserPlanRepository.startListening(uid)
             viewModelScope.launch {
-                UserPlanRepository.userPlan.collect { plan ->
+                userPlanRepository.observeUserPlan(uid).collect { plan ->
                     _uiState.update { state ->
                         state.copy(currentPlan = if (plan == "pro") "pro" else "free")
                     }
                 }
             }
         }
-        PolicyRepository.startListening()
         viewModelScope.launch {
-            PolicyRepository.adFreeModeGlobal.collect { adFreeMode ->
+            policyRepository.observePolicy().collect { adFreeMode ->
                 _uiState.update { state ->
                     state.copy(isAdFreeMode = adFreeMode, isPolicyLoaded = true)
                 }
