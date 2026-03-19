@@ -1,5 +1,6 @@
 package com.chg.progeresseye
 
+import android.content.Context
 import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
@@ -40,6 +41,7 @@ import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.google.android.gms.ads.MobileAds
 import com.google.android.ump.ConsentDebugSettings
+import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
 import com.google.firebase.database.DatabaseReference
@@ -61,8 +63,9 @@ class MainActivity : ComponentActivity() {
     private var isHandlingWithdrawalLogout: Boolean = false
     private var adsInitialized = false
     private var consentObtained by mutableStateOf(false)
-    private var isPersonalizedAds by mutableStateOf(true)
     private var isEeaUser by mutableStateOf(false)
+    private var showPrivacyButton by mutableStateOf(false)
+    private var isPersonalizedAds by mutableStateOf(true)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -174,7 +177,6 @@ class MainActivity : ComponentActivity() {
                             requiresWithdrawalCancel = authState.requiresWithdrawalCancel,
                             withdrawalGraceEndDate = authState.withdrawalGraceEndDate,
                             consentObtained = consentObtained,
-                            isPersonalizedAds = isPersonalizedAds,
                             isEeaUser = isEeaUser,
                             onChangeConsent = { onChangeAdConsent() },
                         )
@@ -191,6 +193,8 @@ class MainActivity : ComponentActivity() {
                             onDeleteAccount = {
                                 authViewModel.deleteAccount(this@MainActivity)
                             },
+                            showPrivacyButton = showPrivacyButton,
+                            onShowPrivacyOptions = { onShowPrivacyOptions() },
                         )
                     }
                 }
@@ -204,15 +208,17 @@ class MainActivity : ComponentActivity() {
         val consentInformation = UserMessagingPlatform.getConsentInformation(this)
 
         val params = if (BuildConfig.DEBUG) {
-            // 디버그 빌드: EEA 지역으로 강제 설정해 동의 폼 테스트
-            // 기기 해시 ID는 logcat에서 확인:
-            //   "Use new ConsentDebugSettings.Builder().addTestDeviceHashedId("XXXX")"
+            // ── 디버그 지역 선택 ──────────────────────────────────────────
+            // EEA 테스트:  DEBUG_GEOGRAPHY_EEA
+            // 미국 테스트: DEBUG_GEOGRAPHY_REGULATED_US_STATE
+            // 기타(광고):  DEBUG_GEOGRAPHY_OTHER
+            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA
+            // ─────────────────────────────────────────────────────────────
             val debugSettings = ConsentDebugSettings.Builder(this)
-                .setDebugGeography(ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA)
-                // TODO: logcat에서 확인한 기기 해시 ID로 교체
-                 .addTestDeviceHashedId("83FD2E2863804C0E51D7CB9BEFB41759")
+                .setDebugGeography(debugGeography)
+                .addTestDeviceHashedId("83FD2E2863804C0E51D7CB9BEFB41759")
                 .build()
-            consentInformation.reset() // 매 실행마다 동의 폼 재표시
+            // consentInformation.reset() // 동의 폼 강제 재표시 (테스트 시에만 주석 해제)
             ConsentRequestParameters.Builder()
                 .setConsentDebugSettings(debugSettings)
                 .build()
@@ -221,7 +227,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // For returning users who already have consent, init immediately.
-        if (consentInformation.canRequestAds()) {
+        if (consentInformation.canRequestAds() && isPersonalizedAdsConsented()) {
             initMobileAds()
         }
 
@@ -229,25 +235,29 @@ class MainActivity : ComponentActivity() {
             this,
             params,
             {
-                // EU users: show form if required; non-EU: form not shown, consent auto-obtained.
                 UserMessagingPlatform.loadAndShowConsentFormIfRequired(this) { formError ->
                     if (formError != null) {
                         Timber.w("UMP form error: %s", formError.message)
                     }
-                    if (consentInformation.canRequestAds()) {
-                        initMobileAds()
-                    } else {
-                        // 동의 거부 → 광고 없이 앱 운영 불가 안내 후 종료
-                        showConsentRequiredDialog()
-                    }
+                    handleConsentResult(consentInformation)
                 }
             },
             { requestError ->
-                // Network error or other issue — init ads anyway (graceful degradation).
+                // Network error — init ads anyway (graceful degradation).
                 Timber.w("UMP consent request error: %s", requestError.message)
                 initMobileAds()
             },
         )
+    }
+
+    private fun handleConsentResult(consentInformation: ConsentInformation) {
+        if (consentInformation.canRequestAds() && isPersonalizedAdsConsented()) {
+            // 맞춤형 광고 동의 → 정상 초기화
+            initMobileAds()
+        } else {
+            // X 닫기(EEA), 비맞춤형 선택, 미국 판매 거부, 완전 거부 모두 → Pro 구독 유도
+            showConsentRequiredDialog()
+        }
     }
 
     private fun showConsentRequiredDialog() {
@@ -255,33 +265,117 @@ class MainActivity : ComponentActivity() {
             .setTitle(getString(R.string.consent_required_title))
             .setMessage(getString(R.string.consent_required_message))
             .setCancelable(false)
-            .setPositiveButton(getString(R.string.consent_required_close)) { _, _ -> finish() }
+            .setPositiveButton(getString(R.string.consent_required_reconsent)) { _, _ ->
+                if (isEeaRegion()) {
+                    // EEA: GDPR 폼 재표시 (OBTAINED 상태에서 건너뛰지 않도록 리셋)
+                    UserMessagingPlatform.getConsentInformation(this).reset()
+                    requestConsentAndInitAds()
+                } else {
+                    // US: 개인정보 설정 폼 재표시
+                    onShowPrivacyOptions()
+                }
+            }
+            .setNegativeButton(getString(R.string.consent_required_subscribe)) { _, _ ->
+                // 광고 동의 없이 Pro 구독으로 진행 — 광고 미초기화, 로그인 허용
+                getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
+                    .edit().putBoolean(DashboardViewModel.KEY_ADS_CONSENTED, false).apply()
+                isEeaUser = isEeaRegion()
+                consentObtained = true
+            }
             .show()
+    }
+
+    /** 설정 화면 개인정보 버튼 탭 시 미국 규정 폼 표시 */
+    fun onShowPrivacyOptions() {
+        UserMessagingPlatform.showPrivacyOptionsForm(this) { formError ->
+            if (formError != null) Timber.w("Privacy options form error: %s", formError.message)
+            updatePrivacyButtonVisibility()
+
+            val personalized = isPersonalizedAdsConsented()
+            isPersonalizedAds = personalized
+            getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized).apply()
+            // EEA에서 비맞춤형으로 변경 시 Pro 구독 유도
+            // US는 Manage options 개별 조정 시 오발동 문제로 제외
+            if (!personalized && isEeaRegion()) {
+                showConsentRequiredDialog()
+            }
+        }
+    }
+
+    private fun updatePrivacyButtonVisibility() {
+        val ci = UserMessagingPlatform.getConsentInformation(this)
+        // US states: privacyOptionsRequirementStatus == REQUIRED
+        // EEA: 로그인 후에도 설정에서 변경 가능하도록 표시
+        showPrivacyButton = ci.privacyOptionsRequirementStatus ==
+            ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED || isEeaRegion()
     }
 
     private fun initMobileAds() {
         if (adsInitialized) return
         adsInitialized = true
-        val personalized = isPersonalizedAdsConsented()
-        val eea = isEeaRegion()
-        isPersonalizedAds = personalized
-        isEeaUser = eea
+        isEeaUser = isEeaRegion()
         consentObtained = true
-        // DashboardViewModel이 리워드 시간 계산에 사용
+        updatePrivacyButtonVisibility()
+        val personalized = isPersonalizedAdsConsented()
+        isPersonalizedAds = personalized
         getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
-            .edit().putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized).apply()
+            .edit()
+            .putBoolean(DashboardViewModel.KEY_ADS_CONSENTED, true)
+            .putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized)
+            .apply()
         lifecycleScope.launch(Dispatchers.IO) {
             MobileAds.initialize(this@MainActivity) {}
         }
     }
 
-    /** TCF v2 SharedPreferences에서 개인화 광고 동의 여부 확인 */
+    /** 맞춤형 광고 동의 여부
+     *  - EEA (GDPR)  : TCF v2 Purpose 4 체크
+     *  - US (GPP)    : IABGPP_HDR_GppString 섹션 문자열 SaleOptOut 비트(18-19) 체크
+     *  - US (구 CCPA): IABUSPrivacy_String[2] == 'Y' 이면 판매 거부 → 비맞춤형
+     *  - 기타         : 항상 맞춤형
+     */
     private fun isPersonalizedAdsConsented(): Boolean {
         val prefs = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
-        if (prefs.getInt("IABTCF_gdprApplies", 0) != 1) return true // 비EEA → 맞춤형 기본값
-        val purposeConsents = prefs.getString("IABTCF_PurposeConsents", "") ?: ""
-        // Purpose 4 (index 3) = "Select personalised ads"
-        return purposeConsents.length > 3 && purposeConsents[3] == '1'
+        // EEA
+        if (prefs.getInt("IABTCF_gdprApplies", 0) == 1) {
+            val purposeConsents = prefs.getString("IABTCF_PurposeConsents", "") ?: ""
+            return purposeConsents.length > 3 && purposeConsents[3] == '1'
+        }
+        // US states — GPP 문자열 (UMP 3.x)
+        val gppString = prefs.getString("IABGPP_HDR_GppString", "") ?: ""
+        if (gppString.contains("~")) {
+            val sectionStr = gppString.substringAfter("~").substringBefore("~")
+            if (sectionStr.isNotEmpty() && isGppUsSectionOptedOut(sectionStr)) return false
+        }
+        // US states — 구 CCPA 문자열 (폴백)
+        val usPrivacy = prefs.getString("IABUSPrivacy_String", "") ?: ""
+        if (usPrivacy.length >= 3 && usPrivacy[2] == 'Y') return false
+        return true
+    }
+
+    /**
+     * GPP US 섹션 문자열(Base64URL)에서 완전 거부 여부 반환.
+     * US National (Section 7): bits 18-19=SaleOptOut, 20-21=SharingOptOut, 22-23=TargetedAdvertisingOptOut
+     * 세 필드 모두 1(거부)일 때만 완전 거부로 판단.
+     * Manage options에서 일부만 끈 경우(부분 거부)는 허용으로 처리.
+     */
+    private fun isGppUsSectionOptedOut(base64String: String): Boolean {
+        return try {
+            val bytes = android.util.Base64.decode(
+                base64String,
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING,
+            )
+            if (bytes.size < 3) return false
+            val b = bytes[2].toInt() and 0xFF
+            val saleOptOut     = ((b ushr 5) and 0x1 shl 1) or ((b ushr 4) and 0x1)
+            val sharingOptOut  = ((b ushr 3) and 0x1 shl 1) or ((b ushr 2) and 0x1)
+            val targetedOptOut = ((b ushr 1) and 0x1 shl 1) or (b and 0x1)
+            saleOptOut == 1 && sharingOptOut == 1 && targetedOptOut == 1
+        } catch (e: Exception) {
+            Timber.w(e, "GPP US section decode failed: %s", base64String)
+            false
+        }
     }
 
     private fun isEeaRegion(): Boolean {

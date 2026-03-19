@@ -84,6 +84,8 @@ import com.google.firebase.auth.FirebaseAuth
 fun SettingsContent(
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    showPrivacyButton: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel(),
 ) {
@@ -188,7 +190,7 @@ fun SettingsContent(
         item { Spacer(Modifier.height(24.dp)) }
         item { SectionHeader(stringResource(R.string.settings_section_about)) }
         item { Spacer(Modifier.height(8.dp)) }
-        item { AboutCard() }
+        item { AboutCard(showPrivacyButton = showPrivacyButton, onShowPrivacyOptions = onShowPrivacyOptions) }
     }
 }
 
@@ -513,7 +515,10 @@ private fun AppearanceCard(
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun AboutCard() {
+private fun AboutCard(
+    showPrivacyButton: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
+) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val uriHandler = LocalUriHandler.current
@@ -568,6 +573,36 @@ private fun AboutCard() {
                 tint = OnSurfaceVariantDark,
                 modifier = Modifier.size(20.dp),
             )
+        }
+
+        // 광고 개인정보 설정 (미국 사용자 전용 — CCPA)
+        if (showPrivacyButton) {
+            HorizontalDivider(color = OutlineVariantDark)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onShowPrivacyOptions)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_ad_privacy),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = OnSurfaceDark,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.settings_ad_reward_personalized),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurfaceVariantDark,
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = OnSurfaceVariantDark,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
 
         HorizontalDivider(color = OutlineVariantDark)

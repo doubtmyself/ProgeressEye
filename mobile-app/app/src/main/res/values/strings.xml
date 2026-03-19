@@ -109,6 +109,9 @@
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_version">Version</string>
     <string name="settings_privacy_policy">Privacy Policy</string>
+    <string name="settings_ad_privacy">Ad Privacy Settings</string>
+    <string name="settings_ad_reward_personalized">(1 hr)</string>
+    <string name="settings_ad_reward_non_personalized">(30 min)</string>
     <string name="settings_oss_licenses">Open Source Licenses</string>
     <string name="settings_oss_licenses_description">Tap an item to open the license text in your browser.</string>
     <string name="settings_logout_title">Log out?</string>
@@ -144,8 +147,7 @@ Grace end date: %1$s</string>
     <string name="login_task_sample_10">Downloading model dataset snapshot</string>
     <!-- ── Ad Consent Status (Login Screen, EEA only) ── -->
     <string name="login_consent_loading">Checking ad consent…</string>
-    <string name="login_consent_personalized">Personalized ads agreed (1 hr reward)</string>
-    <string name="login_consent_non_personalized">Non-personalized ads (30 min reward)</string>
+    <string name="login_consent_obtained">Ad consent obtained</string>
     <string name="login_consent_change">Change</string>
 
     <string name="login_terms_prefix">I agree to the </string>
@@ -169,9 +171,10 @@ Grace end date: %1$s</string>
     <string name="auth_logged_out_by_withdrawal">This account has entered withdrawal grace period, so you have been logged out.</string>
 
     <!-- ── Ad Consent ── -->
-    <string name="consent_required_title" translatable="false">Ad Consent Required</string>
-    <string name="consent_required_message" translatable="false">ProgressEye is free and supported by ads. Ad consent is required to use the app. Please reopen the app and accept the consent to continue.</string>
-    <string name="consent_required_close" translatable="false">Close App</string>
+    <string name="consent_required_title">Ad Consent Required</string>
+    <string name="consent_required_message">ProgressEye is free and supported by ads. To use for free, please consent to ads. Alternatively, upgrade to Pro to use without ads.</string>
+    <string name="consent_required_reconsent">Re-consent</string>
+    <string name="consent_required_subscribe">Subscribe to Pro</string>
 
     <!-- ── Force Update ── -->
     <string name="update_required_title">Update Required</string>

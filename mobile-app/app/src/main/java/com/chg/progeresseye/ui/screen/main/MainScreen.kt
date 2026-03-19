@@ -101,6 +101,8 @@ private val navItems = listOf(
 fun MainScreen(
     onSignOut: () -> Unit = {},
     onDeleteAccount: () -> Unit = {},
+    showPrivacyButton: Boolean = false,
+    onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val dashboardViewModel: DashboardViewModel = viewModel()
@@ -222,7 +224,13 @@ fun MainScreen(
                     modifier = Modifier.padding(padding),
                 )
                 1 -> AlertsContent(modifier = Modifier.padding(padding))
-                else -> SettingsContent(onSignOut = onSignOut, onDeleteAccount = onDeleteAccount, modifier = Modifier.padding(padding))
+                else -> SettingsContent(
+                    onSignOut = onSignOut,
+                    onDeleteAccount = onDeleteAccount,
+                    showPrivacyButton = showPrivacyButton,
+                    onShowPrivacyOptions = onShowPrivacyOptions,
+                    modifier = Modifier.padding(padding),
+                )
             }
         }
 }

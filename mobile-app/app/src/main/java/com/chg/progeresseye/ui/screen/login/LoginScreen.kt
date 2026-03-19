@@ -59,7 +59,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -71,7 +70,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -211,7 +212,6 @@ fun LoginScreen(
     requiresWithdrawalCancel: Boolean = false,
     withdrawalGraceEndDate: String? = null,
     consentObtained: Boolean = true,
-    isPersonalizedAds: Boolean = true,
     isEeaUser: Boolean = false,
     onChangeConsent: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -322,7 +322,6 @@ fun LoginScreen(
                 isLoading = isLoading,
                 error = error,
                 consentObtained = consentObtained,
-                isPersonalizedAds = isPersonalizedAds,
                 isEeaUser = isEeaUser,
                 onChangeConsent = onChangeConsent,
             )
@@ -677,7 +676,6 @@ private fun BottomActions(
     isLoading: Boolean = false,
     error: String? = null,
     consentObtained: Boolean = true,
-    isPersonalizedAds: Boolean = true,
     isEeaUser: Boolean = false,
     onChangeConsent: () -> Unit = {},
 ) {
@@ -706,13 +704,14 @@ private fun BottomActions(
                 textAlign = TextAlign.Center,
             )
         }
-        TermsRow(checked = termsAccepted, onCheckedChange = { termsAccepted = it })
-        if (isEeaUser) {
-            AdConsentRow(
-                consentObtained = consentObtained,
-                isPersonalizedAds = isPersonalizedAds,
-                onChangeConsent = onChangeConsent,
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            TermsRow(checked = termsAccepted, onCheckedChange = { termsAccepted = it })
+            if (isEeaUser) {
+                AdConsentRow(
+                    consentObtained = consentObtained,
+                    onChangeConsent = onChangeConsent,
+                )
+            }
         }
         GoogleSignInButton(
             onClick = onSignInClick,
@@ -725,7 +724,6 @@ private fun BottomActions(
 @Composable
 private fun AdConsentRow(
     consentObtained: Boolean,
-    isPersonalizedAds: Boolean,
     onChangeConsent: () -> Unit,
 ) {
     Row(
@@ -733,8 +731,8 @@ private fun AdConsentRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(
-            checked = consentObtained && isPersonalizedAds,
-            onCheckedChange = null,
+            checked = consentObtained,
+            onCheckedChange = { onChangeConsent() },
             colors = CheckboxDefaults.colors(
                 checkedColor = Primary,
                 uncheckedColor = Slate500,
@@ -743,26 +741,12 @@ private fun AdConsentRow(
         )
         Text(
             text = stringResource(
-                when {
-                    !consentObtained -> R.string.login_consent_loading
-                    isPersonalizedAds -> R.string.login_consent_personalized
-                    else -> R.string.login_consent_non_personalized
-                }
+                if (consentObtained) R.string.login_consent_obtained
+                else R.string.login_consent_loading
             ),
             style = MaterialTheme.typography.bodySmall,
             color = if (consentObtained) Slate400 else Slate500,
-            modifier = Modifier.weight(1f),
         )
-        if (consentObtained) {
-            Text(
-                text = stringResource(R.string.login_consent_change),
-                style = MaterialTheme.typography.labelSmall,
-                color = Primary,
-                modifier = Modifier
-                    .clickable(onClick = onChangeConsent)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
     }
 }
 
@@ -865,8 +849,6 @@ private fun TermsRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    val uriHandler = LocalUriHandler.current
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -886,32 +868,21 @@ private fun TermsRow(
         val ppLink = stringResource(R.string.login_terms_privacy_link)
         val suffix = stringResource(R.string.login_terms_suffix)
         val privacyUrl = "https://progresseye-49244.web.app"
+        val linkStyle = TextLinkStyles(
+            style = SpanStyle(color = Primary, textDecoration = TextDecoration.Underline),
+        )
 
         val annotated = buildAnnotatedString {
             if (prefix.isNotEmpty()) withStyle(SpanStyle(color = Slate500)) { append(prefix) }
-            pushStringAnnotation(tag = "TOS", annotation = privacyUrl)
-            withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) {
-                append(tosLink)
-            }
-            pop()
+            withLink(LinkAnnotation.Url(url = privacyUrl, styles = linkStyle)) { append(tosLink) }
             withStyle(SpanStyle(color = Slate500)) { append(mid) }
-            pushStringAnnotation(tag = "PP", annotation = privacyUrl)
-            withStyle(SpanStyle(color = Primary, textDecoration = TextDecoration.Underline)) {
-                append(ppLink)
-            }
-            pop()
+            withLink(LinkAnnotation.Url(url = privacyUrl, styles = linkStyle)) { append(ppLink) }
             if (suffix.isNotEmpty()) withStyle(SpanStyle(color = Slate500)) { append(suffix) }
         }
 
-        ClickableText(
+        Text(
             text = annotated,
             style = MaterialTheme.typography.bodySmall,
-            onClick = { offset ->
-                annotated.getStringAnnotations("TOS", offset, offset)
-                    .firstOrNull()?.let { uriHandler.openUri(it.item) }
-                annotated.getStringAnnotations("PP", offset, offset)
-                    .firstOrNull()?.let { uriHandler.openUri(it.item) }
-            },
         )
     }
 }
@@ -925,5 +896,16 @@ private fun TermsRow(
 private fun LoginScreenPreview() {
     ProgressEyeTheme {
         LoginScreen()
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF0D1117)
+@Composable
+private fun AdConsentRowPreview() {
+    ProgressEyeTheme {
+        LoginScreen(
+            isEeaUser = true,
+            consentObtained = true,
+        )
     }
 }
