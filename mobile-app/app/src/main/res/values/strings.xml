@@ -91,7 +91,9 @@
     <string name="settings_free_plan">Free Plan</string>
     <string name="settings_pro_plan">Pro Plan</string>
     <string name="settings_subscription_title">ProgressEye Pro</string>
-    <string name="settings_subscription_active">Active · Ads removed</string>
+    <string name="settings_subscription_active">Active · Ads removed · Unlimited PCs</string>
+    <string name="settings_subscription_benefit_ads">Remove all ads</string>
+    <string name="settings_subscription_benefit_pcs">Connect unlimited PCs</string>
     <string name="settings_subscription_price_format">%1$s / month</string>
     <string name="settings_subscription_price_fallback">\u20a93,000 / month</string>
     <string name="settings_subscription_start_button">Start Pro subscription</string>

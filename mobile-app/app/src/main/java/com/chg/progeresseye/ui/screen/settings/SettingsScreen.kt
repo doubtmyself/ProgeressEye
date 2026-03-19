@@ -400,6 +400,29 @@ private fun SubscriptionSection(
         )
 
         if (!isProPlan) {
+            Spacer(Modifier.height(8.dp))
+            listOf(
+                stringResource(R.string.settings_subscription_benefit_ads),
+                stringResource(R.string.settings_subscription_benefit_pcs),
+            ).forEach { benefit ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "✓",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Primary,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                    Text(
+                        text = benefit,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = OnSurfaceVariantDark,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+            }
+        }
+
+        if (!isProPlan) {
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
                 onClick = onStartSubscription,

@@ -83,7 +83,9 @@
     <string name="settings_free_plan">무료 플랜</string>
     <string name="settings_pro_plan">Pro 플랜</string>
     <string name="settings_subscription_title">ProgressEye Pro</string>
-    <string name="settings_subscription_active">활성화됨 · 광고 제거</string>
+    <string name="settings_subscription_active">활성화됨 · 광고 제거 · PC 무제한 연결</string>
+    <string name="settings_subscription_benefit_ads">광고 전체 제거</string>
+    <string name="settings_subscription_benefit_pcs">PC 무제한 연결</string>
     <string name="settings_subscription_price_format">%1$s / 월</string>
     <string name="settings_subscription_price_fallback">월 \u20a93,000</string>
     <string name="settings_subscription_start_button">Pro 구독 시작</string>

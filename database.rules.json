@@ -1,5 +1,9 @@
 {
   "rules": {
+    "policy": {
+      ".read": true,
+      ".write": false
+    },
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
