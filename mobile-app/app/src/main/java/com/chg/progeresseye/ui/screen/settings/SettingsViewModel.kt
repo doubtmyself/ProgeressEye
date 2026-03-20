@@ -37,6 +37,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+/**
+ * 설정 화면의 UI 상태 데이터를 보관하는 데이터 클래스
+ *
+ * @property completionAlerts 작업 완료 알림 수신 여부
+ * @property stallWarnings 작업 지연 경고 수신 여부
+ * @property currentPlan 현재 사용자의 구독 플랜
+ * @property isAdFreeMode 글로벌 광고 제거 모드 활성화 여부
+ * @property subscriptionPrice 구독 상품 가격 문자열
+ * @property isBillingReady 결제 클라이언트 준비 상태
+ * @constructor Create empty [SettingsUiState]
+ */
 data class SettingsUiState(
     val completionAlerts: Boolean = true,
     val stallWarnings: Boolean = true,
@@ -50,6 +61,16 @@ data class SettingsUiState(
 )
 
 @HiltViewModel
+/**
+ * 설정 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
+ *
+ * 알림 설정, Pro 구독 결제(BillingClient) 및 정책 상태를 관리합니다.
+ *
+ * @param application 전체 앱 라이프사이클에 접근하기 위한 Application 컨텍스트
+ * @param userPlanRepository 사용자 결제 플랜 상태를 관찰하는 저장소
+ * @param policyRepository 전역 정책을 관찰하는 저장소
+ * @constructor Create empty [SettingsViewModel]
+ */
 class SettingsViewModel @Inject constructor(
     application: Application,
     private val userPlanRepository: UserPlanRepository,
@@ -127,6 +148,9 @@ class SettingsViewModel @Inject constructor(
         setupBillingClient()
     }
 
+    /**
+     * 작업 완료 알림 수신 설정을 토글
+     */
     fun toggleCompletionAlerts() {
         _uiState.update { current ->
             val updated = current.copy(completionAlerts = !current.completionAlerts)
@@ -135,6 +159,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 작업 지연/중단 경고 알림 수신 설정을 토글
+     */
     fun toggleStallWarnings() {
         _uiState.update { current ->
             val updated = current.copy(stallWarnings = !current.stallWarnings)
@@ -143,6 +170,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Pro 구독 상품 결제 흐름을 시작
+     *
+     * @param activity Google Play 결제 팝업을 표시할 Activity 컨텍스트
+     */
     fun startProSubscription(activity: Activity) {
         if (_uiState.value.isAdFreeMode) return
 

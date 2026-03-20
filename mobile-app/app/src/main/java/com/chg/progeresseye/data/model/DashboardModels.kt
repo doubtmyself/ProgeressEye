@@ -5,7 +5,15 @@ package com.chg.progeresseye.data.model
 // Path: users/{uid}/devices/{deviceId}/
 // ═════════════════════════════════════════════════════════
 
-/** Single monitored task (= one capture region on PC). */
+/**
+ * 모니터링 대상인 개별 작업(예: 렌더링, 다운로드 등)의 상태를 나타내는 데이터 모델
+ *
+ * @property id 작업 식별자
+ * @property label 작업의 화면 표시 이름
+ * @property progress 작업 진행률 (0.0 ~ 1.0)
+ * @property status 현재 상태 코드
+ * @constructor Create empty [TaskData]
+ */
 data class TaskData(
     val id: String,
     val label: String,

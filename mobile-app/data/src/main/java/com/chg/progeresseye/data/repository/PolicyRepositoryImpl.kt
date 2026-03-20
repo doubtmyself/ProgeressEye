@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 
+/**
+ * Firebase Realtime Database에서 앱 전역 정책 상태를 수집하는 [PolicyRepository]의 구체화 클래스입니다.
+ */
 class PolicyRepositoryImpl @Inject constructor() : PolicyRepository {
     private val db = FirebaseDatabase.getInstance()
     override fun observePolicy(): Flow<Boolean> = callbackFlow {

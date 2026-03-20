@@ -22,6 +22,9 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import java.security.MessageDigest
 
+/**
+ * Firebase Cloud Messaging을 처리하여 푸시 알림을 수신하고 표시하는 백그라운드 서비스
+ */
 class FCMService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
@@ -29,6 +32,11 @@ class FCMService : FirebaseMessagingService() {
         saveTokenToRtdb(token)
     }
 
+    /**
+     * 새로운 FCM 메시지를 수신 시 호출됨
+     *
+     * @param message 수신된 [RemoteMessage] 객체
+     */
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 

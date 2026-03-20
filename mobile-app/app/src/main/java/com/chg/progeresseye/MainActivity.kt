@@ -54,6 +54,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
+/**
+ * 애플리케이션의 유일한 진입점 역할을 하는 단일 액티비티
+ *
+ * @constructor Create empty [MainActivity]
+ */
 class MainActivity : ComponentActivity() {
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null

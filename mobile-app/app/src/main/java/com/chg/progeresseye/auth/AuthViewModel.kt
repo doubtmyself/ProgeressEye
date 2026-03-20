@@ -32,6 +32,18 @@ import org.json.JSONObject
 // Auth UI state
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 인증 및 세션 제어와 관련된 UI 상태 데이터를 보관하는 데이터 클래스
+ *
+ * @property isLoading 로그인 및 네트워크 요청 중인지 여부
+ * @property user 처리된 Firebase 사용자 객체
+ * @property error 발생한 에러 메시지
+ * @property requiresSessionTakeover 다른 기기에서 로그인되어 세션 뺏기가 필요한 상태인지 여부
+ * @property existingDeviceName 기존 로그인된 기기 이름
+ * @property requiresWithdrawalCancel 회원탈퇴 대기 기간 중 재로그인으로 인한 취소 승인 필요 여부
+ * @property withdrawalGraceEndDate 유예 기간 만료 날짜
+ * @constructor Create empty [AuthUiState]
+ */
 data class AuthUiState(
     val isLoading: Boolean = false,
     val user: FirebaseUser? = null,
@@ -46,6 +58,14 @@ data class AuthUiState(
 // ViewModel — bridges UI ↔ GoogleAuthRepository
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 인증 화면 및 세션 유지 로직을 관리하는 ViewModel
+ *
+ * Google 로그인과 Firebase Auth를 연동하여 사용자를 식별하고, 디바이스 정보를 등록합니다.
+ *
+ * @param application 전체 앱 라이프사이클에 접근하기 위한 Application 컨텍스트
+ * @constructor Create empty [AuthViewModel]
+ */
 class AuthViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
@@ -84,6 +104,12 @@ class AuthViewModel(
     val isSignedIn: Boolean
         get() = repository.getCurrentUser() != null
 
+    /**
+     * Google Credential Manager 로그인을 통해 Firebase 인증을 시도합니다.
+     *
+     * @param context 로그인 인텐트 및 리소스를 획득하기 위한 컨텍스트
+     * @param webClientId Google Cloud 콘솔에서 발급받은 웹 클라이언트 ID
+     */
     fun signInWithGoogle(context: Context, webClientId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)

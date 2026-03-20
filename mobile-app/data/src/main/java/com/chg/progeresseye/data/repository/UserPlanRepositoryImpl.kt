@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 
+/**
+ * Firebase Realtime Database에서 사용자의 구독 플랜 정보를 조회하는 [UserPlanRepository]의 구체화 클래스입니다.
+ */
 class UserPlanRepositoryImpl @Inject constructor() : UserPlanRepository {
     private val db = FirebaseDatabase.getInstance()
     override fun observeUserPlan(uid: String): Flow<String> = callbackFlow {

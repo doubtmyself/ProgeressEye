@@ -48,6 +48,16 @@ import com.chg.progeresseye.util.toNormalizedPlan
 // ═════════════════════════════════════════════════════════
 
 @HiltViewModel
+/**
+ * 대시보드 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
+ *
+ * 연동된 PC 기기들의 실시간 상태(온라인, 작업 목록 등)를 구독하며, 전원 제어 및 화면 캡쳐 요청 기능을 수행
+ *
+ * @param application 리소스 및 SharedPreference 접근을 위한 컨텍스트
+ * @param userPlanRepository 사용자 결제 플랜 상태를 관찰하는 저장소
+ * @param policyRepository 전역 보안/광고 정책을 관찰하는 저장소
+ * @constructor Create empty [DashboardViewModel]
+ */
 class DashboardViewModel @Inject constructor(
     application: Application,
     private val userPlanRepository: UserPlanRepository,
@@ -111,6 +121,9 @@ class DashboardViewModel @Inject constructor(
 
     // ── Listener setup ─────────────────────────────────────────
 
+    /**
+     * Firebase Realtime Database의 기기 및 작업 목록 데이터 구독을 시작하여 UI 상태를 초기화
+     */
     fun startListening() {
         if (devicesChildListener != null) return // already listening
         val uid = auth.currentUser?.uid
@@ -218,6 +231,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 사용자가 Pro 계정이 아닌 경우 리워드 광고 로드 요청을 전송
+     *
+     * @param context 광고를 로드하기 위한 Android 컨텍스트
+     */
     fun loadRewardedAd(context: Context) {
         if (shouldSkipRewardedAds()) return
         if (_isRewardedAdLoading.value || rewardedAd != null) return

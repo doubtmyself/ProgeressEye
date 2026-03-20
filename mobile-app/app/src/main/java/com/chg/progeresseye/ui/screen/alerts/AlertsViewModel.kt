@@ -22,6 +22,16 @@ import javax.inject.Inject
 // ═════════════════════════════════════════════════════════
 
 @HiltViewModel
+/**
+ * 알림 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
+ *
+ * Firebase에서 실시간으로 알림 이벤트를 수신하고, 알림 읽음 처리 및 삭제 기능을 수행
+ *
+ * @property observeAlerts 특정 사용자의 알림을 구독하는 UseCase
+ * @property deleteAlertUseCase 특정 알림을 삭제하는 UseCase
+ * @property clearAlertsUseCase 전체 알림을 삭제하는 UseCase
+ * @constructor Create empty [AlertsViewModel]
+ */
 class AlertsViewModel @Inject constructor(
     private val observeAlerts: ObserveAlertsUseCase,
     private val deleteAlertUseCase: DeleteAlertUseCase,
@@ -89,7 +99,11 @@ class AlertsViewModel @Inject constructor(
         }
     }
 
-    /** Mark a single alert as read. */
+    /**
+     * 특정 알림을 클라이언트 메모리에서 읽음 처리
+     *
+     * @param alertId 읽은 알림의 ID 식별자
+     */
     fun markAsRead(alertId: String) {
         readAlertIds.add(alertId)
         _alerts.update { list ->
@@ -97,7 +111,11 @@ class AlertsViewModel @Inject constructor(
         }
     }
 
-    /** Delete a single alert from RTDB + local list. */
+    /**
+     * 특정 알림을 RTDB 및 로컬 목록에서 완전히 삭제
+     *
+     * @param alertId 삭제할 알림의 ID 식별자
+     */
     fun deleteAlert(alertId: String) {
         val currentUid = uid ?: return
         deleteAlertUseCase(currentUid, alertId)
@@ -105,7 +123,9 @@ class AlertsViewModel @Inject constructor(
         _alerts.update { list -> list.filter { it.id != alertId } }
     }
 
-    /** Clear all alerts. */
+    /**
+     * 현재 사용자의 모든 알림을 초기화하고 삭제
+     */
     fun clearAll() {
         val currentUid = uid ?: return
         readAlertIds.clear()

@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import javax.inject.Inject
 
+/**
+ * Firebase Realtime Database를 사용하여 알림 데이터를 읽고 쓰는 [AlertRepository]의 구체화 클래스입니다.
+ */
 class AlertRepositoryImpl @Inject constructor() : AlertRepository {
     private val db = FirebaseDatabase.getInstance()
 
@@ -48,6 +51,9 @@ class AlertRepositoryImpl @Inject constructor() : AlertRepository {
         db.reference.child("users").child(uid).child("alerts").removeValue()
     }
 
+    /**
+     * Firebase RTDB의 DataSnapshot을 [AlertItem] 모델로 변환 파싱합니다.
+     */
     private fun parse(snapshot: DataSnapshot): AlertItem? {
         val id = snapshot.key ?: return null
         val ts = snapshot.child("ts").getValue(Long::class.java) ?: 0L

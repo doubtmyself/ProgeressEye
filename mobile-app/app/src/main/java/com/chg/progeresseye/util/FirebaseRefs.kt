@@ -3,6 +3,9 @@ package com.chg.progeresseye.util
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 
+/**
+ * Firebase Realtime Database의 주요 노드 경로를 생성하는 유틸리티 싱글톤
+ */
 object FirebaseRefs {
     private val db get() = FirebaseDatabase.getInstance()
 
