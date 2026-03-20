@@ -1,9 +1,15 @@
 package com.chg.progeresseye.data.di
 
+import com.chg.progeresseye.data.repository.AdPrefsRepositoryImpl
 import com.chg.progeresseye.data.repository.AlertRepositoryImpl
+import com.chg.progeresseye.data.repository.LocalSessionRepositoryImpl
+import com.chg.progeresseye.data.repository.NotificationPrefsRepositoryImpl
 import com.chg.progeresseye.data.repository.PolicyRepositoryImpl
 import com.chg.progeresseye.data.repository.UserPlanRepositoryImpl
+import com.chg.progeresseye.domain.repository.AdPrefsRepository
 import com.chg.progeresseye.domain.repository.AlertRepository
+import com.chg.progeresseye.domain.repository.LocalSessionRepository
+import com.chg.progeresseye.domain.repository.NotificationPrefsRepository
 import com.chg.progeresseye.domain.repository.PolicyRepository
 import com.chg.progeresseye.domain.repository.UserPlanRepository
 import dagger.Binds
@@ -35,4 +41,16 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindAuthRepository(impl: com.chg.progeresseye.data.repository.AuthRepositoryImpl): com.chg.progeresseye.domain.repository.AuthRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocalSessionRepository(impl: LocalSessionRepositoryImpl): LocalSessionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNotificationPrefsRepository(impl: NotificationPrefsRepositoryImpl): NotificationPrefsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAdPrefsRepository(impl: AdPrefsRepositoryImpl): AdPrefsRepository
 }

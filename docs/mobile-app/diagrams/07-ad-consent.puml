@@ -69,18 +69,22 @@ else (폼 필요 / 신규)
         stop
       endif
 
-    else (Pro 구독)
+    else (Pro 구독 클릭)
 
       |앱|
-      :광고 비초기화 (광고 없이 진행);
-      :KEY_ADS_CONSENTED = false 저장;
-      :consentObtained = true;
-      #F1F5F9:로그인 화면 진입 허용\n(광고 없는 상태);
-      note right
-        → Pro 구독은
-        06-settings-actions.puml C 참조
-      end note
-      stop
+      :startProSubscription() 호출\n(Google Play 결제 창 표시);
+
+      if (결제 성공?) then (yes)
+        :userPlan = "pro" 업데이트;
+        :isAdFreeMode = true;
+        #F1F5F9:로그인 화면 진입 허용\n(Pro 혜택 적용);
+        stop
+      else (no / 취소)
+        #FFF9C4:결제 실패 알림 표시;
+        :showConsentRequiredDialog() 재표시;
+        note right: 광고 동의 또는 구독 성공 전까지\n이 루프를 벗어날 수 없음
+        stop
+      endif
 
     endif
 

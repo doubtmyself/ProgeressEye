@@ -12,8 +12,8 @@ import android.os.Build
 import android.widget.Toast
 import timber.log.Timber
 import androidx.core.app.NotificationCompat
-import com.chg.progeresseye.NotificationPrefs
 import com.chg.progeresseye.R
+import com.chg.progeresseye.domain.repository.NotificationPrefsRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -24,6 +24,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /**
@@ -33,6 +34,7 @@ import javax.inject.Inject
 class FCMService : FirebaseMessagingService() {
 
     @Inject lateinit var authRepository: AuthRepository
+    @Inject lateinit var notificationPrefsRepository: NotificationPrefsRepository
 
     /**
      * 새로운 FCM 토큰이 생성되었을 때 호출됩니다. 서버에 토큰을 등록합니다.
@@ -71,9 +73,8 @@ class FCMService : FirebaseMessagingService() {
             return
         }
 
-        val prefs = applicationContext.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
-        val completionEnabled = prefs.getBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, true)
-        val stallEnabled = prefs.getBoolean(NotificationPrefs.KEY_STALL_WARNINGS, true)
+        val completionEnabled = runBlocking { notificationPrefsRepository.getCompletionAlerts() }
+        val stallEnabled = runBlocking { notificationPrefsRepository.getStallWarnings() }
 
         val shouldNotify = when (type) {
             "completion", "image_change" -> completionEnabled

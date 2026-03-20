@@ -2,10 +2,9 @@ package com.chg.progeresseye.ui.screen.settings
 
 import android.app.Activity
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.chg.progeresseye.NotificationPrefs
+import com.chg.progeresseye.domain.repository.NotificationPrefsRepository
 import com.chg.progeresseye.domain.repository.PolicyRepository
 import com.chg.progeresseye.domain.repository.UserPlanRepository
 import com.chg.progeresseye.domain.usecase.GetCurrentUserUidUseCase
@@ -33,7 +32,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import androidx.core.content.edit
 
 /**
  * 설정 화면의 UI 상태 데이터를 보관하는 데이터 클래스
@@ -67,6 +65,7 @@ data class SettingsUiState(
  *
  * @property userPlanRepository 사용자 플랜 정보 저장소
  * @property policyRepository 앱 정책 정보 저장소
+ * @property notificationPrefsRepository 알림 설정 저장소
  * @property getCurrentUserUidUseCase 현재 사용자 UID 획득 UseCase
  * @property updateUserPlanUseCase 사용자 플랜 업데이트 UseCase
  * @property recordSubscriptionPurchaseUseCase 구독 구매 기록 저장 UseCase
@@ -75,21 +74,16 @@ class SettingsViewModel @Inject constructor(
     application: Application,
     private val userPlanRepository: UserPlanRepository,
     private val policyRepository: PolicyRepository,
+    private val notificationPrefsRepository: NotificationPrefsRepository,
     private val getCurrentUserUidUseCase: GetCurrentUserUidUseCase,
     private val updateUserPlanUseCase: UpdateUserPlanUseCase,
     private val recordSubscriptionPurchaseUseCase: RecordSubscriptionPurchaseUseCase
 ) : AndroidViewModel(application) {
 
-    private val prefs = application.getSharedPreferences(NotificationPrefs.PREFS_NAME, Context.MODE_PRIVATE)
     private var billingClient: BillingClient? = null
     private var subscriptionProductDetails: ProductDetails? = null
 
-    private val _uiState = MutableStateFlow(
-        SettingsUiState(
-            completionAlerts = prefs.getBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, true),
-            stallWarnings = prefs.getBoolean(NotificationPrefs.KEY_STALL_WARNINGS, true),
-        ),
-    )
+    private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     /**
@@ -120,11 +114,11 @@ class SettingsViewModel @Inject constructor(
             }
 
             else -> {
+                Timber.w("purchasesUpdatedListener error: code=%d msg=%s", billingResult.responseCode, billingResult.debugMessage)
                 _uiState.update {
                     it.copy(
                         isPurchaseLoading = false,
-                        billingMessage = billingResult.debugMessage.takeIf { msg -> msg.isNotBlank() }
-                            ?: getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
+                        billingMessage = getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
                     )
                 }
             }
@@ -132,6 +126,16 @@ class SettingsViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch {
+            notificationPrefsRepository.observeCompletionAlerts().collect { enabled ->
+                _uiState.update { it.copy(completionAlerts = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            notificationPrefsRepository.observeStallWarnings().collect { enabled ->
+                _uiState.update { it.copy(stallWarnings = enabled) }
+            }
+        }
         getCurrentUserUidUseCase()?.let { uid ->
             viewModelScope.launch {
                 userPlanRepository.observeUserPlan(uid).collect { plan ->
@@ -155,27 +159,18 @@ class SettingsViewModel @Inject constructor(
      * 완료 알림 설정 값을 반전시키고 영구 저장소에 저장합니다.
      */
     fun toggleCompletionAlerts() {
-        _uiState.update { current ->
-            val updated = current.copy(completionAlerts = !current.completionAlerts)
-            prefs.edit {
-                putBoolean(
-                    NotificationPrefs.KEY_COMPLETION_ALERTS,
-                    updated.completionAlerts
-                )
-            }
-            updated
-        }
+        val newValue = !_uiState.value.completionAlerts
+        _uiState.update { it.copy(completionAlerts = newValue) }
+        viewModelScope.launch { notificationPrefsRepository.setCompletionAlerts(newValue) }
     }
 
     /**
      * 정체 경고 알림 설정 값을 반전시키고 영구 저장소에 저장합니다.
      */
     fun toggleStallWarnings() {
-        _uiState.update { current ->
-            val updated = current.copy(stallWarnings = !current.stallWarnings)
-            prefs.edit { putBoolean(NotificationPrefs.KEY_STALL_WARNINGS, updated.stallWarnings) }
-            updated
-        }
+        val newValue = !_uiState.value.stallWarnings
+        _uiState.update { it.copy(stallWarnings = newValue) }
+        viewModelScope.launch { notificationPrefsRepository.setStallWarnings(newValue) }
     }
 
     /**
@@ -236,11 +231,11 @@ class SettingsViewModel @Inject constructor(
 
         val result = client.launchBillingFlow(activity, params)
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+            Timber.w("launchBillingFlow error: code=%d msg=%s", result.responseCode, result.debugMessage)
             _uiState.update {
                 it.copy(
                     isPurchaseLoading = false,
-                    billingMessage = result.debugMessage.takeIf { msg -> msg.isNotBlank() }
-                        ?: getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
+                    billingMessage = getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
                 )
             }
         }
@@ -323,8 +318,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         subscriptionPrice = null,
-                        billingMessage = billingResult.debugMessage.takeIf { msg -> msg.isNotBlank() }
-                            ?: getApplication<Application>().getString(R.string.settings_subscription_not_ready),
+                        billingMessage = getApplication<Application>().getString(R.string.settings_subscription_not_ready),
                     )
                 }
                 return@queryProductDetailsAsync
@@ -431,8 +425,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isPurchaseLoading = false,
-                        billingMessage = billingResult.debugMessage.takeIf { msg -> msg.isNotBlank() }
-                            ?: getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
+                        billingMessage = getApplication<Application>().getString(R.string.settings_subscription_purchase_failed),
                     )
                 }
             }

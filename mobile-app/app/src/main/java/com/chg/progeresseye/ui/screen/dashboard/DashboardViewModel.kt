@@ -2,12 +2,12 @@ package com.chg.progeresseye.ui.screen.dashboard
 
 import android.app.Application
 import android.app.Activity
-import android.content.Context
 import timber.log.Timber
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.chg.progeresseye.ui.screen.dashboard.DashboardUiState
 import com.chg.progeresseye.BuildConfig
+import com.chg.progeresseye.domain.repository.AdPrefsRepository
 import com.chg.progeresseye.domain.repository.PolicyRepository
 import com.chg.progeresseye.domain.repository.UserPlanRepository
 import com.chg.progeresseye.domain.usecase.CheckDeviceHeartbeatsUseCase
@@ -61,9 +61,12 @@ class DashboardViewModel @Inject constructor(
     private val getCurrentUserUidUseCase: GetCurrentUserUidUseCase,
     private val userPlanRepository: UserPlanRepository,
     private val policyRepository: PolicyRepository,
+    private val adPrefsRepository: AdPrefsRepository,
 ) : AndroidViewModel(application) {
 
-    private val prefs = getApplication<Application>().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private var cachedAdFreeUntilMs = 0L
+    private var cachedAdsConsented = true
+    private var cachedIsPersonalizedAds = true
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -116,6 +119,10 @@ class DashboardViewModel @Inject constructor(
 
         shouldPreloadRewardedAd = true
         restoreAdFreePass()
+        viewModelScope.launch {
+            cachedAdsConsented = adPrefsRepository.getAdsConsented()
+            cachedIsPersonalizedAds = adPrefsRepository.getIsPersonalizedAds()
+        }
 
         devicesJob?.cancel()
         devicesJob = viewModelScope.launch {
@@ -264,10 +271,10 @@ class DashboardViewModel @Inject constructor(
     private fun grantAdFreePass(rewardAmount: Int) {
         val durationMs = rewardAmount * AD_FREE_PASS_DURATION_MS
         val now = System.currentTimeMillis()
-        val existing = prefs.getLong(KEY_AD_FREE_UNTIL, 0L)
-        val base = if (existing > now) existing else now
+        val base = if (cachedAdFreeUntilMs > now) cachedAdFreeUntilMs else now
         val newExpiry = base + durationMs
-        prefs.edit().putLong(KEY_AD_FREE_UNTIL, newExpiry).apply()
+        cachedAdFreeUntilMs = newExpiry
+        viewModelScope.launch { adPrefsRepository.setAdFreeUntilMs(newExpiry) }
         startAdFreePassCountdown(newExpiry - now)
     }
 
@@ -275,9 +282,13 @@ class DashboardViewModel @Inject constructor(
      * 저장된 광고 제거 패스 정보를 복구하여 카운트다운을 시작합니다.
      */
     private fun restoreAdFreePass() {
-        val remaining = prefs.getLong(KEY_AD_FREE_UNTIL, 0L) - System.currentTimeMillis()
-        if (remaining > 0L) {
-            startAdFreePassCountdown(remaining)
+        viewModelScope.launch {
+            val storedMs = adPrefsRepository.getAdFreeUntilMs()
+            cachedAdFreeUntilMs = storedMs
+            val remaining = storedMs - System.currentTimeMillis()
+            if (remaining > 0L) {
+                startAdFreePassCountdown(remaining)
+            }
         }
     }
 
@@ -287,7 +298,8 @@ class DashboardViewModel @Inject constructor(
     fun clearAdFreePass() {
         adFreePassJob?.cancel()
         _adFreePassRemainingMs.value = 0L
-        prefs.edit().remove(KEY_AD_FREE_UNTIL).apply()
+        cachedAdFreeUntilMs = 0L
+        viewModelScope.launch { adPrefsRepository.clearAdFreeUntil() }
         syncAdGateState()
     }
 
@@ -323,8 +335,8 @@ class DashboardViewModel @Inject constructor(
             return
         }
 
-        val adsConsented = prefs.getBoolean(KEY_ADS_CONSENTED, true)
-        val isPersonalized = prefs.getBoolean(KEY_IS_PERSONALIZED_ADS, true)
+        val adsConsented = cachedAdsConsented
+        val isPersonalized = cachedIsPersonalizedAds
         if (!adsConsented || !isPersonalized) {
             _showSubscribeDialog.value = true
             return
@@ -537,9 +549,5 @@ class DashboardViewModel @Inject constructor(
         private const val REWARDED_AD_UNIT_ID = "ca-app-pub-6572076936506117/7864871780"
         private const val REWARDED_AD_UNIT_ID_TEST = "ca-app-pub-3940256099942544/5224354917"
         private const val AD_FREE_PASS_DURATION_MS = 3_600_000L
-        private const val PREFS_NAME = "dashboard_prefs"
-        private const val KEY_AD_FREE_UNTIL = "ad_free_until_ms"
-        const val KEY_ADS_CONSENTED = "ads_consented"
-        const val KEY_IS_PERSONALIZED_ADS = "is_personalized_ads"
     }
 }

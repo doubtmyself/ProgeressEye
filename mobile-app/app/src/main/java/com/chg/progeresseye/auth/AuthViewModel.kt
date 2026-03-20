@@ -14,9 +14,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import timber.log.Timber
+import com.chg.progeresseye.domain.repository.LocalSessionRepository
 import com.chg.progeresseye.domain.usecase.GetWithdrawalStateUseCase
 import com.chg.progeresseye.domain.usecase.CallWithdrawalApiUseCase
 import com.chg.progeresseye.domain.usecase.CheckExistingSessionUseCase
@@ -49,6 +52,7 @@ data class AuthUiState(
 /**
  * 인증 화면 및 세션 유지 로직을 관리하는 ViewModel
  *
+ * @property localSessionRepository 로컬 세션 및 기기 ID 저장소
  * @property getWithdrawalStateUseCase 사용자의 탈퇴 상태를 조회하는 UseCase
  * @property callWithdrawalApiUseCase 탈퇴 관련 API(요청/철회)를 호출하는 UseCase
  * @property checkExistingSessionUseCase 기존 세션 존재 여부를 확인하는 UseCase
@@ -58,6 +62,7 @@ data class AuthUiState(
  */
 class AuthViewModel @Inject constructor(
     application: Application,
+    private val localSessionRepository: LocalSessionRepository,
     private val getWithdrawalStateUseCase: GetWithdrawalStateUseCase,
     private val callWithdrawalApiUseCase: CallWithdrawalApiUseCase,
     private val checkExistingSessionUseCase: CheckExistingSessionUseCase,
@@ -65,7 +70,7 @@ class AuthViewModel @Inject constructor(
     private val clearSessionIfOwnedUseCase: ClearSessionIfOwnedUseCase,
     private val updateUserDocumentUseCase: UpdateUserDocumentUseCase
 ) : AndroidViewModel(application) {
-    
+
     private val repository = GoogleAuthRepository()
     private var pendingUser: FirebaseUser? = null
     private var pendingUid: String? = null
@@ -77,11 +82,11 @@ class AuthViewModel @Inject constructor(
 
     init {
         val firebaseUser = repository.getCurrentUser()
-        val hasSession = MobileSessionManager.getSessionId(application) != null
+        val hasSession = runBlocking(Dispatchers.IO) { localSessionRepository.getSessionId() != null }
         if (firebaseUser != null && !hasSession) {
             repository.signOutFirebaseOnly()
-            MobileSessionManager.clearSession(application)
             _uiState = MutableStateFlow(AuthUiState())
+            viewModelScope.launch(Dispatchers.IO) { localSessionRepository.clearSession() }
         } else {
             _uiState = MutableStateFlow(AuthUiState(user = firebaseUser))
         }
@@ -134,7 +139,7 @@ class AuthViewModel @Inject constructor(
                     }
                     if (rejoinAllowedAt > now) {
                         repository.signOut(context)
-                        MobileSessionManager.clearSession(context)
+                        localSessionRepository.clearSession()
                         _uiState.value = AuthUiState(
                             isLoading = false,
                             error = context.getString(
@@ -184,7 +189,7 @@ class AuthViewModel @Inject constructor(
 
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                doActivateSession(context, uid)
+                doActivateSession(uid)
                 pendingUser = null
                 pendingUid = null
                 _uiState.value = AuthUiState(user = user)
@@ -207,7 +212,7 @@ class AuthViewModel @Inject constructor(
             pendingUser = null
             pendingUid = null
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             _uiState.value = AuthUiState(error = context.getString(R.string.auth_session_takeover_cancelled))
         }
     }
@@ -220,9 +225,9 @@ class AuthViewModel @Inject constructor(
     fun signOut(context: Context) {
         viewModelScope.launch {
             Timber.d("[Auth] signOut: 시작")
-            clearMobileSessionIfOwnedUseCase(context)
+            clearMobileSessionIfOwned()
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             pendingUser = null
             pendingUid = null
             pendingWithdrawalUser = null
@@ -234,12 +239,10 @@ class AuthViewModel @Inject constructor(
 
     /**
      * 현재 기기가 소유한 모바일 세션인 경우 서버에서 세션 정보를 제거합니다.
-     *
-     * @param context 안드로이드 컨텍스트
      */
-    private suspend fun clearMobileSessionIfOwnedUseCase(context: Context) {
+    private suspend fun clearMobileSessionIfOwned() {
         val user = repository.getCurrentUser() ?: return
-        val localSessionId = MobileSessionManager.getSessionId(context) ?: return
+        val localSessionId = localSessionRepository.getSessionId() ?: return
         try { clearSessionIfOwnedUseCase(user.uid, localSessionId) } catch (e: Exception) { }
     }
 
@@ -265,7 +268,7 @@ class AuthViewModel @Inject constructor(
                 proceedSessionCheck(context, user, uid)
             } catch (e: Exception) {
                 repository.signOut(context)
-                MobileSessionManager.clearSession(context)
+                localSessionRepository.clearSession()
                 pendingWithdrawalUser = null
                 pendingWithdrawalUid = null
                 _uiState.value = AuthUiState(
@@ -286,7 +289,7 @@ class AuthViewModel @Inject constructor(
             val uid = pendingWithdrawalUid
             val email = pendingWithdrawalUser?.email
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             pendingWithdrawalUser = null
             pendingWithdrawalUid = null
 
@@ -318,7 +321,7 @@ class AuthViewModel @Inject constructor(
             }
 
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             pendingUser = null
             pendingUid = null
             _uiState.value = AuthUiState(error = context.getString(R.string.settings_delete_account_requested))
@@ -355,7 +358,7 @@ class AuthViewModel @Inject constructor(
      * @param uid 사용자 ID
      */
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {
-        val myDeviceId = MobileSessionManager.getOrCreateDeviceId(context)
+        val myDeviceId = localSessionRepository.getOrCreateDeviceId()
         Timber.d("[Auth] proceedSessionCheck: 시작 (uid=$uid, deviceId=$myDeviceId)")
 
         try {
@@ -364,7 +367,7 @@ class AuthViewModel @Inject constructor(
             Timber.d("[Auth] checkExistingSessionUseCase 완료: existingDevice=$existingDeviceName")
             if (existingDeviceName != null) {
                 Timber.d("[Auth] 세션 충돌 감지 → 세션 인수 UI 표시")
-                MobileSessionManager.clearSession(context)
+                localSessionRepository.clearSession()
                 pendingUser = user
                 pendingUid = uid
                 _uiState.value = AuthUiState(
@@ -374,7 +377,7 @@ class AuthViewModel @Inject constructor(
                 )
             } else {
                 Timber.d("[Auth] 기존 세션 없음 → doActivateSession 호출 중...")
-                doActivateSession(context, uid)
+                doActivateSession(uid)
                 Timber.d("[Auth] doActivateSession 완료 → 로그인 성공")
                 _uiState.value = AuthUiState(user = user)
             }
@@ -386,15 +389,14 @@ class AuthViewModel @Inject constructor(
             )
         }
     }
-    
+
     /**
      * 서버에 새로운 모바일 세션을 등록하고 로컬에 세션 ID를 저장합니다.
      *
-     * @param context 안드로이드 컨텍스트
      * @param uid 사용자 ID
      */
-    private suspend fun doActivateSession(context: Context, uid: String) {
-       val deviceId = MobileSessionManager.getOrCreateDeviceId(context)
+    private suspend fun doActivateSession(uid: String) {
+       val deviceId = localSessionRepository.getOrCreateDeviceId()
        val deviceName = MobileSessionManager.getDeviceName()
        val sessionId = java.util.UUID.randomUUID().toString()
        Timber.d("[Auth] doActivateSession: deviceId=$deviceId, deviceName=$deviceName, sessionId=$sessionId")
@@ -402,7 +404,7 @@ class AuthViewModel @Inject constructor(
        Timber.d("[Auth] activateMobileSessionUseCase 호출 중...")
        activateMobileSessionUseCase(uid, deviceId, deviceName, sessionId)
        Timber.d("[Auth] activateMobileSessionUseCase 완료 → 세션 저장 중...")
-       MobileSessionManager.saveSessionId(context, sessionId)
+       localSessionRepository.saveSessionId(sessionId)
        Timber.d("[Auth] 세션 저장 완료")
 
        val user = repository.getCurrentUser()
@@ -418,7 +420,7 @@ class AuthViewModel @Inject constructor(
     fun forceSignOutBySessionConflict(context: Context) {
         viewModelScope.launch {
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             pendingUser = null
             pendingUid = null
             _uiState.value = AuthUiState(error = context.getString(R.string.auth_logged_out_by_other_device))
@@ -433,7 +435,7 @@ class AuthViewModel @Inject constructor(
     fun forceSignOutByWithdrawal(context: Context) {
         viewModelScope.launch {
             repository.signOut(context)
-            MobileSessionManager.clearSession(context)
+            localSessionRepository.clearSession()
             pendingUser = null
             pendingUid = null
             pendingWithdrawalUser = null

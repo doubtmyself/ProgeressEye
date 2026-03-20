@@ -26,7 +26,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
+import com.chg.progeresseye.domain.repository.AdPrefsRepository
+import com.chg.progeresseye.domain.repository.LocalSessionRepository
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
@@ -35,26 +36,28 @@ import androidx.navigation.compose.rememberNavController
 import com.chg.progeresseye.data.util.FirebaseConstants
 import com.chg.progeresseye.auth.AuthViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import com.chg.progeresseye.auth.MobileSessionManager
 import com.chg.progeresseye.service.FCMService
 import com.chg.progeresseye.ui.screen.login.LoginScreen
 import com.chg.progeresseye.ui.screen.main.MainScreen
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
-import com.google.android.gms.ads.MobileAds
+import com.chg.progeresseye.ui.screen.settings.SettingsViewModel
+import com.chg.progeresseye.ui.screen.settings.SettingsUiState
+import com.chg.progeresseye.util.isPro
+import androidx.activity.viewModels
 import com.google.android.ump.ConsentDebugSettings
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
+import com.google.android.gms.ads.MobileAds
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DataSnapshot
+import com.chg.progeresseye.domain.repository.AuthRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.chg.progeresseye.domain.repository.AuthRepository
-
 @AndroidEntryPoint
 /**
  * 애플리케이션의 유일한 진입점 역할을 하는 단일 액티비티
@@ -63,6 +66,9 @@ import com.chg.progeresseye.domain.repository.AuthRepository
  */
 class MainActivity : ComponentActivity() {
     @Inject lateinit var authRepository: AuthRepository
+    @Inject lateinit var adPrefsRepository: AdPrefsRepository
+    @Inject lateinit var localSessionRepository: LocalSessionRepository
+    private val settingsViewModel: SettingsViewModel by viewModels()
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null
     private var isHandlingSessionConflict: Boolean = false
@@ -76,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var isEeaUser by mutableStateOf(false)
     private var showPrivacyButton by mutableStateOf(false)
     private var isPersonalizedAds by mutableStateOf(true)
+    private var consentDialog: AlertDialog? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -109,6 +116,13 @@ class MainActivity : ComponentActivity() {
         // 강제 버전 체크 (Firestore progress DB — 인증 불필요)
         checkMinVersion()
         Timber.d("[Startup] checkMinVersion dispatched: +${System.currentTimeMillis() - t0}ms")
+
+        // 구독 상태 및 결제 결과 관찰
+        lifecycleScope.launch {
+            settingsViewModel.uiState.collect { state ->
+                handleSettingsStateChange(state)
+            }
+        }
 
         setContent {
             Timber.d("[Startup] setContent lambda entered: +${System.currentTimeMillis() - t0}ms")
@@ -227,10 +241,43 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * SettingsViewModel의 상태 변화를 처리합니다.
+     * 구독 성공 시 광고 동의 단계를 건너뛰고, 결제 실패 시 동의 다이얼로그를 다시 표시합니다.
+     */
+    private fun handleSettingsStateChange(state: SettingsUiState) {
+        // 1. Pro 구독 성공 시
+        if (state.currentPlan.isPro()) {
+            if (!consentObtained) {
+                Timber.d("User is Pro, skipping ad consent")
+                consentObtained = true
+                consentDialog?.dismiss()
+                consentDialog = null
+            }
+            return
+        }
+
+        // 2. 결제 흐름 종료 (성공하지 못한 경우)
+        if (!state.isPurchaseLoading && !consentObtained) {
+            // 결제 메시지가 있거나(실패/취소), 결제 창이 닫혔는데 여전히 free인 경우
+            if (state.billingMessage != null) {
+                Timber.d("Subscription failed or cancelled: %s", state.billingMessage)
+                showConsentRequiredDialog()
+                settingsViewModel.clearBillingMessage()
+            }
+        }
+    }
+
+    /**
      * UMP(User Messaging Platform)를 사용하여 광고 동의를 요청하고 광고를 초기화합니다.
      * 디버그 모드에서는 테스트 설정을 적용할 수 있습니다.
      */
     private fun requestConsentAndInitAds() {
+        // 이미 Pro인 경우 광고 동의 절차 생략
+        if (settingsViewModel.uiState.value.currentPlan.isPro()) {
+            consentObtained = true
+            return
+        }
+
         val consentInformation = UserMessagingPlatform.getConsentInformation(this)
 
         val params = if (BuildConfig.DEBUG) {
@@ -238,7 +285,7 @@ class MainActivity : ComponentActivity() {
             // EEA 테스트:  DEBUG_GEOGRAPHY_EEA
             // 미국 테스트: DEBUG_GEOGRAPHY_REGULATED_US_STATE
             // 기타(광고):  DEBUG_GEOGRAPHY_OTHER
-            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_OTHER
+            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA
             // ─────────────────────────────────────────────────────────────
             val debugSettings = ConsentDebugSettings.Builder(this)
                 .setDebugGeography(debugGeography)
@@ -296,11 +343,14 @@ class MainActivity : ComponentActivity() {
      * 재동의를 시도하거나 광고 없이 서비스를 이용하기 위한 구독 안내를 포함합니다.
      */
     private fun showConsentRequiredDialog() {
-        AlertDialog.Builder(this)
+        if (consentDialog?.isShowing == true) return
+
+        consentDialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.consent_required_title))
             .setMessage(getString(R.string.consent_required_message))
             .setCancelable(false)
             .setPositiveButton(getString(R.string.consent_required_reconsent)) { _, _ ->
+                consentDialog = null
                 if (isEeaRegion()) {
                     // EEA: GDPR 폼 재표시 (OBTAINED 상태에서 건너뛰지 않도록 리셋)
                     UserMessagingPlatform.getConsentInformation(this).reset()
@@ -311,11 +361,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
             .setNegativeButton(getString(R.string.consent_required_subscribe)) { _, _ ->
-                // 광고 동의 없이 Pro 구독으로 진행 — 광고 미초기화, 로그인 허용
-                getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
-                    .edit().putBoolean(DashboardViewModel.KEY_ADS_CONSENTED, false).apply()
-                isEeaUser = isEeaRegion()
-                consentObtained = true
+                consentDialog = null
+                // Pro 구독 흐름 시작
+                settingsViewModel.startProSubscription(this)
             }
             .show()
     }
@@ -330,8 +378,7 @@ class MainActivity : ComponentActivity() {
 
             val personalized = isPersonalizedAdsConsented()
             isPersonalizedAds = personalized
-            getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
-                .edit().putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized).apply()
+            lifecycleScope.launch { adPrefsRepository.setIsPersonalizedAds(personalized) }
             // EEA에서 비맞춤형으로 변경 시 Pro 구독 유도
             // US는 Manage options 개별 조정 시 오발동 문제로 제외
             if (!personalized && isEeaRegion()) {
@@ -362,13 +409,12 @@ class MainActivity : ComponentActivity() {
         updatePrivacyButtonVisibility()
         val personalized = isPersonalizedAdsConsented()
         isPersonalizedAds = personalized
-        getSharedPreferences("dashboard_prefs", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(DashboardViewModel.KEY_ADS_CONSENTED, true)
-            .putBoolean(DashboardViewModel.KEY_IS_PERSONALIZED_ADS, personalized)
-            .apply()
-        lifecycleScope.launch(Dispatchers.IO) {
-            MobileAds.initialize(this@MainActivity) {}
+        lifecycleScope.launch {
+            adPrefsRepository.setAdsConsented(true)
+            adPrefsRepository.setIsPersonalizedAds(personalized)
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                MobileAds.initialize(this@MainActivity) {}
+            }
         }
     }
 
@@ -468,30 +514,32 @@ class MainActivity : ComponentActivity() {
         stopSessionConflictListener()
         isHandlingSessionConflict = false
 
-        val localSessionId = MobileSessionManager.getSessionId(this) ?: return
-        val ref = FirebaseDatabase.getInstance()
-            .getReference("users")
-            .child(uid)
-            .child("mobileSession")
-            .child("sessionId")
+        lifecycleScope.launch {
+            val localSessionId = localSessionRepository.getSessionId() ?: return@launch
+            val ref = FirebaseDatabase.getInstance()
+                .getReference("users")
+                .child(uid)
+                .child("mobileSession")
+                .child("sessionId")
 
-        val listener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val remoteSessionId = snapshot.getValue(String::class.java) ?: return
-                if (!isHandlingSessionConflict && remoteSessionId != localSessionId) {
-                    isHandlingSessionConflict = true
-                    authViewModel.forceSignOutBySessionConflict(this@MainActivity)
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val remoteSessionId = snapshot.getValue(String::class.java) ?: return
+                    if (!isHandlingSessionConflict && remoteSessionId != localSessionId) {
+                        isHandlingSessionConflict = true
+                        authViewModel.forceSignOutBySessionConflict(this@MainActivity)
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Timber.w(error.toException(), "mobileSession listener cancelled")
                 }
             }
 
-            override fun onCancelled(error: DatabaseError) {
-                Timber.w(error.toException(), "mobileSession listener cancelled")
-            }
+            ref.addValueEventListener(listener)
+            mobileSessionRef = ref
+            mobileSessionListener = listener
         }
-
-        ref.addValueEventListener(listener)
-        mobileSessionRef = ref
-        mobileSessionListener = listener
     }
 
     /**
