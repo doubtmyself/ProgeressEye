@@ -1,0 +1,45 @@
+@startuml
+!theme plain
+title 대시보드 — Pro 업그레이드 배너 버튼
+
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam swimlane {
+  BorderColor #334155
+  TitleBackgroundColor #0F172A
+  TitleFontColor #94A3B8
+}
+skinparam activity {
+  BackgroundColor #1E293B
+  BorderColor #475569
+  FontColor #E2E8F0
+  StartColor #3B82F6
+  EndColor #3B82F6
+}
+skinparam ArrowColor #64748B
+
+note as N1
+  배너 표시 조건:
+  - userPlan == "free"
+  - 연결된 기기가 2개 이상 존재
+end note
+
+|사용자|
+start
+:Pro 업그레이드 배너 확인\n"여러 PC에 앱을 연결하려면\nPRO로 업그레이드하세요";
+
+#93C5FD:**[버튼] "Subscribe to Pro" 탭**;
+
+|앱|
+:onUpgradeToPro() 콜백 호출;
+:selectedTab = 2 (설정 탭);
+
+|사용자|
+:설정 탭으로 이동\n(하단 탭 인덱스 2);
+note right
+  → 06-settings-actions.puml
+  Pro 구독 버튼 참조
+end note
+stop
+
+@enduml

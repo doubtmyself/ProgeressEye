@@ -1,0 +1,93 @@
+@startuml
+!theme plain
+title 탈퇴 취소 다이얼로그 버튼
+
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam swimlane {
+  BorderColor #334155
+  TitleBackgroundColor #0F172A
+  TitleFontColor #94A3B8
+}
+skinparam activity {
+  BackgroundColor #1E293B
+  BorderColor #475569
+  FontColor #E2E8F0
+  StartColor #3B82F6
+  EndColor #3B82F6
+}
+skinparam ArrowColor #64748B
+
+|사용자|
+start
+:탈퇴 취소 다이얼로그 확인\n"탈퇴 처리 중인 계정입니다.\n취소하시겠습니까? (deleteAt까지)";
+
+if (선택?) then (탈퇴 취소)
+
+  |앱|
+  :confirmWithdrawalCancellation()\nisLoading = true;
+
+  |Firebase Functions|
+  :cancelWithdrawal API 호출\n(ID 토큰 포함);
+
+  |앱|
+  if (API 성공?) then (성공)
+
+    :pendingWithdrawalUser / Uid 초기화;
+    :proceedSessionCheck();
+
+    if (다른 기기에 활성 세션?) then (있음)
+      #FCD34D:requiresSessionTakeover = true;
+      note right
+        → 02-session-takeover.puml
+      end note
+      stop
+
+    else (없음)
+      |Firebase RTDB|
+      :모바일 세션 등록\nactivateMobileSessionUseCase();
+
+      |앱|
+      :AuthUiState(user = user);
+      #86EFAC:메인 화면으로 이동 ("main");
+      stop
+    endif
+
+  else (실패)
+
+    |Firebase Auth|
+    :Firebase 로그아웃;
+
+    |앱|
+    :pendingWithdrawalUser / Uid 초기화;
+    #FCA5A5:에러: "탈퇴 취소 실패\n(오류 메시지 표시)";
+
+    |사용자|
+    :로그인 화면 유지;
+    stop
+
+  endif
+
+else (탈퇴 유지)
+
+  |앱|
+  :keepWithdrawalAndCancelLogin();
+
+  |Firebase Functions|
+  :재가입 제한일 조회\ngetWithdrawalStateUseCase().rejoinAllowedAt;
+
+  |Firebase Auth|
+  :Firebase 로그아웃;
+
+  |앱|
+  :로컬 세션 초기화;
+  :pendingWithdrawalUser / Uid 초기화;
+  #FCA5A5:에러: "○○까지 재가입 불가";
+
+  |사용자|
+  :로그인 화면 유지\n(에러 메시지 표시);
+  stop
+
+endif
+
+@enduml

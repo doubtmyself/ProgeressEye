@@ -1,0 +1,94 @@
+@startuml
+!theme plain
+title 대시보드 — 기기 제어 버튼 (스크린샷 / 절전 / 종료)
+
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam activity {
+  BackgroundColor #1E293B
+  BorderColor #475569
+  FontColor #E2E8F0
+  StartColor #3B82F6
+  EndColor #3B82F6
+  BarColor #475569
+}
+skinparam ArrowColor #64748B
+skinparam NoteBackgroundColor #0F172A
+skinparam NoteBorderColor #334155
+skinparam NoteFontColor #94A3B8
+
+start
+
+#93C5FD:**[버튼] 제어 버튼 탭**;
+note right
+  📷 스크린샷 요청
+  💤 절전 모드
+  ⏻ 시스템 종료
+  (세 버튼 모두 동일한 광고 게이트 통과)
+end note
+
+if (플랜 / 광고 상태?) then (Pro 플랜)
+
+  :명령 즉시 실행;
+
+elseif (Free + 광고 없음 면제\nisAdFreeMode == true) then
+
+  :명령 즉시 실행;
+
+elseif (Free + 광고 패스 유효\nadFreePassRemainingMs > 0) then
+
+  note right
+    TopBar에 남은 시간 카운트다운 표시
+    (예: "Free 0:42")
+  end note
+  :명령 즉시 실행;
+
+else (Free + 패스 없음)
+
+  :showRewardedAdThen() 호출\n보상형 광고 로드 확인;
+
+  if (광고 로드 상태?) then (로드됨)
+
+    :광고 표시 (전면 보상형);
+
+    if (시청 결과?) then (완료)
+      :adFreePassRemainingMs 부여\n(약 1시간);
+      :명령 실행;
+    else (건너뜀 / 닫음)
+      #FCA5A5:명령 취소\n(패스 미부여);
+      stop
+    endif
+
+  else (미로드)
+    #FCA5A5:광고 미준비 안내\n명령 취소;
+    stop
+  endif
+
+endif
+
+:RTDB commands/{deviceId}에\n명령 키 기록;
+note right
+  screenshot: { requestedAt }
+  sleep: { requestedAt }
+  shutdown: { requestedAt }
+end note
+
+if (스크린샷 명령?) then (yes)
+
+  :PC 에이전트가 스크린샷 촬영 후\nRTDB screenshotUrl 업데이트 대기;
+
+  if (screenshotUrl 수신?) then (성공)
+    #86EFAC:스크린샷 다이얼로그 표시\n(핀치 줌 가능);
+  else (타임아웃 / 실패)
+    #FCA5A5:screenshotError Snackbar 표시;
+  endif
+
+else (절전 / 종료)
+
+  #86EFAC:명령 전송 완료\n(PC 에이전트가 비동기 처리);
+
+endif
+
+stop
+
+@enduml

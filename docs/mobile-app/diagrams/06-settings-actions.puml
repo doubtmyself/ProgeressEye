@@ -1,0 +1,169 @@
+@startuml
+!theme plain
+title 설정 탭 — 버튼 흐름
+
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam swimlane {
+  BorderColor #334155
+  TitleBackgroundColor #0F172A
+  TitleFontColor #94A3B8
+}
+skinparam activity {
+  BackgroundColor #1E293B
+  BorderColor #475569
+  FontColor #E2E8F0
+  StartColor #3B82F6
+  EndColor #3B82F6
+}
+skinparam ArrowColor #64748B
+
+' ══════════════════════════════
+' A. 로그아웃 버튼
+' ══════════════════════════════
+
+|사용자|
+start
+#93C5FD:**[버튼 A] "로그아웃" 탭**;
+:로그아웃 확인 다이얼로그\n"정말 로그아웃하시겠습니까?";
+
+if (선택?) then (확인)
+
+  |앱|
+  :signOut(context) 호출;
+
+  |Firebase RTDB|
+  :mobileSession 제거\nclearSessionIfOwnedUseCase();
+
+  |Firebase Auth|
+  :Firebase 로그아웃;
+
+  |앱|
+  :로컬 sessionId 삭제;
+  :AuthUiState() — 초기화;
+
+  |사용자|
+  #86EFAC:로그인 화면으로 이동 ("login");
+  stop
+
+else (취소)
+  :다이얼로그 닫기\n설정 화면 유지;
+  stop
+endif
+
+' ══════════════════════════════
+' B. 계정 삭제 버튼
+' ══════════════════════════════
+
+|사용자|
+start
+#EF9A9A:**[버튼 B] "계정 삭제" 탭**;
+:계정 삭제 확인 다이얼로그\n"탈퇴 후 30일 내 취소 가능\n이후 모든 데이터 영구 삭제";
+
+if (선택?) then (확인)
+
+  |앱|
+  :deleteAccount(context) 호출\nisLoading = true;
+
+  |Firebase Functions|
+  :requestWithdrawal API 호출\n(ID 토큰 포함);
+  note right
+    성공 / 실패 무관하게
+    로그아웃 진행
+  end note
+
+  |Firebase RTDB|
+  :mobileSession 제거;
+
+  |Firebase Auth|
+  :Firebase 로그아웃;
+
+  |앱|
+  :AuthUiState(error = "탈퇴 요청됨");
+
+  |사용자|
+  #86EFAC:로그인 화면으로 이동 ("login")\n(탈퇴 요청 완료 메시지 표시);
+  stop
+
+else (취소)
+  :다이얼로그 닫기\n설정 화면 유지;
+  stop
+endif
+
+' ══════════════════════════════
+' C. Pro 구독 버튼
+' ══════════════════════════════
+
+|사용자|
+start
+#93C5FD:**[버튼 C] "Pro 구독" 탭**;
+
+|앱|
+:launchBillingFlow(activity)\nGoogle Play 구독 시작;
+
+|Google Play|
+:구독 결제 UI 표시;
+
+if (결제 결과?) then (성공)
+
+  |앱|
+  :구독 상태 갱신\nrefreshSubscriptionStatus();
+  :currentPlan = "pro";
+  :BillingMessage: "구독 완료";
+
+  |사용자|
+  #86EFAC:설정 화면 업데이트\n(Pro 배지 표시);
+  stop
+
+elseif (이미 구독 중) then
+
+  |앱|
+  :BillingMessage: "이미 구독 중";
+  stop
+
+else (취소 / 실패)
+
+  |앱|
+  :상태 변경 없음;
+  stop
+
+endif
+
+' ══════════════════════════════
+' D. 개인정보 보호 옵션 버튼 (조건부 표시)
+' ══════════════════════════════
+
+|사용자|
+start
+note left
+  표시 조건:
+  EEA(GDPR) 또는
+  US 규제 주 사용자
+end note
+#93C5FD:**[버튼 D] "개인정보 보호 옵션" 탭**;
+
+|앱|
+:UMP 개인정보 설정 폼 표시\nonShowPrivacyOptions();
+
+|UMP SDK|
+:개인정보 옵션 폼 렌더링;
+
+|사용자|
+:설정 변경 (맞춤형 / 비맞춤형);
+
+|앱|
+:isPersonalizedAds 업데이트;
+:SharedPreferences 저장;
+
+if (EEA이면서 비맞춤형 선택?) then (yes)
+  #FCD34D:광고 동의 필요 다이얼로그\n(Pro 구독 유도);
+  note right
+    → 07-ad-consent.puml
+  end note
+  stop
+else (no)
+  :설정 화면 유지;
+  stop
+endif
+
+@enduml
