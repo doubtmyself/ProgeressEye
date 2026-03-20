@@ -66,6 +66,7 @@ import com.chg.progeresseye.ui.screen.alerts.AlertsContent
 import com.chg.progeresseye.ui.screen.dashboard.DashboardContent
 import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
 import com.chg.progeresseye.ui.screen.settings.SettingsContent
+import com.chg.progeresseye.ui.screen.settings.SettingsViewModel
 import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
@@ -104,6 +105,7 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     val dashboardViewModel: DashboardViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val userPlan by dashboardViewModel.userPlan.collectAsStateWithLifecycle()
     val isAdFreeModeEnabled by dashboardViewModel.isAdFreeModeEnabled.collectAsStateWithLifecycle()
@@ -142,6 +144,12 @@ fun MainScreen(
     LifecycleStartEffect(dashboardViewModel) {
         dashboardViewModel.startListening()
         onStopOrDispose { dashboardViewModel.stopListening() }
+    }
+
+    // 앱 시작/포그라운드 복귀 시 구독 상태 재확인 — 만료/취소 자동 반영
+    LifecycleStartEffect(settingsViewModel) {
+        settingsViewModel.refreshSubscriptionStatus()
+        onStopOrDispose { }
     }
 
     Scaffold(
@@ -228,6 +236,7 @@ fun MainScreen(
                     showPrivacyButton = showPrivacyButton,
                     onShowPrivacyOptions = onShowPrivacyOptions,
                     modifier = Modifier.padding(padding),
+                    viewModel = settingsViewModel,
                 )
             }
         }

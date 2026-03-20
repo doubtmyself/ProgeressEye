@@ -210,6 +210,15 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(billingMessage = null) }
     }
 
+    // 앱 시작/포그라운드 복귀 시 MainScreen에서 호출 — 구독 만료/취소 자동 반영
+    fun refreshSubscriptionStatus() {
+        if (billingClient?.isReady == true) {
+            queryActiveSubscriptions()
+        } else {
+            setupBillingClient() // 연결 성공 시 내부에서 queryActiveSubscriptions() 호출
+        }
+    }
+
     private fun setupBillingClient() {
         billingClient?.endConnection()
         billingClient = BillingClient.newBuilder(getApplication())

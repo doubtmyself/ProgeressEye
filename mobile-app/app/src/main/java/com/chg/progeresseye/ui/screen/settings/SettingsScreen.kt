@@ -87,7 +87,7 @@ fun SettingsContent(
     showPrivacyButton: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
-    viewModel: SettingsViewModel = hiltViewModel(),
+    viewModel: SettingsViewModel = hiltViewModel(),  // MainScreen에서 호이스팅된 VM 전달 가능
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
