@@ -6,42 +6,48 @@ skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam swimlane {
   BorderColor #334155
-  TitleBackgroundColor #0F172A
-  TitleFontColor #94A3B8
+  TitleBackgroundColor #334155
+  TitleFontColor #FFFFFF
 }
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 |앱|
 start
 :requestConsentAndInitAds() 호출\n(MainActivity.onCreate 또는 재동의 요청);
 
 |UMP SDK|
-:requestConsentInfoUpdate();
+#FEF3C7:requestConsentInfoUpdate();
 
 if (기존 동의 있음 &&\n맞춤형 광고 허용?) then (yes)
 
   |앱|
   :initMobileAds() 즉시 호출\nMobileAds.initialize();
-  #86EFAC:광고 초기화 완료;
+  #F1F5F9:광고 초기화 완료;
   stop
 
 else (폼 필요 / 신규)
 
-  :loadAndShowConsentFormIfRequired()\nUMP 동의 폼 표시;
+  #FEF3C7:loadAndShowConsentFormIfRequired()\nUMP 동의 폼 표시;
 
   |사용자|
   if (동의 선택?) then (맞춤형 광고 동의)
 
     |앱|
     :initMobileAds();
-    #86EFAC:광고 초기화 완료;
+    #F1F5F9:광고 초기화 완료;
     stop
 
   elseif (비맞춤형 선택 / X 닫기\n/ 판매 거부 / 완전 거부) then
@@ -69,7 +75,7 @@ else (폼 필요 / 신규)
       :광고 비초기화 (광고 없이 진행);
       :KEY_ADS_CONSENTED = false 저장;
       :consentObtained = true;
-      #FCD34D:로그인 화면 진입 허용\n(광고 없는 상태);
+      #F1F5F9:로그인 화면 진입 허용\n(광고 없는 상태);
       note right
         → Pro 구독은
         06-settings-actions.puml C 참조

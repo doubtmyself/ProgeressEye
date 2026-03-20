@@ -6,17 +6,23 @@ skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam swimlane {
   BorderColor #334155
-  TitleBackgroundColor #0F172A
-  TitleFontColor #94A3B8
+  TitleBackgroundColor #334155
+  TitleFontColor #FFFFFF
 }
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 |사용자|
 start
@@ -28,7 +34,7 @@ if (선택?) then (탈퇴 취소)
   :confirmWithdrawalCancellation()\nisLoading = true;
 
   |Firebase Functions|
-  :cancelWithdrawal API 호출\n(ID 토큰 포함);
+  #FEF3C7:cancelWithdrawal API 호출\n(ID 토큰 포함);
 
   |앱|
   if (API 성공?) then (성공)
@@ -37,7 +43,7 @@ if (선택?) then (탈퇴 취소)
     :proceedSessionCheck();
 
     if (다른 기기에 활성 세션?) then (있음)
-      #FCD34D:requiresSessionTakeover = true;
+      #F1F5F9:requiresSessionTakeover = true;
       note right
         → 02-session-takeover.puml
       end note
@@ -45,22 +51,22 @@ if (선택?) then (탈퇴 취소)
 
     else (없음)
       |Firebase RTDB|
-      :모바일 세션 등록\nactivateMobileSessionUseCase();
+      #FEF3C7:모바일 세션 등록\nactivateMobileSessionUseCase();
 
       |앱|
       :AuthUiState(user = user);
-      #86EFAC:메인 화면으로 이동 ("main");
+      #F1F5F9:메인 화면으로 이동 ("main");
       stop
     endif
 
   else (실패)
 
     |Firebase Auth|
-    :Firebase 로그아웃;
+    #FEF3C7:Firebase 로그아웃;
 
     |앱|
     :pendingWithdrawalUser / Uid 초기화;
-    #FCA5A5:에러: "탈퇴 취소 실패\n(오류 메시지 표시)";
+    #F1F5F9:에러: "탈퇴 취소 실패\n(오류 메시지 표시)";
 
     |사용자|
     :로그인 화면 유지;
@@ -74,15 +80,15 @@ else (탈퇴 유지)
   :keepWithdrawalAndCancelLogin();
 
   |Firebase Functions|
-  :재가입 제한일 조회\ngetWithdrawalStateUseCase().rejoinAllowedAt;
+  #FEF3C7:재가입 제한일 조회\ngetWithdrawalStateUseCase().rejoinAllowedAt;
 
   |Firebase Auth|
-  :Firebase 로그아웃;
+  #FEF3C7:Firebase 로그아웃;
 
   |앱|
   :로컬 세션 초기화;
   :pendingWithdrawalUser / Uid 초기화;
-  #FCA5A5:에러: "○○까지 재가입 불가";
+  #F1F5F9:에러: "○○까지 재가입 불가";
 
   |사용자|
   :로그인 화면 유지\n(에러 메시지 표시);

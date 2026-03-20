@@ -6,17 +6,23 @@ skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam swimlane {
   BorderColor #334155
-  TitleBackgroundColor #0F172A
-  TitleFontColor #94A3B8
+  TitleBackgroundColor #334155
+  TitleFontColor #FFFFFF
 }
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 |사용자|
 start
@@ -28,7 +34,7 @@ if (선택?) then (이 기기로 가져오기)
   :confirmSessionTakeover()\nisLoading = true;
 
   |Firebase RTDB|
-  :mobileSession 덮어쓰기\nactivateMobileSessionUseCase();
+  #FEF3C7:mobileSession 덮어쓰기\nactivateMobileSessionUseCase();
 
   |앱|
   :로컬 sessionId 저장;
@@ -36,7 +42,7 @@ if (선택?) then (이 기기로 가져오기)
   :AuthUiState(user = user);
 
   |사용자|
-  #86EFAC:메인 화면으로 이동 ("main");
+  #F1F5F9:메인 화면으로 이동 ("main");
   stop
 
 else (취소)
@@ -45,12 +51,12 @@ else (취소)
   :cancelSessionTakeover();
 
   |Firebase Auth|
-  :Firebase 로그아웃;
+  #FEF3C7:Firebase 로그아웃;
 
   |앱|
   :로컬 세션 초기화\nMobileSessionManager.clearSession();
   :pendingUser / pendingUid 초기화;
-  #FCA5A5:에러: "세션 인수가 취소되었습니다";
+  #F1F5F9:에러: "세션 인수가 취소되었습니다";
 
   |사용자|
   :로그인 화면 유지\n(에러 메시지 표시);

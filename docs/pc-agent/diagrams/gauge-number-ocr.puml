@@ -1,0 +1,66 @@
+@startuml
+!theme plain
+title 게이지 숫자 인식 로직 (OcrReader)
+
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam swimlane {
+  BorderColor #334155
+  TitleBackgroundColor #334155
+  TitleFontColor #FFFFFF
+}
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+}
+skinparam ArrowColor #334155
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+
+|OcrReader|
+start
+#E0F2FE:크롭된 숫자 이미지 입력;
+
+|ImageCacheMixin|
+:이미지 원본 해시 계산;
+if (캐시 일치?) then (yes)
+  #F1F5F9:캐시된 결과 반환;
+  stop
+else (no)
+endif
+
+|OcrReader|
+#FEF3C7:RapidOCR 엔진 호출\n(ONNX Runtime 기반);
+
+:텍스트 라인 추출 (Raw Lines);
+
+:숫자/퍼센트 정규식 필터링\n(예: "45%", "11.0");
+
+if (숫자 발견?) then (yes)
+  :문자 보정(Fix Table)\n(예: O -> 0, I -> 1);
+  :진행률 수치(Progress) 추출;
+else (no)
+  :인식 실패 처리;
+endif
+
+|ImageCacheMixin|
+:분석 결과 캐시 저장;
+
+|OcrReader|
+#F8FAFC:인식 결과(Text, Confidence, Progress) 반환;
+stop
+
+note right
+  **특징:**
+  1. ImageCacheMixin을 통한 고정밀 해시 캐싱 (중복 연산 방지)
+  2. ONNX 기반 경량 OCR (RapidOCR) 사용
+  3. UI 폰트 특유의 오인식(O vs 0) 보정 로직 포함
+end note
+
+@enduml

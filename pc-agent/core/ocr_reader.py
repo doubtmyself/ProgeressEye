@@ -33,6 +33,9 @@ except ImportError as exc:
     _rapidocr_import_error = exc
 
 
+from core.image_cache import ImageCacheMixin
+
+
 @dataclass
 class OcrResult:
     """Single OCR candidate."""
@@ -44,7 +47,7 @@ class OcrResult:
     has_percent_sign: bool
 
 
-class OcrReader:
+class OcrReader(ImageCacheMixin):
     """ONNX Runtime OCR-based progress reader with lightweight frame caching."""
 
     _PERCENT_RE = re.compile(r"(\d+(?:[\.,]\d+)?)\s*%")
@@ -62,8 +65,7 @@ class OcrReader:
     )
 
     def __init__(self) -> None:
-        self._prev_hashes: dict[str, str] = {}
-        self._prev_results: dict[str, float | None] = {}
+        super().__init__()
         self._backend = "none"
         self._ocr = self._init_ocr()
 
@@ -332,16 +334,27 @@ class OcrReader:
         prefer_percent_sign: bool = True,
         allow_percent_sign: bool = True,
     ) -> float | None:
-        """Return the best progress value from OCR candidates."""
-        if region_id:
-            img_hash = self._compute_hash(image)
-            prev_hash = self._prev_hashes.get(region_id)
-            if prev_hash == img_hash:
-                prev_result = self._prev_results.get(region_id)
-                if prev_result is not None:
-                    return prev_result
-            self._prev_hashes[region_id] = img_hash
+        """Return the best progress value from OCR candidates (caching supported)."""
+        return self.get_cached_or_compute(
+            region_id,
+            image,
+            self._read_progress_internal,
+            min_value=min_value,
+            max_value=max_value,
+            prefer_percent_sign=prefer_percent_sign,
+            allow_percent_sign=allow_percent_sign,
+        )
 
+    def _read_progress_internal(
+        self,
+        image: Any,
+        *,
+        min_value: float = 0.0,
+        max_value: float = 100.0,
+        prefer_percent_sign: bool = True,
+        allow_percent_sign: bool = True,
+    ) -> float | None:
+        """Actual OCR logic to extract progress from image."""
         results = self.find_percentages(
             image,
             min_value=min_value,
@@ -350,16 +363,10 @@ class OcrReader:
         if not allow_percent_sign:
             results = [r for r in results if not r.has_percent_sign]
         if not results:
-            if region_id:
-                self._prev_results[region_id] = None
             return None
 
         best = self.select_best_result(results, prefer_percent_sign=prefer_percent_sign)
-        progress = best.progress
-
-        if region_id:
-            self._prev_results[region_id] = progress
-        return progress
+        return best.progress
 
     def select_best_result(
         self,
@@ -390,14 +397,8 @@ class OcrReader:
         return max(pool, key=score)
 
     def reset_cache(self, region_id: str) -> None:
-        self._prev_hashes.pop(region_id, None)
-        self._prev_results.pop(region_id, None)
-
-    @staticmethod
-    def _compute_hash(image: NpArray) -> str:
-        small = image.resize((32, 32), PILImage.Resampling.LANCZOS).convert("L")
-        pixels = np.array(small, dtype=np.uint8)
-        return hashlib.md5(pixels.tobytes()).hexdigest()
+        """Alias for clear_cache to maintain compatibility."""
+        self.clear_cache(region_id)
 
     @staticmethod
     def _bbox_iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:

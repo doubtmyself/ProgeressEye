@@ -5,32 +5,34 @@ title "Google로 계속" 버튼 — 로그인 화면
 skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
-  BarColor #475569
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
-skinparam NoteBackgroundColor #0F172A
-skinparam NoteBorderColor #334155
-skinparam NoteFontColor #94A3B8
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 start
 
-#93C5FD:**[버튼] "Google로 계속" 탭**;
+#E0F2FE:**[버튼] "Google로 계속" 탭**;
 
 :isLoading = true / error = null;
-:Google One Tap 인증 시작;
+#FEF3C7:Google One Tap 인증 시작;
 
 if (인증 결과?) then (성공)
 
-  :탈퇴 상태 조회\ngetWithdrawalStateUseCase(uid);
+  #FEF3C7:탈퇴 상태 조회\ngetWithdrawalStateUseCase(uid);
 
   if (탈퇴 유예 중?\npending == true\n&& deleteAt > now) then (yes)
 
-    #FCD34D:requiresWithdrawalCancel = true;
+    #F1F5F9:requiresWithdrawalCancel = true;
     note right
       → 03-withdrawal-dialog.puml
     end note
@@ -38,17 +40,17 @@ if (인증 결과?) then (성공)
 
   elseif (재가입 제한 기간?\nrejoinAllowedAt > now) then (yes)
 
-    :Firebase 로그아웃;
-    #FCA5A5:에러 메시지 표시\n"○○까지 재가입 불가";
+    #FEF3C7:Firebase 로그아웃;
+    #F1F5F9:에러 메시지 표시\n"○○까지 재가입 불가";
     stop
 
   else (정상)
 
-    :기존 모바일 세션 조회\ncheckExistingSessionUseCase(uid, deviceId);
+    #FEF3C7:기존 모바일 세션 조회\ncheckExistingSessionUseCase(uid, deviceId);
 
     if (다른 기기에 활성 세션 존재?) then (yes)
 
-      #FCD34D:requiresSessionTakeover = true\nexistingDeviceName 저장;
+      #F1F5F9:requiresSessionTakeover = true\nexistingDeviceName 저장;
       note right
         → 02-session-takeover.puml
       end note
@@ -56,11 +58,11 @@ if (인증 결과?) then (성공)
 
     else (없음)
 
-      :모바일 세션 등록\nactivateMobileSessionUseCase();
+      #FEF3C7:모바일 세션 등록\nactivateMobileSessionUseCase();
       :로컬 sessionId 저장;
-      :users 문서 업데이트 (백그라운드);
+      #FEF3C7:users 문서 업데이트 (백그라운드);
       :AuthUiState(user = user);
-      #86EFAC:메인 화면으로 이동 ("main");
+      #F1F5F9:메인 화면으로 이동 ("main");
       stop
 
     endif
@@ -69,13 +71,13 @@ if (인증 결과?) then (성공)
 elseif (취소됨) then
 
   :isLoading = false;
-  #FCA5A5:에러: "로그인이 취소되었습니다";
+  #F1F5F9:에러: "로그인이 취소되었습니다";
   stop
 
 else (네트워크 / 기타 오류)
 
   :isLoading = false;
-  #FCA5A5:에러 메시지 표시;
+  #F1F5F9:에러 메시지 표시;
   stop
 
 endif

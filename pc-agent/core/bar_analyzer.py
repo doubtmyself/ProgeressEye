@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
+from core.image_cache import ImageCacheMixin
 from utils.logger import log
 
 
@@ -29,7 +30,7 @@ class AnalysisResult:
     total_columns: int  # 전체 열 수
 
 
-class BarAnalyzer:
+class BarAnalyzer(ImageCacheMixin):
     """진행바 전환점 기반 분석기.
 
     슬라이딩 윈도우로 열별 색상 변화를 추적하여
@@ -56,25 +57,26 @@ class BarAnalyzer:
     # 피크 점수를 신뢰도(0~1)로 정규화하는 기준값
     _CONFIDENCE_NORMALIZER = 80.0
 
+    def __init__(self) -> None:
+        super().__init__()
+
     def analyze(
         self,
         image: Image.Image,
         direction: str = "horizontal",
+        region_id: str = "default",
     ) -> AnalysisResult:
-        """진행바 이미지를 분석하여 진행률을 산출한다.
+        """진행바 이미지를 분석하여 진행률을 산출한다 (캐싱 지원)."""
+        return self.get_cached_or_compute(
+            region_id, image, self._analyze_internal, direction=direction
+        )
 
-        슬라이딩 윈도우 전환점 탐지 방식으로
-        특정 색상 없이 채움/빈 경계를 찾는다.
-        그라데이션 채움도 경계에서 급격한 색상 변화가
-        발생하므로 정상 탐지된다.
-
-        Args:
-            image: 크롭된 진행바 PIL 이미지 (RGB).
-            direction: "horizontal" 또는 "vertical".
-
-        Returns:
-            AnalysisResult — 진행률, 신뢰도, 채움/전체 열 수.
-        """
+    def _analyze_internal(
+        self,
+        image: Image.Image,
+        direction: str = "horizontal",
+    ) -> AnalysisResult:
+        """실제 진행바 이미지 분석을 수행한다."""
         # 수직 바: 90° CW 회전 → 아래→위가 왼→오른쪽이 됨
         if direction == "vertical":
             image = image.transpose(Image.Transpose.ROTATE_270)

@@ -5,21 +5,23 @@ title 대시보드 — 기기 제어 버튼 (스크린샷 / 절전 / 종료)
 skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
-  BarColor #475569
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
-skinparam NoteBackgroundColor #0F172A
-skinparam NoteBorderColor #334155
-skinparam NoteFontColor #94A3B8
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 start
 
-#93C5FD:**[버튼] 제어 버튼 탭**;
+#E0F2FE:**[버튼] 제어 버튼 탭**;
 note right
   📷 스크린샷 요청
   💤 절전 모드
@@ -55,18 +57,18 @@ else (Free + 패스 없음)
       :adFreePassRemainingMs 부여\n(약 1시간);
       :명령 실행;
     else (건너뜀 / 닫음)
-      #FCA5A5:명령 취소\n(패스 미부여);
+      #F1F5F9:명령 취소\n(패스 미부여);
       stop
     endif
 
   else (미로드)
-    #FCA5A5:광고 미준비 안내\n명령 취소;
+    #F1F5F9:광고 미준비 안내\n명령 취소;
     stop
   endif
 
 endif
 
-:RTDB commands/{deviceId}에\n명령 키 기록;
+#FEF3C7:RTDB commands/{deviceId}에\n명령 키 기록;
 note right
   screenshot: { requestedAt }
   sleep: { requestedAt }
@@ -75,17 +77,17 @@ end note
 
 if (스크린샷 명령?) then (yes)
 
-  :PC 에이전트가 스크린샷 촬영 후\nRTDB screenshotUrl 업데이트 대기;
+  #FEF3C7:PC 에이전트가 스크린샷 촬영 후\nRTDB screenshotUrl 업데이트 대기;
 
   if (screenshotUrl 수신?) then (성공)
-    #86EFAC:스크린샷 다이얼로그 표시\n(핀치 줌 가능);
+    #F1F5F9:스크린샷 다이얼로그 표시\n(핀치 줌 가능);
   else (타임아웃 / 실패)
-    #FCA5A5:screenshotError Snackbar 표시;
+    #F1F5F9:screenshotError Snackbar 표시;
   endif
 
 else (절전 / 종료)
 
-  #86EFAC:명령 전송 완료\n(PC 에이전트가 비동기 처리);
+  #F1F5F9:명령 전송 완료\n(PC 에이전트가 비동기 처리);
 
 endif
 

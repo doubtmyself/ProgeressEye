@@ -64,7 +64,64 @@ pc-agent/
 
 ---
 
-## 3. 핵심 플로우
+## 3. 주요 시퀀스 다이어그램
+
+PC 에이전트의 핵심 동작 흐름(캡처 → 분석 → Firebase 동기화)을 나타내는 다이어그램입니다.
+
+```puml
+@startuml
+!theme plain
+title ProgressEye PC Agent - 주요 동작 흐름
+
+autonumber
+
+box "PC Agent" #LightBlue
+    participant "Main Loop" as Main
+    participant "Capturer" as Cap
+    participant "Analyzer (OCR/Bar)" as Analyzer
+    participant "Firebase Manager" as FB
+end box
+
+database "Firebase Realtime DB" as RTDB
+database "Firebase Storage" as Storage
+
+== 초기화 및 인증 ==
+Main -> FB: 인증 요청 (Google OAuth/Firebase)
+FB -> RTDB: 장치 등록 및 상태 초기화
+RTDB --> FB: 성공
+
+== 모니터링 루프 (반복) ==
+loop 주기적 실행 (Scheduler)
+    Main -> Cap: 화면 캡처 요청
+    Cap --> Main: 캡처 이미지 반환
+    
+    Main -> Analyzer: 상태 분석 (OCR/게이지 인식)
+    Analyzer -> Analyzer: 진행률 계산 및 프리징 감지
+    Analyzer --> Main: 분석 결과 (%, 상태)
+    
+    Main -> FB: 상태 업데이트 요청
+    FB -> RTDB: 실시간 데이터 전송 (진행률, 상태)
+    
+    alt 특정 조건 발생 (예: 완료 또는 오류)
+        Main -> Cap: 상세 스크린샷 캡처
+        Main -> FB: 스크린샷 업로드 요청
+        FB -> Storage: 이미지 파일 저장
+        Storage --> FB: 파일 URL 반환
+        FB -> RTDB: 스크린샷 URL 업데이트
+    end
+end
+
+== 원격 제어 대기 ==
+RTDB -> FB: 원격 명령 발생 (예: 강제 종료)
+FB -> Main: 명령 전달
+Main -> Main: 시스템 제어 수행 (Shutdown 등)
+
+@enduml
+```
+
+---
+
+## 4. 핵심 플로우
 
 ### 3.1 앱 시작 → 인증 플로우
 
@@ -88,7 +145,16 @@ pc-agent/
                              │
                              └─ keyring 저장 → Firebase 초기화 → 메인 화면
 ```
-### 3.2 영역 선택 → 모드 분기 → 탐지 → 등록 플로우
+### 3.2 게이지 및 숫자 분석 상세 (ImageCacheMixin)
+
+에이전트의 CPU 효율을 위해 동일한 이미지 프레임에 대한 중복 연산을 방지하는 캐싱 레이어가 도입되었습니다.
+
+*   **ImageCacheMixin:** 모든 이미지 분석 클래스(`BarAnalyzer`, `OcrReader`)의 베이스 클래스로, 이미지의 원본 해시(MD5)를 비교하여 변화가 없을 경우 캐시된 결과를 즉시 반환합니다.
+*   **상세 로직 다이어그램:**
+    *   [게이지 바 분석 로직 (BarAnalyzer)](./diagrams/gauge-bar-analysis.puml)
+    *   [게이지 숫자 인식 로직 (OcrReader)](./diagrams/gauge-number-ocr.puml)
+
+### 3.3 영역 선택 → 모드 분기 → 탐지 → 등록 플로우
 
 ```
 메인 화면

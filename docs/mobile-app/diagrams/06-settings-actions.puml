@@ -6,17 +6,23 @@ skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
 skinparam swimlane {
   BorderColor #334155
-  TitleBackgroundColor #0F172A
-  TitleFontColor #94A3B8
+  TitleBackgroundColor #334155
+  TitleFontColor #FFFFFF
 }
 skinparam activity {
-  BackgroundColor #1E293B
-  BorderColor #475569
-  FontColor #E2E8F0
-  StartColor #3B82F6
-  EndColor #3B82F6
+  BackgroundColor #F8FAFC
+  BorderColor #334155
+  FontColor #000000
+  StartColor #334155
+  EndColor #334155
+  BarColor #334155
 }
-skinparam ArrowColor #64748B
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #FBC02D
+  FontColor #000000
+}
+skinparam ArrowColor #334155
 
 ' ══════════════════════════════
 ' A. 로그아웃 버튼
@@ -24,7 +30,7 @@ skinparam ArrowColor #64748B
 
 |사용자|
 start
-#93C5FD:**[버튼 A] "로그아웃" 탭**;
+#E0F2FE:**[버튼 A] "로그아웃" 탭**;
 :로그아웃 확인 다이얼로그\n"정말 로그아웃하시겠습니까?";
 
 if (선택?) then (확인)
@@ -33,17 +39,17 @@ if (선택?) then (확인)
   :signOut(context) 호출;
 
   |Firebase RTDB|
-  :mobileSession 제거\nclearSessionIfOwnedUseCase();
+  #FEF3C7:mobileSession 제거\nclearSessionIfOwnedUseCase();
 
   |Firebase Auth|
-  :Firebase 로그아웃;
+  #FEF3C7:Firebase 로그아웃;
 
   |앱|
   :로컬 sessionId 삭제;
   :AuthUiState() — 초기화;
 
   |사용자|
-  #86EFAC:로그인 화면으로 이동 ("login");
+  #F1F5F9:로그인 화면으로 이동 ("login");
   stop
 
 else (취소)
@@ -57,7 +63,7 @@ endif
 
 |사용자|
 start
-#EF9A9A:**[버튼 B] "계정 삭제" 탭**;
+#E0F2FE:**[버튼 B] "계정 삭제" 탭**;
 :계정 삭제 확인 다이얼로그\n"탈퇴 후 30일 내 취소 가능\n이후 모든 데이터 영구 삭제";
 
 if (선택?) then (확인)
@@ -66,23 +72,23 @@ if (선택?) then (확인)
   :deleteAccount(context) 호출\nisLoading = true;
 
   |Firebase Functions|
-  :requestWithdrawal API 호출\n(ID 토큰 포함);
+  #FEF3C7:requestWithdrawal API 호출\n(ID 토큰 포함);
   note right
     성공 / 실패 무관하게
     로그아웃 진행
   end note
 
   |Firebase RTDB|
-  :mobileSession 제거;
+  #FEF3C7:mobileSession 제거;
 
   |Firebase Auth|
-  :Firebase 로그아웃;
+  #FEF3C7:Firebase 로그아웃;
 
   |앱|
   :AuthUiState(error = "탈퇴 요청됨");
 
   |사용자|
-  #86EFAC:로그인 화면으로 이동 ("login")\n(탈퇴 요청 완료 메시지 표시);
+  #F1F5F9:로그인 화면으로 이동 ("login")\n(탈퇴 요청 완료 메시지 표시);
   stop
 
 else (취소)
@@ -96,13 +102,13 @@ endif
 
 |사용자|
 start
-#93C5FD:**[버튼 C] "Pro 구독" 탭**;
+#E0F2FE:**[버튼 C] "Pro 구독" 탭**;
 
 |앱|
 :launchBillingFlow(activity)\nGoogle Play 구독 시작;
 
 |Google Play|
-:구독 결제 UI 표시;
+#FEF3C7:구독 결제 UI 표시;
 
 if (결제 결과?) then (성공)
 
@@ -112,7 +118,7 @@ if (결제 결과?) then (성공)
   :BillingMessage: "구독 완료";
 
   |사용자|
-  #86EFAC:설정 화면 업데이트\n(Pro 배지 표시);
+  #F1F5F9:설정 화면 업데이트\n(Pro 배지 표시);
   stop
 
 elseif (이미 구독 중) then
@@ -140,13 +146,13 @@ note left
   EEA(GDPR) 또는
   US 규제 주 사용자
 end note
-#93C5FD:**[버튼 D] "개인정보 보호 옵션" 탭**;
+#E0F2FE:**[버튼 D] "개인정보 보호 옵션" 탭**;
 
 |앱|
 :UMP 개인정보 설정 폼 표시\nonShowPrivacyOptions();
 
 |UMP SDK|
-:개인정보 옵션 폼 렌더링;
+#FEF3C7:개인정보 옵션 폼 렌더링;
 
 |사용자|
 :설정 변경 (맞춤형 / 비맞춤형);
@@ -156,7 +162,7 @@ end note
 :SharedPreferences 저장;
 
 if (EEA이면서 비맞춤형 선택?) then (yes)
-  #FCD34D:광고 동의 필요 다이얼로그\n(Pro 구독 유도);
+  #F1F5F9:광고 동의 필요 다이얼로그\n(Pro 구독 유도);
   note right
     → 07-ad-consent.puml
   end note
