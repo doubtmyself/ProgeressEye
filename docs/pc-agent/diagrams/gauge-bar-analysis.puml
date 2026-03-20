@@ -1,6 +1,6 @@
 @startuml
 !theme plain
-title 게이지 바 분석 로직 (BarAnalyzer)
+title 게이지 분석 로직 통합 (BarAnalyzer)
 
 skinparam defaultFontSize 13
 skinparam ArrowFontSize 11
@@ -25,7 +25,7 @@ skinparam note {
 
 |BarAnalyzer|
 start
-#E0F2FE:크롭된 게이지 이미지 입력;
+#E0F2FE:크롭 이미지 입력;
 
 |ImageCacheMixin|
 :이미지 원본 해시 계산;
@@ -40,37 +40,43 @@ if (방향 == "vertical"?) then (yes)
   :이미지 90도 회전 (가로로 통일);
 endif
 
-:열별 평균 색상 계산 (Column Means);
-
-:스무딩(Smoothing) 처리\n(노이즈 제거);
-
-#FEF3C7:슬라이딩 윈도우 기반\n색상 전환점(Transition Point) 탐지;
-
-if (전환점 발견?) then (yes)
-  :최대 변화 지점을 채움/빈 경계로 설정;
-  :경계 위치 기반 진행률(%) 산출;
-else (no)
-  :HSV 채도 분석;
-  if (전체 채워짐?) then (yes)
-    :100% 반환;
-  else (no)
-    :0% 반환;
+partition "분석 모드 선택" {
+  if (타겟 색상(Target Color) 지정됨?) then (yes [색상 기반])
+    :타겟 색상과의 거리(Euclidean Distance) 계산;
+    #FEF3C7:허용 오차 내 픽셀 매칭 마스크 생성;
+    :열(Column)별 매칭 비율 계산;
+    :Adaptive Threshold 적용 (Peak의 30%);
+    if (유의미한 매칭 열 존재?) then (yes)
+      :가장 오른쪽 매칭 열 위치 탐지;
+    else (no)
+      :0% 처리;
+    endif
+  else (no [전환점 기반])
+    :열별 평균 색상 계산 (Column Means);
+    :스무딩(Smoothing) 처리;
+    #FEF3C7:슬라이딩 윈도우 기반\n색상 전환점(Transition Point) 탐지;
+    if (전환점 발견?) then (yes)
+      :최대 변화 지점을 경계로 설정;
+    else (no)
+      :HSV 채도로 0% 또는 100% 판정;
+    endif
   endif
-endif
+}
+
+:진행률(%) 및 신뢰도(Confidence) 산출;
 
 |ImageCacheMixin|
 :분석 결과 캐시 저장;
 
 |BarAnalyzer|
-#F8FAFC:분석 결과(Progress, Confidence) 반환;
+#F8FAFC:최종 결과 반환;
 stop
 
 note right
-  **알고리즘 요약:**
-  1. ImageCacheMixin을 통한 고정밀 해시 캐싱 (중복 연산 방지)
-  2. 색상 고유성 대신 '변화량'에 집중
-  3. 슬라이딩 윈도우로 경계면 식별
-  4. 그라데이션 및 다양한 배경색 대응 가능
+  **통합 분석 특징:**
+  1. **고정밀 캐싱:** 원본 해시 비교로 중복 연산 차단
+  2. **범용 모드:** 색상 지정 없이도 변화량으로 감지
+  3. **정밀 모드:** 특정 색상만 추적하여 노이즈 제거
 end note
 
 @enduml
