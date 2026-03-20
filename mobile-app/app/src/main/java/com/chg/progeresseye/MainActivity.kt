@@ -94,6 +94,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 액티비티 생성 시 호출되며, UI 초기화, 권한 체크, 버전 확인 및 세션 리스너 설정을 수행합니다.
+     *
+     * @param savedInstanceState 이전에 저장된 상태가 있는 경우 해당 데이터가 포함된 Bundle
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         val t0 = System.currentTimeMillis()
         Timber.d("[Startup] MainActivity.onCreate start")
@@ -221,6 +226,10 @@ class MainActivity : ComponentActivity() {
         Timber.d("[Startup] requestConsentAndInitAds dispatched: +${System.currentTimeMillis() - t0}ms")
     }
 
+    /**
+     * UMP(User Messaging Platform)를 사용하여 광고 동의를 요청하고 광고를 초기화합니다.
+     * 디버그 모드에서는 테스트 설정을 적용할 수 있습니다.
+     */
     private fun requestConsentAndInitAds() {
         val consentInformation = UserMessagingPlatform.getConsentInformation(this)
 
@@ -267,6 +276,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * 광고 동의 요청 결과를 처리합니다. 맞춤형 광고 동의 여부에 따라 광고를 초기화하거나 동의 유도 다이얼로그를 표시합니다.
+     *
+     * @param consentInformation 업데이트된 동의 정보 객체
+     */
     private fun handleConsentResult(consentInformation: ConsentInformation) {
         if (consentInformation.canRequestAds() && isPersonalizedAdsConsented()) {
             // 맞춤형 광고 동의 → 정상 초기화
@@ -277,6 +291,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 광고 동의가 필요함을 알리는 다이얼로그를 표시합니다.
+     * 재동의를 시도하거나 광고 없이 서비스를 이용하기 위한 구독 안내를 포함합니다.
+     */
     private fun showConsentRequiredDialog() {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.consent_required_title))
@@ -302,7 +320,9 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    /** 설정 화면 개인정보 버튼 탭 시 미국 규정 폼 표시 */
+    /**
+     * 설정 화면에서 개인정보 보호 옵션 버튼을 탭했을 때 호출되며, 개인정보 설정 폼(미국 규정 등)을 표시합니다.
+     */
     fun onShowPrivacyOptions() {
         UserMessagingPlatform.showPrivacyOptionsForm(this) { formError ->
             if (formError != null) Timber.w("Privacy options form error: %s", formError.message)
@@ -320,6 +340,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 지역 규제(US, EEA)에 따라 설정 화면의 개인정보 보호 버튼 노출 여부를 업데이트합니다.
+     */
     private fun updatePrivacyButtonVisibility() {
         val ci = UserMessagingPlatform.getConsentInformation(this)
         // US states: privacyOptionsRequirementStatus == REQUIRED
@@ -328,6 +351,9 @@ class MainActivity : ComponentActivity() {
             ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED || isEeaRegion()
     }
 
+    /**
+     * Google Mobile Ads SDK를 초기화하고 관련 설정을 저장합니다.
+     */
     private fun initMobileAds() {
         if (adsInitialized) return
         adsInitialized = true
@@ -346,11 +372,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 맞춤형 광고 동의 여부
-     *  - EEA (GDPR)  : TCF v2 Purpose 4 체크
-     *  - US (GPP)    : IABGPP_HDR_GppString 섹션 문자열 SaleOptOut 비트(18-19) 체크
-     *  - US (구 CCPA): IABUSPrivacy_String[2] == 'Y' 이면 판매 거부 → 비맞춤형
-     *  - 기타         : 항상 맞춤형
+    /**
+     * 현재 사용자의 지역 규제(EEA, US 등)에 따른 맞춤형 광고 동의 여부를 반환합니다.
+     * - EEA (GDPR)  : TCF v2 Purpose 4 체크
+     * - US (GPP)    : IABGPP_HDR_GppString 섹션 문자열 SaleOptOut 비트(18-19) 체크
+     * - US (구 CCPA): IABUSPrivacy_String[2] == 'Y' 이면 판매 거부 → 비맞춤형
+     * - 기타         : 항상 맞춤형
+     *
+     * @return 맞춤형 광고가 허용된 경우 true, 그렇지 않으면 false
      */
     private fun isPersonalizedAdsConsented(): Boolean {
         val prefs = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
@@ -372,10 +401,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * GPP US 섹션 문자열(Base64URL)에서 완전 거부 여부 반환.
+     * GPP(Global Privacy Platform) US 섹션 문자열(Base64URL)을 디코딩하여 완전 거부(Opt-out) 여부를 판단합니다.
      * US National (Section 7): bits 18-19=SaleOptOut, 20-21=SharingOptOut, 22-23=TargetedAdvertisingOptOut
      * 세 필드 모두 1(거부)일 때만 완전 거부로 판단.
      * Manage options에서 일부만 끈 경우(부분 거부)는 허용으로 처리.
+     *
+     * @param base64String GPP 섹션의 Base64URL 인코딩 문자열
+     * @return 모든 관련 항목(Sale, Sharing, Targeted Advertising)이 거부된 경우 true
      */
     private fun isGppUsSectionOptedOut(base64String: String): Boolean {
         return try {
@@ -395,12 +427,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 사용자가 EEA(유럽 경제 지역) 규정(GDPR) 적용 대상인지 확인합니다.
+     *
+     * @return GDPR 적용 대상인 경우 true
+     */
     private fun isEeaRegion(): Boolean {
         val prefs = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
         return prefs.getInt("IABTCF_gdprApplies", 0) == 1
     }
 
-    /** "변경" 클릭 시 동의 폼 재표시 */
+    /**
+     * 광고 동의 상태를 변경하고자 할 때 호출되며, 동의 정보를 초기화하고 다시 요청합니다.
+     * "변경" 클릭 시 동의 폼 재표시
+     */
     private fun onChangeAdConsent() {
         consentObtained = false
         adsInitialized = false
@@ -408,6 +448,9 @@ class MainActivity : ComponentActivity() {
         requestConsentAndInitAds()
     }
 
+    /**
+     * 액티비티가 소멸될 때 모든 리얼타임 리스너를 해제합니다.
+     */
     override fun onDestroy() {
         stopSessionConflictListener()
         stopForceLogoutCommandListener()
@@ -415,6 +458,12 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * 실시간 데이터베이스를 통해 다른 기기에서의 중복 로그인을 감시합니다.
+     *
+     * @param uid 현재 로그인한 사용자의 ID
+     * @param authViewModel 인증 관련 처리를 위한 ViewModel
+     */
     private fun startSessionConflictListener(uid: String, authViewModel: AuthViewModel) {
         stopSessionConflictListener()
         isHandlingSessionConflict = false
@@ -445,6 +494,9 @@ class MainActivity : ComponentActivity() {
         mobileSessionListener = listener
     }
 
+    /**
+     * 중복 로그인 감시 리스너를 제거합니다.
+     */
     private fun stopSessionConflictListener() {
         mobileSessionListener?.let { listener ->
             mobileSessionRef?.removeEventListener(listener)
@@ -454,6 +506,12 @@ class MainActivity : ComponentActivity() {
         isHandlingSessionConflict = false
     }
 
+    /**
+     * 서버로부터의 강제 로그아웃 명령을 감시합니다.
+     *
+     * @param uid 현재 로그인한 사용자의 ID
+     * @param authViewModel 인증 관련 처리를 위한 ViewModel
+     */
     private fun startForceLogoutCommandListener(uid: String, authViewModel: AuthViewModel) {
         stopForceLogoutCommandListener()
         handledForceLogoutCmdId = null
@@ -490,6 +548,9 @@ class MainActivity : ComponentActivity() {
         forceLogoutListener = listener
     }
 
+    /**
+     * 강제 로그아웃 명령 감시 리스너를 제거합니다.
+     */
     private fun stopForceLogoutCommandListener() {
         forceLogoutListener?.let { listener ->
             forceLogoutRef?.removeEventListener(listener)
@@ -499,6 +560,12 @@ class MainActivity : ComponentActivity() {
         handledForceLogoutCmdId = null
     }
 
+    /**
+     * Firestore를 통해 사용자의 계정 탈퇴 진행 상태를 감시합니다.
+     *
+     * @param uid 현재 로그인한 사용자의 ID
+     * @param authViewModel 인증 관련 처리를 위한 ViewModel
+     */
     private fun startWithdrawalStatusListener(uid: String, authViewModel: AuthViewModel) {
         stopWithdrawalStatusListener()
         isHandlingWithdrawalLogout = false
@@ -521,12 +588,18 @@ class MainActivity : ComponentActivity() {
         withdrawalStatusListener = listener
     }
 
+    /**
+     * 계정 탈퇴 상태 감시 리스너를 제거합니다.
+     */
     private fun stopWithdrawalStatusListener() {
         withdrawalStatusListener?.remove()
         withdrawalStatusListener = null
         isHandlingWithdrawalLogout = false
     }
 
+    /**
+     * Android 13(Tiramisu) 이상 기기에서 알림 권한을 요청합니다.
+     */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
@@ -538,6 +611,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Firestore에 설정된 최소 지원 버전과 현재 앱 버전을 비교하여 업데이트 필요 여부를 체크합니다.
+     */
     private fun checkMinVersion() {
         FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
             .collection("appConfig").document("android").get()
@@ -555,6 +631,13 @@ class MainActivity : ComponentActivity() {
             }
     }
 
+    /**
+     * 현재 버전이 최소 요구 버전보다 낮은지 비교합니다.
+     *
+     * @param current 현재 앱 버전 코드
+     * @param minimum 최소 요구 버전 코드
+     * @return 업데이트가 필요한 경우 true
+     */
     private fun isOutdated(current: String, minimum: String): Boolean {
         fun parse(v: String): List<Int> = v.split(".").mapNotNull { it.toIntOrNull() }
         val c = parse(current)
@@ -568,6 +651,12 @@ class MainActivity : ComponentActivity() {
         return false
     }
 
+    /**
+     * Play Store 인앱 업데이트(IMMEDIATE) 흐름을 시작합니다.
+     *
+     * @param currentVersion 현재 앱 버전
+     * @param minVersion 최소 요구 버전
+     */
     private fun startImmediateUpdate(currentVersion: String, minVersion: String) {
         val appUpdateManager = AppUpdateManagerFactory.create(this)
         appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
@@ -589,7 +678,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 인앱 업데이트 불가 시 Play Store 링크로 안내 */
+    /**
+     * 인앱 업데이트를 사용할 수 없는 경우 Play Store 페이지로 이동을 안내하는 다이얼로그를 표시합니다.
+     * 인앱 업데이트 불가 시 Play Store 링크로 안내
+     *
+     * @param currentVersion 현재 앱 버전
+     * @param minVersion 최소 요구 버전
+     */
     private fun showFallbackUpdateDialog(currentVersion: String, minVersion: String) {
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.update_required_title))
@@ -609,6 +704,10 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    /**
+     * 액티비티가 재개될 때 진행 중이던 강제 업데이트가 있다면 다시 트리거합니다.
+     * IMMEDIATE 업데이트 중 앱으로 돌아왔을 때 완료되지 않았으면 재트리거
+     */
     override fun onResume() {
         super.onResume()
         // IMMEDIATE 업데이트 중 앱으로 돌아왔을 때 완료되지 않았으면 재트리거
