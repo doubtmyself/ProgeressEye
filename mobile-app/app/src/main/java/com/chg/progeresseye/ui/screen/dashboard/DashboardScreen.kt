@@ -128,6 +128,21 @@ private const val PC_APP_STORE_URL = "https://apps.microsoft.com/detail/9NGF92B1
 // DashboardContent — content only, used by MainScreen
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 대시보드 화면의 메인 컨텐츠를 구성하는 컴포저블입니다.
+ * 기기 목록, 로딩 상태, 에러 메시지 등을 처리하며 새로고침 기능을 제공합니다.
+ *
+ * @param uiState 대시보드의 UI 상태 데이터
+ * @param userPlan 사용자의 현재 결제 플랜
+ * @param isAdFreeMode 광고 제거 모드 활성화 여부
+ * @param isAdLoading 보상형 광고 로드 중 여부
+ * @param onRequestScreenshot 스크린샷 요청 콜백
+ * @param onSleep 절전 모드 요청 콜백
+ * @param onShutdown 시스템 종료 요청 콜백
+ * @param onRefresh 새로고침 요청 콜백
+ * @param onUpgradeToPro Pro 업그레이드 화면 이동 콜백
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardContent(
@@ -273,6 +288,13 @@ fun DashboardContent(
     }
 }
 
+/**
+ * 무료 플랜 사용자가 여러 기기를 연동했을 때 기기를 선택할 수 있는 탭 바입니다.
+ *
+ * @param devices 표시할 기기 목록
+ * @param selectedIndex 현재 선택된 기기의 인덱스
+ * @param onSelect 기기 선택 시 호출되는 콜백
+ */
 @Composable
 private fun DeviceSelectorTabs(
     devices: List<DeviceData>,
@@ -316,6 +338,12 @@ private fun DeviceSelectorTabs(
     }
 }
 
+/**
+ * Pro 플랜으로의 업그레이드를 제안하는 배너입니다.
+ *
+ * @param onUpgrade 업그레이드 버튼 클릭 시 호출되는 콜백
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun ProUpgradeBanner(
     onUpgrade: () -> Unit,
@@ -334,12 +362,12 @@ private fun ProUpgradeBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "여러 PC를 동시에 보려면",
+                    text = stringResource(R.string.pro_upgrade_banner_subtitle),
                     style = MaterialTheme.typography.labelSmall,
                     color = Slate400,
                 )
                 Text(
-                    text = "Pro로 업그레이드하세요",
+                    text = stringResource(R.string.pro_upgrade_banner_title),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
@@ -352,7 +380,7 @@ private fun ProUpgradeBanner(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    text = "Pro 구독",
+                    text = stringResource(R.string.pro_upgrade_banner_button),
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
@@ -360,6 +388,13 @@ private fun ProUpgradeBanner(
     }
 }
 
+/**
+ * PC용 애플리케이션 설치 안내 및 공유 기능을 제공하는 카드입니다.
+ *
+ * @param onInstall 설치 페이지로 이동하는 콜백
+ * @param onShare 설치 링크를 공유하는 콜백
+ * @param onCopy 설치 링크를 복사하는 콜백
+ */
 @Composable
 private fun PcAppInstallLinkCard(
     onInstall: () -> Unit,
@@ -407,6 +442,11 @@ private fun PcAppInstallLinkCard(
     }
 }
 
+/**
+ * PC용 애플리케이션 설치 링크를 시스템 공유 기능을 통해 공유합니다.
+ *
+ * @param context 인텐트를 실행하기 위한 컨텍스트
+ */
 private fun sharePcAppInstallLink(context: android.content.Context) {
     val message = context.getString(R.string.dashboard_pc_guide_share_text, PC_APP_STORE_URL)
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -424,6 +464,11 @@ private fun sharePcAppInstallLink(context: android.content.Context) {
     context.startActivity(chooser)
 }
 
+/**
+ * PC용 애플리케이션 설치 링크를 클립보드에 복사합니다.
+ *
+ * @param context 클립보드 서비스에 접근하기 위한 컨텍스트
+ */
 private fun copyPcAppInstallLink(context: android.content.Context) {
     val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? ClipboardManager
     if (clipboardManager != null) {
@@ -438,6 +483,17 @@ private fun copyPcAppInstallLink(context: android.content.Context) {
 // Device Card
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 개별 기기의 상태 정보를 표시하는 카드 컴포저블입니다.
+ * 헤더, 작업 목록, 스크린샷 미리보기 및 제어 버튼을 포함합니다.
+ *
+ * @param device 표시할 기기 데이터
+ * @param isScreenshotLoading 스크린샷 캡처가 진행 중인지 여부
+ * @param isAdLoading 광고 로드 중인지 여부
+ * @param onRequestScreenshot 스크린샷 요청 콜백
+ * @param onSleep 절전 모드 요청 콜백
+ * @param onShutdown 시스템 종료 요청 콜백
+ */
 @Composable
 private fun DeviceCard(
     device: DeviceData,
@@ -550,6 +606,12 @@ private fun DeviceCard(
 // Screenshot Preview (thumbnail inside DeviceCard)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 기기 카드 내에 표시되는 스크린샷 썸네일 미리보기 컴포저블입니다.
+ *
+ * @param url 표시할 이미지 URL
+ * @param onClick 이미지 클릭 시 호출되는 콜백
+ */
 @Composable
 private fun ScreenshotPreview(url: String, onClick: () -> Unit) {
     Box(
@@ -610,6 +672,12 @@ private fun ScreenshotPreview(url: String, onClick: () -> Unit) {
 // Fullscreen Image Dialog (pinch-to-zoom)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 스크린샷을 전체 화면으로 보여주는 다이얼로그입니다. 핀치 투 줌 기능을 지원합니다.
+ *
+ * @param url 표시할 원본 이미지 URL
+ * @param onDismiss 다이얼로그 닫기 요청 시 호출되는 콜백
+ */
 @Composable
 private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
     Dialog(
@@ -693,6 +761,17 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
 // Device Header
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 기기 카드의 상단 헤더 영역을 구성합니다. 기기 이름, 온라인 상태 및 시스템 자원 정보를 표시합니다.
+ *
+ * @param name 기기 이름
+ * @param isOnline 기기가 온라인 상태인지 여부
+ * @param isMonitoring 모니터링 기능이 활성화되어 있는지 여부
+ * @param isSleeping 기기가 절전 모드 상태인지 여부
+ * @param cpuUsage CPU 사용률 (%)
+ * @param gpuUsage GPU 사용률 (%)
+ * @param ramUsage RAM 사용률 (%)
+ */
 @Composable
 private fun DeviceHeader(
     name: String,
@@ -797,6 +876,12 @@ private fun DeviceHeader(
 // Metric Chip (CPU/GPU/RAM usage)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * CPU, GPU, RAM 사용률 등 시스템 지표를 보여주는 칩 모양의 컴포저블입니다.
+ *
+ * @param label 지표 종류 (예: "CPU")
+ * @param value 지표 값 (예: "42%")
+ */
 @Composable
 private fun MetricChip(label: String, value: String) {
     Surface(
@@ -828,6 +913,12 @@ private fun MetricChip(label: String, value: String) {
 // Task Item
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 기기 내에서 실행 중인 개별 작업의 상태를 표시합니다. 진행률 바와 경고 메시지를 포함합니다.
+ *
+ * @param task 작업 데이터 객체
+ * @param isActive 기기가 활성 상태인지 여부 (비활성 시 불투명도 조절용)
+ */
 @Composable
 private fun TaskItem(task: TaskData, isActive: Boolean) {
     Column(
@@ -929,6 +1020,11 @@ private fun TaskItem(task: TaskData, isActive: Boolean) {
 // Status Badge
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 작업의 현재 상태(진행 중, 정체, 완료 등)를 나타내는 뱃지를 표시합니다.
+ *
+ * @param status [TaskStatus] 문자열 값
+ */
 @Composable
 private fun StatusBadge(status: String) {
     val (bgColor, textColor, label) = when (status) {
@@ -957,6 +1053,13 @@ private fun StatusBadge(status: String) {
 // Gradient Progress Bar
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 그라데이션이 적용된 진행률 바를 그립니다. 상태에 따라 바의 색상이 달라집니다.
+ *
+ * @param progress 현재 진행률 (0.0 ~ 1.0)
+ * @param status 작업의 상태 ([TaskStatus])
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun GradientProgressBar(progress: Float, status: String, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.clip(RoundedCornerShape(4.dp))) {
@@ -979,8 +1082,12 @@ private fun GradientProgressBar(progress: Float, status: String, modifier: Modif
     }
 }
 
-// ═════════════════════════════════════════════════════════
-// Screenshot Button (card footer)
+/**
+ * 기기 카드 내의 작업 목록 섹션을 구성합니다. 작업이 없는 경우 안내 메시지를 표시합니다.
+ *
+ * @param tasks 표시할 작업 목록
+ * @param isActive 기기가 활성 상태인지 여부
+ */
 @Composable
 private fun DeviceTasksSection(tasks: List<TaskData>, isActive: Boolean) {
     if (tasks.isEmpty()) {
@@ -1006,6 +1113,15 @@ private fun DeviceTasksSection(tasks: List<TaskData>, isActive: Boolean) {
 
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 기기 제어용 버튼(스크린샷, 절전, 종료)을 위한 공통 버튼 컴포저블입니다.
+ *
+ * @param enabled 버튼의 활성화 여부
+ * @param onClick 버튼 클릭 시 호출되는 콜백
+ * @param icon 버튼 내부에 표시할 아이콘 컴포저블
+ * @param label 버튼 하단에 표시할 라벨 문자열
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun PcControlButton(
     enabled: Boolean,
@@ -1039,6 +1155,16 @@ private fun PcControlButton(
     }
 }
 
+/**
+ * 기기 카드 하단의 제어 기능 버튼들의 행을 구성합니다.
+ *
+ * @param isOnline 기기가 온라인 상태인지 여부
+ * @param isScreenshotLoading 스크린샷 캡처 중인지 여부
+ * @param isAdLoading 광고 로드 중인지 여부
+ * @param onRequestScreenshot 스크린샷 요청 콜백
+ * @param onSleep 절전 모드 요청 콜백
+ * @param onShutdown 시스템 종료 요청 콜백
+ */
 @Composable
 private fun PcControlRow(
     isOnline: Boolean,

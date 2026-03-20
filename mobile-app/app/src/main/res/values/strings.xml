@@ -186,4 +186,8 @@ Grace end date: %1$s</string>
     <string name="update_required_button">Update</string>
     <string name="screenshot_timeout">PC is not responding. Please check if your PC is turned on.</string>
     <string name="screenshot_command_failed">Command send failed: %1$s</string>
+    <!-- ── Pro Upgrade Banner ── -->
+    <string name="pro_upgrade_banner_subtitle">Connect multiple PCs to the app</string>
+    <string name="pro_upgrade_banner_title">Upgrade to PRO</string>
+    <string name="pro_upgrade_banner_button">Subscribe to Pro</string>
 </resources>

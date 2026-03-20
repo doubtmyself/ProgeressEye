@@ -181,4 +181,8 @@
     <string name="update_required_button">업데이트</string>
     <string name="screenshot_timeout">PC가 응답하지 않습니다. PC가 켜져 있는지 확인해주세요.</string>
     <string name="screenshot_command_failed">명령 전송 실패: %1$s</string>
+    <!-- ── Pro Upgrade Banner ── -->
+    <string name="pro_upgrade_banner_subtitle">여러 PC에 앱을 연결하려면</string>
+    <string name="pro_upgrade_banner_title">PRO로 업그레이드하세요</string>
+    <string name="pro_upgrade_banner_button">Pro 구독</string>
 </resources>
