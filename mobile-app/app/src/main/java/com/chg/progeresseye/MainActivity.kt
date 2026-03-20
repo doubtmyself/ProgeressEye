@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
     private var withdrawalStatusListener: ListenerRegistration? = null
     private var isHandlingWithdrawalLogout: Boolean = false
     private var adsInitialized = false
+    private var prevIsPurchaseLoading = false
     private var consentObtained by mutableStateOf(false)
     private var isEeaUser by mutableStateOf(false)
     private var showPrivacyButton by mutableStateOf(false)
@@ -245,6 +246,10 @@ class MainActivity : ComponentActivity() {
      * 구독 성공 시 광고 동의 단계를 건너뛰고, 결제 실패 시 동의 다이얼로그를 다시 표시합니다.
      */
     private fun handleSettingsStateChange(state: SettingsUiState) {
+        // 결제 흐름 종료 감지 (true → false 전환)
+        val justFinishedBilling = prevIsPurchaseLoading && !state.isPurchaseLoading
+        prevIsPurchaseLoading = state.isPurchaseLoading
+
         // 1. Pro 구독 성공 시
         if (state.currentPlan.isPro()) {
             if (!consentObtained) {
@@ -258,10 +263,12 @@ class MainActivity : ComponentActivity() {
 
         // 2. 결제 흐름 종료 (성공하지 못한 경우)
         if (!state.isPurchaseLoading && !consentObtained) {
-            // 결제 메시지가 있거나(실패/취소), 결제 창이 닫혔는데 여전히 free인 경우
-            if (state.billingMessage != null) {
-                Timber.d("Subscription failed or cancelled: %s", state.billingMessage)
+            // 결제 흐름이 끝났거나 결제 오류 메시지가 있는 경우 동의 다이얼로그 재표시
+            if (justFinishedBilling || state.billingMessage != null) {
+                Timber.d("Billing ended without Pro: justFinished=$justFinishedBilling msg=${state.billingMessage}")
                 showConsentRequiredDialog()
+            }
+            if (state.billingMessage != null) {
                 settingsViewModel.clearBillingMessage()
             }
         }
