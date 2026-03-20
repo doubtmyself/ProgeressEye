@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -57,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.chg.progeresseye.R
 import com.chg.progeresseye.ui.screen.dashboard.DashboardUiState
 import com.chg.progeresseye.domain.model.DeviceData
@@ -73,7 +73,6 @@ import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.Slate400
 import com.chg.progeresseye.ui.theme.SurfaceDark
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chg.progeresseye.ui.component.BannerAd
@@ -188,10 +187,10 @@ fun MainScreen(
                 MainBottomBar(
                     selectedIndex = safeSelectedTab,
                     onIndexSelected = { index ->
-                        if (index == 0 && safeSelectedTab == 0) {
-                            // 대시보드 탭 재클릭 → 패스 초기화
-                            dashboardViewModel.clearAdFreePass()
-                        }
+                        // if (index == 0 && safeSelectedTab == 0) {
+                        //     // 대시보드 탭 재클릭 → 패스 초기화
+                        //     dashboardViewModel.clearAdFreePass()
+                        // }
                         selectedTab = index
                     },
                 )

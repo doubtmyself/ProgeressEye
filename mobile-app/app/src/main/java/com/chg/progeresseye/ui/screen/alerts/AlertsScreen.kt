@@ -49,7 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chg.progeresseye.R
 import com.chg.progeresseye.domain.model.AlertItem
@@ -72,6 +72,12 @@ import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 // TODO: Consider FCM push + local Room DB for offline cache & read-state persistence
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 알림 화면의 전체 레이아웃을 구성하는 최상위 컴포저블입니다.
+ * 로딩 중, 알림 없음, 알림 목록 표시 상태를 관리합니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 fun AlertsContent(modifier: Modifier = Modifier) {
     val viewModel: AlertsViewModel = hiltViewModel()
@@ -102,6 +108,11 @@ fun AlertsContent(modifier: Modifier = Modifier) {
 // Empty State
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 표시할 알림이 없을 때 보여주는 빈 상태 화면입니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun EmptyAlertsState(modifier: Modifier = Modifier) {
     Box(
@@ -137,6 +148,16 @@ private fun EmptyAlertsState(modifier: Modifier = Modifier) {
 // Alert List
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 알림 목록을 표시하는 스크롤 가능한 리스트 뷰입니다.
+ * 헤더(전체 개수 및 모두 지우기 버튼)를 포함합니다.
+ *
+ * @param alerts 표시할 알림 데이터 목록
+ * @param onAlertClick 알림 클릭 시 호출되는 콜백
+ * @param onDelete 알림 삭제(스와이프 등) 시 호출되는 콜백
+ * @param onClearAll 모든 알림 삭제 클릭 시 호출되는 콜백
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun AlertList(
     alerts: List<AlertItem>,
@@ -190,6 +211,13 @@ private fun AlertList(
 // Swipe-to-Dismiss wrapper
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 알림 카드를 스와이프하여 삭제할 수 있도록 래핑하는 컴포저블입니다.
+ *
+ * @param alert 대상 알림 항목
+ * @param onClick 카드 클릭 콜백
+ * @param onDismiss 스와이프가 완료되어 삭제가 결정되었을 때 호출되는 콜백
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeToDismissAlertCard(
@@ -233,6 +261,12 @@ private fun SwipeToDismissAlertCard(
 // Alert Card
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 개별 알림 정보를 표시하는 카드 컴포저블입니다.
+ *
+ * @param alert 표시할 알림 데이터
+ * @param onClick 알림 클릭 시 호출되는 콜백
+ */
 @Composable
 private fun AlertCard(alert: AlertItem, onClick: () -> Unit) {
     val (icon, tint) = alertVisuals(alert.type)
@@ -308,7 +342,12 @@ private fun AlertCard(alert: AlertItem, onClick: () -> Unit) {
 // Helpers
 // ═════════════════════════════════════════════════════════
 
-/** Returns icon + color for each [AlertType]. */
+/**
+ * 알림 타입에 따른 아이콘과 색상을 반환합니다.
+ *
+ * @param type 알림 타입 ([AlertType])
+ * @return 아이콘(ImageVector)과 색상(Color)의 Pair
+ */
 private fun alertVisuals(type: AlertType): Pair<ImageVector, Color> = when (type) {
     AlertType.COMPLETION -> Icons.Outlined.CheckCircle to StatusComplete
     AlertType.STALL      -> Icons.Outlined.Warning     to StatusStalled
@@ -317,9 +356,10 @@ private fun alertVisuals(type: AlertType): Pair<ImageVector, Color> = when (type
 }
 
 /**
- * Simple relative time formatter.
+ * 타임스탬프를 현재 시간 기준의 상대적인 시간 문자열로 변환합니다.
  *
- * Returns "Just now", "X min ago", "X hours ago", "Yesterday", or "X days ago".
+ * @param timestamp 밀리초 단위의 타임스탬프
+ * @return "방금 전", "X분 전", "어제" 등의 상대 시간 문자열
  */
 @Composable
 internal fun formatRelativeTime(timestamp: Long): String {
@@ -367,7 +407,7 @@ private val previewAlerts = listOf(
         title = "다운로드 정체",
         body = "15분 동안 파일 다운로드 진행이 없습니다.",
         deviceName = "WORKSTATION-2",
-        timestamp = System.currentTimeMillis() - 3 * 3_600_000,
+        timestamp = System.currentTimeMillis() - 3 * 3_360_000,
     ),
     AlertItem(
         id = "p3",
@@ -375,7 +415,7 @@ private val previewAlerts = listOf(
         title = "기기 오프라인",
         body = "LAPTOP-HOME 연결이 끊어졌습니다.",
         deviceName = "LAPTOP-HOME",
-        timestamp = System.currentTimeMillis() - 26 * 3_600_000,
+        timestamp = System.currentTimeMillis() - 26 * 3_360_000,
         isRead = true,
     ),
 )

@@ -34,9 +34,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * 대시보드 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
+ * 대시보드 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel입니다.
  *
- * 연동된 PC 기기들의 실시간 상태를 구독하며 전원 제어 및 화면 캡쳐 요청을 수행
+ * 연동된 PC 기기들의 실시간 상태를 구독하며 전원 제어 및 화면 캡쳐 요청을 수행합니다.
  *
  * @param application 리소스 및 SharedPreference 접근 컨텍스트
  * @param observeDevicesUseCase 기기 목록 관찰 UseCase
@@ -48,7 +48,6 @@ import javax.inject.Inject
  * @param getCurrentUserUidUseCase 현재 사용자 ID 반환 UseCase
  * @param userPlanRepository 사용자 결제 플랜 상태 관찰 저장소
  * @param policyRepository 전역 보안/광고 정책 관찰 저장소
- * @constructor Create empty [DashboardViewModel]
  */
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -80,6 +79,9 @@ class DashboardViewModel @Inject constructor(
     private val _showSubscribeDialog = MutableStateFlow(false)
     val showSubscribeDialog: StateFlow<Boolean> = _showSubscribeDialog.asStateFlow()
 
+    /**
+     * 구독 권유 다이얼로그를 닫습니다.
+     */
     fun dismissSubscribeDialog() { _showSubscribeDialog.value = false }
 
     private val _adFreePassRemainingMs = MutableStateFlow(0L)
@@ -101,7 +103,8 @@ class DashboardViewModel @Inject constructor(
     private var pendingAdAction: (() -> Unit)? = null
 
     /**
-     * 기기 및 작업 목록 데이터 구독을 시작하여 UI 상태를 초기화
+     * 기기 목록 및 사용자 플랜 정보를 구독하기 시작합니다.
+     * 기기 및 작업 목록 데이터 구독을 시작하여 UI 상태를 초기화합니다.
      */
     fun startListening() {
         val uid = getCurrentUserUidUseCase()
@@ -168,6 +171,11 @@ class DashboardViewModel @Inject constructor(
         startMobileHeartbeat(uid)
     }
 
+    /**
+     * 보상형 광고를 로드합니다.
+     *
+     * @param context 광고 로드에 필요한 컨텍스트
+     */
     fun loadRewardedAd(context: Context) {
         if (shouldSkipRewardedAds()) return
         if (_isRewardedAdLoading.value || rewardedAd != null) return
@@ -205,17 +213,30 @@ class DashboardViewModel @Inject constructor(
         )
     }
 
+    /**
+     * 사용자의 결제 플랜에 따른 권한을 적용합니다.
+     *
+     * @param planRaw 서버에서 받아온 가공되지 않은 플랜 문자열
+     */
     private fun applyUserEntitlement(planRaw: String) {
         _userPlan.value = planRaw.toNormalizedPlan()
         syncAdGateState()
     }
 
+    /**
+     * 전역 광고 제거 모드 상태를 적용합니다.
+     *
+     * @param enabled 활성화 여부
+     */
     private fun applyGlobalAdFreeMode(enabled: Boolean) {
         _isAdFreeModeEnabled.value = enabled
         isAdFreeMode = enabled
         syncAdGateState()
     }
 
+    /**
+     * 광고 로드 및 동의 상태를 동기화합니다. 필요 시 광고를 사전 로드합니다.
+     */
     private fun syncAdGateState() {
         if (shouldSkipRewardedAds()) {
             rewardedAd = null
@@ -226,10 +247,20 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 현재 광고 표시를 건너뛸 수 있는 상태(Pro 플랜, 전역 광고 제거 등)인지 확인합니다.
+     *
+     * @return 광고를 건너뛰어야 하면 true
+     */
     private fun shouldSkipRewardedAds(): Boolean {
         return _userPlan.value.isPro() || isAdFreeMode || _adFreePassRemainingMs.value > 0L
     }
 
+    /**
+     * 보상형 광고 시청 완료 후 광고 제거 패스를 지급합니다.
+     *
+     * @param rewardAmount 지급할 패스 단위 (보통 1)
+     */
     private fun grantAdFreePass(rewardAmount: Int) {
         val durationMs = rewardAmount * AD_FREE_PASS_DURATION_MS
         val now = System.currentTimeMillis()
@@ -240,6 +271,9 @@ class DashboardViewModel @Inject constructor(
         startAdFreePassCountdown(newExpiry - now)
     }
 
+    /**
+     * 저장된 광고 제거 패스 정보를 복구하여 카운트다운을 시작합니다.
+     */
     private fun restoreAdFreePass() {
         val remaining = prefs.getLong(KEY_AD_FREE_UNTIL, 0L) - System.currentTimeMillis()
         if (remaining > 0L) {
@@ -247,6 +281,9 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 현재 활성화된 광고 제거 패스를 즉시 만료시킵니다.
+     */
     fun clearAdFreePass() {
         adFreePassJob?.cancel()
         _adFreePassRemainingMs.value = 0L
@@ -254,6 +291,11 @@ class DashboardViewModel @Inject constructor(
         syncAdGateState()
     }
 
+    /**
+     * 광고 제거 패스의 남은 시간을 UI에 반영하기 위한 타이머를 시작합니다.
+     *
+     * @param remainingMs 남은 시간(밀리초)
+     */
     private fun startAdFreePassCountdown(remainingMs: Long) {
         adFreePassJob?.cancel()
         _adFreePassRemainingMs.value = remainingMs
@@ -268,6 +310,13 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 보상형 광고를 표시하고, 시청 완료 시 지정된 동작을 수행합니다.
+     * 광고 면제 상태이거나 동의가 부족한 경우 적절한 처리를 수행합니다.
+     *
+     * @param activity 광고를 표시할 Activity
+     * @param action 광고 시청 후(또는 면제 시) 실행할 동작
+     */
     fun showRewardedAdThen(activity: Activity, action: () -> Unit) {
         if (shouldSkipRewardedAds()) {
             action()
@@ -311,9 +360,20 @@ class DashboardViewModel @Inject constructor(
         ad.show(activity) { rewardEarned = true }
     }
 
+    /**
+     * 보상형 광고를 표시한 후 기기의 스크린샷을 요청합니다.
+     *
+     * @param activity 광고를 표시할 Activity
+     * @param deviceId 스크린샷을 요청할 대상 기기 ID
+     */
     fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) =
         showRewardedAdThen(activity) { requestScreenshot(deviceId) }
 
+    /**
+     * 모바일 기기의 활성 상태(Heartbeat)를 주기적으로 서버에 보고합니다.
+     *
+     * @param uid 사용자 ID
+     */
     private fun startMobileHeartbeat(uid: String) {
         mobileHeartbeatJob?.cancel()
         mobileHeartbeatJob = viewModelScope.launch {
@@ -328,6 +388,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 특정 기기에 스크린샷 캡처 명령을 전송합니다. 타임아웃 처리가 포함되어 있습니다.
+     *
+     * @param deviceId 대상 기기 ID
+     */
     fun requestScreenshot(deviceId: String) {
         val uid = getCurrentUserUidUseCase() ?: return
         Timber.d("[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
@@ -359,10 +424,18 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 표시 중인 스크린샷 에러 메시지를 지웁니다.
+     */
     fun clearScreenshotError() {
         _uiState.value = _uiState.value.copy(screenshotError = null)
     }
 
+    /**
+     * 특정 기기에 절전 모드 명령을 전송합니다.
+     *
+     * @param deviceId 대상 기기 ID
+     */
     fun sendSleepCommand(deviceId: String) {
         val uid = getCurrentUserUidUseCase() ?: return
         viewModelScope.launch {
@@ -375,6 +448,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 특정 기기에 시스템 종료 명령을 전송합니다.
+     *
+     * @param deviceId 대상 기기 ID
+     */
     fun sendShutdownCommand(deviceId: String) {
         val uid = getCurrentUserUidUseCase() ?: return
         viewModelScope.launch {
@@ -387,10 +465,16 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 강제 로그아웃 플래그를 소비(초기화)합니다.
+     */
     fun consumeForcedSignOut() {
         _uiState.value = _uiState.value.copy(requiresForcedSignOut = false)
     }
 
+    /**
+     * 대시보드 데이터를 수동으로 새로고침합니다.
+     */
     fun refresh() {
         val uid = getCurrentUserUidUseCase() ?: return
         if (_uiState.value.isRefreshing) return
@@ -411,6 +495,9 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 모든 데이터 구독 및 백그라운드 작업을 중단합니다.
+     */
     fun stopListening() {
         devicesJob?.cancel()
         devicesJob = null
@@ -435,6 +522,9 @@ class DashboardViewModel @Inject constructor(
         policyRepository.reset()
     }
 
+    /**
+     * ViewModel이 소멸될 때 리소스를 해제합니다.
+     */
     override fun onCleared() {
         super.onCleared()
         stopListening()

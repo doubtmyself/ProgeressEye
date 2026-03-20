@@ -57,8 +57,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -80,6 +80,17 @@ import com.google.firebase.auth.FirebaseAuth
 // SettingsContent — account, notifications, appearance, about
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 설정 화면의 전체 컨텐츠를 구성하는 최상위 컴포저블입니다.
+ * 계정 정보, 알림 설정, 앱 정보(버전, 약관 등) 섹션으로 구성됩니다.
+ *
+ * @param onSignOut 로그아웃 실행 콜백
+ * @param onDeleteAccount 계정 삭제 실행 콜백
+ * @param showPrivacyButton 개인정보 보호 옵션 버튼 표시 여부
+ * @param onShowPrivacyOptions 개인정보 보호 옵션 클릭 콜백
+ * @param modifier 컴포저블에 적용할 Modifier
+ * @param viewModel 설정 화면의 상태를 관리하는 ViewModel
+ */
 @Composable
 fun SettingsContent(
     onSignOut: () -> Unit = {},
@@ -87,7 +98,7 @@ fun SettingsContent(
     showPrivacyButton: Boolean = false,
     onShowPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier,
-    viewModel: SettingsViewModel = hiltViewModel(),  // MainScreen에서 호이스팅된 VM 전달 가능
+    viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -198,6 +209,11 @@ fun SettingsContent(
 // Section header — uppercase, labelMedium
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 설정 화면의 각 섹션 제목을 표시하는 헤더 컴포저블입니다.
+ *
+ * @param title 표시할 섹션 제목
+ */
 @Composable
 private fun SectionHeader(title: String) {
     Text(
@@ -212,6 +228,12 @@ private fun SectionHeader(title: String) {
 // Reusable settings card wrapper
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 설정 화면에서 사용하는 공통 카드 스타일의 컨테이너입니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ * @param content 카드 내부에 표시될 컨텐츠
+ */
 @Composable
 private fun SettingsCard(
     modifier: Modifier = Modifier,
@@ -232,6 +254,11 @@ private fun SettingsCard(
 // Fallback avatar (used for loading, error, and null photo)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 프로필 이미지를 불러올 수 없을 때 표시할 기본 아바타 아이콘입니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun FallbackAvatar(modifier: Modifier = Modifier) {
     Box(
@@ -251,6 +278,22 @@ private fun FallbackAvatar(modifier: Modifier = Modifier) {
 // ACCOUNT card — profile photo, email, plan, logout
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 사용자 계정 정보를 표시하고 구독 관리 및 로그아웃/탈퇴 기능을 제공하는 카드입니다.
+ *
+ * @param email 사용자 이메일
+ * @param photoUrl 프로필 이미지 URL
+ * @param isProPlan 현재 Pro 플랜 사용 여부
+ * @param planLabel 플랜 이름 라벨
+ * @param subscriptionPrice 포맷팅된 구독 가격 문자열
+ * @param isAdFreeMode 전역 광고 제거 모드 활성화 여부
+ * @param isPolicyLoaded 정책 정보 로드 완료 여부
+ * @param canStartSubscription 구독 시작 가능 여부
+ * @param isPurchaseLoading 구매 처리 중 여부
+ * @param onStartSubscription 구독 버튼 클릭 콜백
+ * @param onLogout 로그아웃 버튼 클릭 콜백
+ * @param onDeleteAccount 계정 삭제 버튼 클릭 콜백
+ */
 @Composable
 private fun AccountCard(
     email: String?,
@@ -371,6 +414,15 @@ private fun AccountCard(
     }
 }
 
+/**
+ * 계정 카드 내에서 구독 혜택 정보 및 구매 버튼을 제공하는 섹션입니다.
+ *
+ * @param isProPlan 현재 Pro 플랜 여부
+ * @param subscriptionPrice 구독 가격 문자열
+ * @param canStartSubscription 버튼 활성화 여부
+ * @param isPurchaseLoading 구매 진행 중 여부
+ * @param onStartSubscription 구매 시작 버튼 클릭 콜백
+ */
 @Composable
 private fun SubscriptionSection(
     isProPlan: Boolean,
@@ -450,6 +502,14 @@ private fun SubscriptionSection(
 // NOTIFICATIONS card — toggle switches
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 푸시 알림 설정(완료 알림, 정체 경고) 스위치를 포함하는 카드입니다.
+ *
+ * @param completionAlerts 완료 알림 켜짐 여부
+ * @param stallWarnings 정체 경고 켜짐 여부
+ * @param onToggleCompletion 완료 알림 토글 콜백
+ * @param onToggleStall 정체 경고 토글 콜백
+ */
 @Composable
 private fun NotificationsCard(
     completionAlerts: Boolean,
@@ -467,6 +527,13 @@ private fun NotificationsCard(
     }
 }
 
+/**
+ * 텍스트 라벨과 스위치가 있는 단일 설정 행입니다.
+ *
+ * @param label 표시할 설정 항목 이름
+ * @param checked 현재 선택 상태
+ * @param onToggle 클릭 시 호출되는 콜백
+ */
 @Composable
 private fun ToggleRow(
     label: String,
@@ -505,6 +572,9 @@ private fun ToggleRow(
 // APPEARANCE card — theme (disabled)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 테마 설정 등 앱의 외관 설정을 관리하는 카드입니다. (현재 다크 모드 고정)
+ */
 @Composable
 private fun AppearanceCard(
 ) {
@@ -536,6 +606,13 @@ private fun AppearanceCard(
 // Generic clickable row — reused in AboutCard
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 클릭이 가능하고 우측에 추가 컨텐츠를 배치할 수 있는 범용 설정 행입니다.
+ *
+ * @param label 행의 제목
+ * @param onClick 클릭 시 호출되는 콜백
+ * @param trailing 우측 끝에 배치할 컴포저블 (예: 화살표 아이콘)
+ */
 @Composable
 private fun ClickableSettingRow(
     label: String,
@@ -563,6 +640,12 @@ private fun ClickableSettingRow(
 // ABOUT card — version + licenses
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 앱 버전, 개인정보 처리방침, 오픈소스 라이선스 정보를 포함하는 카드입니다.
+ *
+ * @param showPrivacyButton 광고 개인정보 설정 버튼 표시 여부
+ * @param onShowPrivacyOptions 광고 개인정보 설정 클릭 콜백
+ */
 @Composable
 private fun AboutCard(
     showPrivacyButton: Boolean = false,
@@ -666,6 +749,15 @@ private fun AboutCard(
 // Generic confirmation dialog — reused by Logout and DeleteAccount
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 로그아웃이나 계정 삭제 등을 위한 범용 확인 다이얼로그입니다.
+ *
+ * @param title 다이얼로그 제목
+ * @param message 다이얼로그 본문
+ * @param confirmText 확인 버튼 텍스트
+ * @param onConfirm 확인 클릭 콜백
+ * @param onDismiss 취소/닫기 클릭 콜백
+ */
 @Composable
 private fun ConfirmationDialog(
     title: String,
@@ -698,6 +790,12 @@ private fun ConfirmationDialog(
 // Logout confirmation dialog
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 로그아웃 의사를 재확인하는 전용 다이얼로그입니다.
+ *
+ * @param onConfirm 로그아웃 확인 시 호출
+ * @param onDismiss 로그아웃 취소 시 호출
+ */
 @Composable
 private fun LogoutConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ConfirmationDialog(
@@ -713,6 +811,12 @@ private fun LogoutConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 // Delete account confirmation dialog
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 계정 삭제 의사를 재확인하는 전용 다이얼로그입니다.
+ *
+ * @param onConfirm 삭제 확인 시 호출
+ * @param onDismiss 삭제 취소 시 호출
+ */
 @Composable
 private fun DeleteAccountConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ConfirmationDialog(
@@ -734,6 +838,11 @@ private fun SettingsContentPreview() {
     }
 }
 
+/**
+ * 설정 화면의 레이아웃 구성을 보여주기 위한 프리뷰용 바디 컴포저블입니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
     LazyColumn(

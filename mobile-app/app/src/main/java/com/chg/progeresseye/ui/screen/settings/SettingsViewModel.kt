@@ -33,9 +33,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import androidx.core.content.edit
 
 /**
  * 설정 화면의 UI 상태 데이터를 보관하는 데이터 클래스
+ *
+ * @property completionAlerts 완료 알림 활성화 여부
+ * @property stallWarnings 정체 경고 알림 활성화 여부
+ * @property currentPlan 현재 사용자의 구독 플랜 ("free", "pro" 등)
+ * @property isAdFreeMode 전역 광고 제거 모드 활성화 여부 (정책에 의해 강제될 수 있음)
+ * @property isPolicyLoaded 정책 로드 완료 여부
+ * @property subscriptionPrice 구독 상품의 포맷팅된 가격 문자열
+ * @property isBillingReady 결제 클라이언트 준비 완료 여부
+ * @property isPurchaseLoading 결제 처리 중인지 여부
+ * @property billingMessage 사용자에게 표시할 결제 관련 알림 메시지
  */
 data class SettingsUiState(
     val completionAlerts: Boolean = true,
@@ -51,7 +62,14 @@ data class SettingsUiState(
 
 @HiltViewModel
 /**
- * 설정 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
+ * 설정 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel입니다.
+ * 인앱 결제(구독) 처리 및 알림 설정을 담당합니다.
+ *
+ * @property userPlanRepository 사용자 플랜 정보 저장소
+ * @property policyRepository 앱 정책 정보 저장소
+ * @property getCurrentUserUidUseCase 현재 사용자 UID 획득 UseCase
+ * @property updateUserPlanUseCase 사용자 플랜 업데이트 UseCase
+ * @property recordSubscriptionPurchaseUseCase 구독 구매 기록 저장 UseCase
  */
 class SettingsViewModel @Inject constructor(
     application: Application,
@@ -74,6 +92,9 @@ class SettingsViewModel @Inject constructor(
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    /**
+     * Google Play 결제 업데이트 리스너입니다. 구매 성공, 취소, 에러 등 결과에 따라 UI 상태를 업데이트합니다.
+     */
     private val purchasesUpdatedListener = PurchasesUpdatedListener { billingResult, purchases ->
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
@@ -130,22 +151,38 @@ class SettingsViewModel @Inject constructor(
         setupBillingClient()
     }
 
+    /**
+     * 완료 알림 설정 값을 반전시키고 영구 저장소에 저장합니다.
+     */
     fun toggleCompletionAlerts() {
         _uiState.update { current ->
             val updated = current.copy(completionAlerts = !current.completionAlerts)
-            prefs.edit().putBoolean(NotificationPrefs.KEY_COMPLETION_ALERTS, updated.completionAlerts).apply()
+            prefs.edit {
+                putBoolean(
+                    NotificationPrefs.KEY_COMPLETION_ALERTS,
+                    updated.completionAlerts
+                )
+            }
             updated
         }
     }
 
+    /**
+     * 정체 경고 알림 설정 값을 반전시키고 영구 저장소에 저장합니다.
+     */
     fun toggleStallWarnings() {
         _uiState.update { current ->
             val updated = current.copy(stallWarnings = !current.stallWarnings)
-            prefs.edit().putBoolean(NotificationPrefs.KEY_STALL_WARNINGS, updated.stallWarnings).apply()
+            prefs.edit { putBoolean(NotificationPrefs.KEY_STALL_WARNINGS, updated.stallWarnings) }
             updated
         }
     }
 
+    /**
+     * Pro 구독 구매 흐름을 시작합니다.
+     *
+     * @param activity 결제 화면을 띄우기 위해 필요한 Activity
+     */
     fun startProSubscription(activity: Activity) {
         if (_uiState.value.isAdFreeMode) return
 
@@ -209,10 +246,16 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * UI에 표시된 결제 관련 에러/안내 메시지를 초기화합니다.
+     */
     fun clearBillingMessage() {
         _uiState.update { it.copy(billingMessage = null) }
     }
 
+    /**
+     * 현재 구독 상태를 강제로 새로고침합니다.
+     */
     fun refreshSubscriptionStatus() {
         if (billingClient?.isReady == true) {
             queryActiveSubscriptions()
@@ -221,6 +264,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * BillingClient를 초기화하고 연결을 시도합니다.
+     */
     private fun setupBillingClient() {
         billingClient?.endConnection()
         billingClient = BillingClient.newBuilder(getApplication())
@@ -254,6 +300,9 @@ class SettingsViewModel @Inject constructor(
         })
     }
 
+    /**
+     * 구독 상품 정보를 비동기적으로 조회하여 가격 정보를 업데이트합니다.
+     */
     private fun querySubscriptionProductDetails() {
         val client = billingClient ?: return
         if (!client.isReady) return
@@ -290,6 +339,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 사용자가 현재 보유한 활성 구독 내역을 조회합니다.
+     */
     private fun queryActiveSubscriptions() {
         val client = billingClient ?: return
         if (!client.isReady) return
@@ -301,7 +353,7 @@ class SettingsViewModel @Inject constructor(
         ) { billingResult, purchases ->
             if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) return@queryPurchasesAsync
 
-            if (purchases.isNullOrEmpty()) {
+            if (purchases.isEmpty()) {
                 val uid = getCurrentUserUidUseCase() ?: return@queryPurchasesAsync
                 viewModelScope.launch {
                     try { updateUserPlanUseCase(uid, "free") } catch (e: Exception) { Timber.w(e) }
@@ -312,6 +364,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 조회된 구매 목록을 분석하여 적절한 처리(승인 또는 권한 부여)를 수행합니다.
+     *
+     * @param purchases 구매 정보 목록
+     * @param showSuccessMessage 성공 메시지를 화면에 표시할지 여부
+     */
     private fun processPurchases(purchases: List<Purchase>, showSuccessMessage: Boolean) {
         val target = purchases.firstOrNull { purchase ->
             purchase.products.contains(PRO_SUBSCRIPTION_PRODUCT_ID)
@@ -344,6 +402,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Google Play 서버에 구매 승인(Acknowledge) 요청을 보냅니다.
+     *
+     * @param purchase 승인할 구매 정보
+     * @param showSuccessMessage 승인 완료 후 성공 메시지 표시 여부
+     */
     private fun acknowledgePurchase(purchase: Purchase, showSuccessMessage: Boolean) {
         val client = billingClient ?: return
         if (!client.isReady) {
@@ -375,6 +439,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 사용자에게 Pro 구독 권한을 부여하고 서버에 구매 내역을 기록합니다.
+     *
+     * @param purchase 구매 성공한 정보
+     * @param showSuccessMessage 성공 메시지 표시 여부
+     */
     private fun grantProEntitlement(purchase: Purchase, showSuccessMessage: Boolean) {
         if (_uiState.value.currentPlan.isPro() && !showSuccessMessage) {
             _uiState.update { it.copy(isPurchaseLoading = false) }
@@ -419,6 +489,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * ProductDetails 객체로부터 현재 유효한 구독 가격 문자열을 추출합니다.
+     *
+     * @return 포맷팅된 가격 문자열 (예: "₩3,000"), 없으면 null
+     */
     private fun ProductDetails.formattedSubscriptionPrice(): String? {
         return subscriptionOfferDetails
             ?.firstOrNull()
@@ -428,6 +503,9 @@ class SettingsViewModel @Inject constructor(
             ?.formattedPrice
     }
 
+    /**
+     * ViewModel이 소멸될 때 결제 클라이언트 연결을 해제합니다.
+     */
     override fun onCleared() {
         super.onCleared()
         billingClient?.endConnection()

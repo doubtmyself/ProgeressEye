@@ -23,14 +23,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 /**
- * 알림 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
- *
- * Firebase에서 실시간으로 알림 이벤트를 수신하고, 알림 읽음 처리 및 삭제 기능을 수행
+ * 알림 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel입니다.
+ * Firebase에서 실시간으로 알림 이벤트를 수신하고, 알림 읽음 처리 및 삭제 기능을 수행합니다.
  *
  * @property observeAlerts 특정 사용자의 알림을 구독하는 UseCase
  * @property deleteAlertUseCase 특정 알림을 삭제하는 UseCase
  * @property clearAlertsUseCase 전체 알림을 삭제하는 UseCase
- * @constructor Create empty [AlertsViewModel]
  */
 class AlertsViewModel @Inject constructor(
     private val observeAlerts: ObserveAlertsUseCase,
@@ -67,6 +65,11 @@ class AlertsViewModel @Inject constructor(
         auth.addAuthStateListener(authListener!!)
     }
 
+    /**
+     * 특정 사용자의 알림 데이터를 실시간으로 구독하기 시작합니다.
+     *
+     * @param uid 구독할 사용자의 ID
+     */
     private fun startObserving(uid: String) {
         alertsJob?.cancel()
         alertsJob = viewModelScope.launch {
@@ -84,11 +87,19 @@ class AlertsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 알림 데이터 구독을 중단합니다.
+     */
     private fun stopObserving() {
         alertsJob?.cancel()
         alertsJob = null
     }
 
+    /**
+     * 새로운 알림을 목록에 추가하거나 기존 알림의 내용을 업데이트합니다.
+     *
+     * @param alert 추가 또는 업데이트할 알림 항목
+     */
     private fun upsertAlert(alert: AlertItem) {
         _alerts.update { list ->
             val updated = list.toMutableList()
@@ -100,7 +111,7 @@ class AlertsViewModel @Inject constructor(
     }
 
     /**
-     * 특정 알림을 클라이언트 메모리에서 읽음 처리
+     * 특정 알림을 클라이언트 메모리에서 읽음 처리합니다.
      *
      * @param alertId 읽은 알림의 ID 식별자
      */
@@ -112,7 +123,7 @@ class AlertsViewModel @Inject constructor(
     }
 
     /**
-     * 특정 알림을 RTDB 및 로컬 목록에서 완전히 삭제
+     * 특정 알림을 서버(RTDB) 및 로컬 목록에서 완전히 삭제합니다.
      *
      * @param alertId 삭제할 알림의 ID 식별자
      */
@@ -124,7 +135,7 @@ class AlertsViewModel @Inject constructor(
     }
 
     /**
-     * 현재 사용자의 모든 알림을 초기화하고 삭제
+     * 현재 사용자의 모든 알림을 서버에서 삭제하고 로컬 상태를 초기화합니다.
      */
     fun clearAll() {
         val currentUid = uid ?: return
@@ -133,6 +144,9 @@ class AlertsViewModel @Inject constructor(
         _alerts.value = emptyList()
     }
 
+    /**
+     * ViewModel이 소멸될 때 구독을 해제하고 인증 리스너를 제거합니다.
+     */
     override fun onCleared() {
         stopObserving()
         authListener?.let { auth.removeAuthStateListener(it) }

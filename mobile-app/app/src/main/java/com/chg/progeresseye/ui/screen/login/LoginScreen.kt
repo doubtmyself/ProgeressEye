@@ -102,6 +102,9 @@ private val GoogleRed = Color(0xFFEA4335)
 private val GoogleYellow = Color(0xFFFBBC05)
 private val GoogleGreen = Color(0xFF34A853)
 
+/**
+ * 로그인 화면에서 예시로 보여줄 작업 템플릿 데이터 클래스
+ */
 private data class TaskTemplate(
     val labelRes: Int,
     val icon: ImageVector,
@@ -110,6 +113,9 @@ private data class TaskTemplate(
     val barColor: Color,
 )
 
+/**
+ * 로그인 화면에서 애니메이션되는 작업 행의 상태를 관리하는 데이터 클래스
+ */
 private data class AnimatedTaskRow(
     val id: Int,
     val template: TaskTemplate,
@@ -119,6 +125,10 @@ private data class AnimatedTaskRow(
     val progressStep: Float,
 )
 
+/**
+ * 무작위 진행률 증가폭을 생성합니다.
+ * @return 0.010f ~ 0.024f 사이의 무작위 값
+ */
 private fun randomProgressStep(): Float = Random.nextFloat() * (0.024f - 0.010f) + 0.010f
 
 private val TaskTemplates = listOf(
@@ -198,6 +208,27 @@ private val TaskTemplates = listOf(
 // LoginScreen
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 앱의 로그인 화면을 구성하는 컴포저블입니다.
+ * 로고, 소개 텍스트, 애니메이션 미리보기 카드, 그리고 구글 로그인 버튼을 포함합니다.
+ * 세션 충돌 및 회원 탈퇴 철회 다이얼로그 처리도 담당합니다.
+ *
+ * @param onSignInClick 구글 로그인 버튼 클릭 콜백
+ * @param onConfirmSessionTakeover 세션 가져오기 확인 콜백
+ * @param onCancelSessionTakeover 세션 가져오기 취소 콜백
+ * @param onConfirmWithdrawalCancel 탈퇴 철회 확인 콜백
+ * @param onKeepWithdrawal 탈퇴 유지 콜백
+ * @param isLoading 로그인 처리 중 여부
+ * @param error 표시할 에러 메시지
+ * @param requiresSessionTakeover 세션 충돌 발생 여부
+ * @param existingDeviceName 충돌된 기기 이름
+ * @param requiresWithdrawalCancel 탈퇴 철회 확인 필요 여부
+ * @param withdrawalGraceEndDate 탈퇴 예정일 문자열
+ * @param consentObtained 광고 동의 획득 여부
+ * @param isEeaUser EEA(유럽 경제 지역) 사용자 여부
+ * @param onChangeConsent 광고 동의 변경 클릭 콜백
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 fun LoginScreen(
     onSignInClick: () -> Unit = {},
@@ -333,6 +364,11 @@ fun LoginScreen(
 // 1. Logo — 160dp area, 128dp circle, eye icon, mini bar
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 앱 로고 섹션을 구성합니다. 중앙의 큰 아이콘과 하단의 미니 진행률 바를 포함합니다.
+ *
+ * @param onCirclePositioned 로고 원의 중심 좌표가 계산되었을 때 호출되는 콜백 (배경 글로우 효과용)
+ */
 @Composable
 private fun LogoSection(
     onCirclePositioned: (Offset) -> Unit = {},
@@ -411,6 +447,9 @@ private fun LogoSection(
 // 2. Text — title + subtitle
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 앱 이름과 슬로건(소개 문구)을 표시하는 섹션입니다.
+ */
 @Composable
 private fun TextSection() {
     Text(
@@ -434,6 +473,10 @@ private fun TextSection() {
 // 3. Preview card — glass surface
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 앱의 주요 기능인 작업 진행률 모니터링을 시각적으로 보여주는 애니메이션 카드입니다.
+ * 가상의 작업들이 생성되고 진행되며 완료되어 사라지는 과정을 무한 루프로 보여줍니다.
+ */
 @Composable
 private fun PreviewCard() {
     val rows = remember {
@@ -525,7 +568,6 @@ private fun PreviewCard() {
         color = SurfaceDark.copy(alpha = 0.50f),
         border = BorderStroke(1.dp, WhiteAlpha5),
         // 고정 높이: row 2개 기준 (각 40dp) + spacer(16dp) + padding(32dp) = 128dp
-        // row 추가/제거 시 recomposition이 두 번 발생해 상위 레이아웃이 흔들리는 것을 방지
         modifier = Modifier.widthIn(max = 320.dp).height(128.dp),
     ) {
         Column(
@@ -564,6 +606,13 @@ private fun PreviewCard() {
     }
 }
 
+/**
+ * 작업 아이콘을 배경과 함께 표시하는 내부 컴포저블입니다.
+ *
+ * @param icon 표시할 아이콘 (ImageVector)
+ * @param tint 아이콘 색상
+ * @param background 아이콘 배경색
+ */
 @Composable
 private fun TaskIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -586,6 +635,18 @@ private fun TaskIcon(
     }
 }
 
+/**
+ * 미리보기 카드 내의 단일 작업 행을 구성합니다.
+ *
+ * @param icon 작업 아이콘
+ * @param iconTint 아이콘 색상
+ * @param iconBackground 아이콘 배경색
+ * @param label 작업 이름
+ * @param percentColor 진행률 텍스트 색상
+ * @param fraction 진행률 (0.0 ~ 1.0)
+ * @param barColor 진행 바 색상
+ * @param rowAlpha 행의 투명도
+ */
 @Composable
 private fun TaskProgressRow(
     icon: ImageVector,
@@ -647,6 +708,13 @@ private fun TaskProgressRow(
 // Mini progress bar (Canvas, reusable)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 얇은 진행률 바를 그리는 공통 컴포저블입니다.
+ *
+ * @param fraction 진행률 (0.0 ~ 1.0)
+ * @param fillColor 진행된 영역의 색상
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun MiniProgressBar(
     fraction: Float,
@@ -670,6 +738,16 @@ private fun MiniProgressBar(
 // Bottom actions — gradient fade + Google button + terms
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 화면 하단에 고정되는 액션 섹션입니다. 이용약관 동의 체크박스, 광고 동의(EEA 사용자용), 구글 로그인 버튼을 포함합니다.
+ *
+ * @param onSignInClick 구글 로그인 클릭 콜백
+ * @param isLoading 로딩 중 여부
+ * @param error 표시할 에러 메시지
+ * @param consentObtained 광고 동의 여부
+ * @param isEeaUser EEA 사용자 여부
+ * @param onChangeConsent 광고 동의 변경 클릭 콜백
+ */
 @Composable
 private fun BottomActions(
     onSignInClick: () -> Unit,
@@ -721,6 +799,12 @@ private fun BottomActions(
     }
 }
 
+/**
+ * 광고 동의 여부를 확인하고 변경할 수 있는 행입니다. EEA 사용자에게만 표시됩니다.
+ *
+ * @param consentObtained 현재 동의 여부
+ * @param onChangeConsent 클릭 시 호출되는 콜백
+ */
 @Composable
 private fun AdConsentRow(
     consentObtained: Boolean,
@@ -754,6 +838,13 @@ private fun AdConsentRow(
 // Google Sign-In button — white bg, scale press effect
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 구글 브랜드 가이드라인을 따르는 로그인 버튼입니다. 클릭 시 눌림 효과와 로딩 상태 표시 기능을 포함합니다.
+ *
+ * @param onClick 버튼 클릭 콜백
+ * @param isLoading 로딩 중 여부
+ * @param enabled 버튼 활성화 여부
+ */
 @Composable
 private fun GoogleSignInButton(
     onClick: () -> Unit,
@@ -811,6 +902,11 @@ private fun GoogleSignInButton(
 // Google 4-color "G" icon (stroke arcs + bar)
 // ═════════════════════════════════════════════════════════
 
+/**
+ * Google의 4색 "G" 로고를 Canvas를 사용하여 직접 그리는 컴포저블입니다.
+ *
+ * @param modifier 컴포저블에 적용할 Modifier
+ */
 @Composable
 private fun GoogleColorIcon(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
@@ -844,6 +940,12 @@ private fun GoogleColorIcon(modifier: Modifier = Modifier) {
 // Terms — "By continuing you agree to our Terms"
 // ═════════════════════════════════════════════════════════
 
+/**
+ * 서비스 이용약관 및 개인정보 처리방침 동의를 위한 체크박스와 링크 텍스트 행입니다.
+ *
+ * @param checked 체크박스 선택 상태
+ * @param onCheckedChange 선택 상태 변경 콜백
+ */
 @Composable
 private fun TermsRow(
     checked: Boolean,

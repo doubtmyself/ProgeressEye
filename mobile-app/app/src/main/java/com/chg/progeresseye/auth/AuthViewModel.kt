@@ -26,6 +26,14 @@ import com.chg.progeresseye.domain.usecase.UpdateUserDocumentUseCase
 
 /**
  * 인증 및 세션 제어와 관련된 UI 상태 데이터를 보관하는 데이터 클래스
+ *
+ * @property isLoading 로딩 상태 여부
+ * @property user 현재 로그인된 Firebase 사용자 정보
+ * @property error 발생한 에러 메시지
+ * @property requiresSessionTakeover 다른 기기에서 세션이 사용 중인지 여부
+ * @property existingDeviceName 기존에 로그인된 기기 이름
+ * @property requiresWithdrawalCancel 회원 탈퇴 철회 확인이 필요한지 여부
+ * @property withdrawalGraceEndDate 탈퇴 유예 기간 종료일
  */
 data class AuthUiState(
     val isLoading: Boolean = false,
@@ -40,6 +48,13 @@ data class AuthUiState(
 @HiltViewModel
 /**
  * 인증 화면 및 세션 유지 로직을 관리하는 ViewModel
+ *
+ * @property getWithdrawalStateUseCase 사용자의 탈퇴 상태를 조회하는 UseCase
+ * @property callWithdrawalApiUseCase 탈퇴 관련 API(요청/철회)를 호출하는 UseCase
+ * @property checkExistingSessionUseCase 기존 세션 존재 여부를 확인하는 UseCase
+ * @property activateMobileSessionUseCase 새로운 모바일 세션을 활성화하는 UseCase
+ * @property clearSessionIfOwnedUseCase 특정 세션을 소유한 경우에만 초기화하는 UseCase
+ * @property updateUserDocumentUseCase 사용자 문서를 업데이트하는 UseCase
  */
 class AuthViewModel @Inject constructor(
     application: Application,
@@ -73,9 +88,16 @@ class AuthViewModel @Inject constructor(
         uiState = _uiState.asStateFlow()
     }
 
+    /** 현재 사용자가 로그인되어 있는지 여부 */
     val isSignedIn: Boolean
         get() = repository.getCurrentUser() != null
 
+    /**
+     * Google 로그인을 시도합니다. 탈퇴 진행 중인 사용자나 재가입 제한 기간인 사용자를 체크합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     * @param webClientId Google 로그인을 위한 웹 클라이언트 ID
+     */
     fun signInWithGoogle(context: Context, webClientId: String) {
         viewModelScope.launch {
             Timber.d("[Auth] signInWithGoogle: 시작")
@@ -146,6 +168,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 다른 기기에서 사용 중인 세션을 현재 기기로 가져오는 것을 확정합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun confirmSessionTakeover(context: Context) {
         viewModelScope.launch {
             val user = pendingUser ?: repository.getCurrentUser()
@@ -170,6 +197,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 세션 가져오기를 취소하고 로그아웃 처리합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun cancelSessionTakeover(context: Context) {
         viewModelScope.launch {
             pendingUser = null
@@ -180,6 +212,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 로그아웃을 수행하며 로컬 세션 정보 및 Firebase 인증을 정리합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun signOut(context: Context) {
         viewModelScope.launch {
             Timber.d("[Auth] signOut: 시작")
@@ -195,12 +232,22 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 현재 기기가 소유한 모바일 세션인 경우 서버에서 세션 정보를 제거합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     private suspend fun clearMobileSessionIfOwnedUseCase(context: Context) {
         val user = repository.getCurrentUser() ?: return
         val localSessionId = MobileSessionManager.getSessionId(context) ?: return
         try { clearSessionIfOwnedUseCase(user.uid, localSessionId) } catch (e: Exception) { }
     }
 
+    /**
+     * 진행 중인 회원 탈퇴를 취소하고 로그인을 계속 진행합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun confirmWithdrawalCancellation(context: Context) {
         viewModelScope.launch {
             val user = pendingWithdrawalUser ?: repository.getCurrentUser()
@@ -229,6 +276,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 탈퇴 상태를 유지하고 로그인을 취소합니다. 재가입 제한 기간을 안내합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun keepWithdrawalAndCancelLogin(context: Context) {
         viewModelScope.launch {
             val uid = pendingWithdrawalUid
@@ -247,6 +299,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 회원 탈퇴를 요청하고 로그아웃 처리합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun deleteAccount(context: Context) {
         viewModelScope.launch {
             val user = repository.getCurrentUser() ?: return@launch
@@ -268,16 +325,35 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 탈퇴 관련 API를 호출하기 위해 ID 토큰을 획득하고 UseCase를 실행합니다.
+     *
+     * @param action 실행할 작업 (requestWithdrawal, cancelWithdrawal 등)
+     * @param email 사용자 이메일
+     * @param user FirebaseUser 객체
+     */
     private suspend fun callWithdrawalApi(action: String, email: String?, user: FirebaseUser) {
         val idTokenResult = user.getIdToken(true).await()
         val idToken = idTokenResult.token ?: throw IllegalStateException("idToken unavailable")
         callWithdrawalApiUseCase(action, email, idToken)
     }
 
+    /**
+     * Long 타입의 타임스탬프를 yyyy-MM-dd 형식의 문자열로 변환합니다.
+     *
+     * @return 포맷팅된 날짜 문자열
+     */
     private fun Long.toYmdString(): String =
         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
             .format(java.util.Date(this))
 
+    /**
+     * 중복 로그인 여부를 체크하고 세션 활성화를 진행하거나 사용자에게 확인을 요청합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     * @param user FirebaseUser 객체
+     * @param uid 사용자 ID
+     */
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {
         val myDeviceId = MobileSessionManager.getOrCreateDeviceId(context)
         Timber.d("[Auth] proceedSessionCheck: 시작 (uid=$uid, deviceId=$myDeviceId)")
@@ -311,6 +387,12 @@ class AuthViewModel @Inject constructor(
         }
     }
     
+    /**
+     * 서버에 새로운 모바일 세션을 등록하고 로컬에 세션 ID를 저장합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     * @param uid 사용자 ID
+     */
     private suspend fun doActivateSession(context: Context, uid: String) {
        val deviceId = MobileSessionManager.getOrCreateDeviceId(context)
        val deviceName = MobileSessionManager.getDeviceName()
@@ -328,6 +410,11 @@ class AuthViewModel @Inject constructor(
        try { updateUserDocumentUseCase(uid, user?.email ?: "", user?.displayName ?: "") } catch (_: Exception) {}
     }
 
+    /**
+     * 다른 기기에서의 로그인으로 인해 현재 세션이 만료되었을 때 강제 로그아웃을 처리합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun forceSignOutBySessionConflict(context: Context) {
         viewModelScope.launch {
             repository.signOut(context)
@@ -338,6 +425,11 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 회원 탈퇴 처리가 시작되어 현재 세션에서 강제 로그아웃을 처리합니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     */
     fun forceSignOutByWithdrawal(context: Context) {
         viewModelScope.launch {
             repository.signOut(context)
@@ -350,6 +442,9 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 현재 UI 상태의 에러 메시지를 초기화합니다.
+     */
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }

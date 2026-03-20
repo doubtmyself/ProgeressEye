@@ -27,13 +27,18 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Firebase Cloud Messaging을 처리하여 푸시 알림을 수신하고 표시하는 백그라운드 서비스
+ * Firebase Cloud Messaging을 처리하여 푸시 알림을 수신하고 표시하는 백그라운드 서비스입니다.
  */
 @AndroidEntryPoint
 class FCMService : FirebaseMessagingService() {
 
     @Inject lateinit var authRepository: AuthRepository
 
+    /**
+     * 새로운 FCM 토큰이 생성되었을 때 호출됩니다. 서버에 토큰을 등록합니다.
+     *
+     * @param token 생성된 FCM 등록 토큰
+     */
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
@@ -48,7 +53,7 @@ class FCMService : FirebaseMessagingService() {
     }
 
     /**
-     * 새로운 FCM 메시지를 수신 시 호출됨
+     * 새로운 FCM 메시지를 수신했을 때 호출됩니다. 메시지 타입에 따라 알림 표시 여부를 결정합니다.
      *
      * @param message 수신된 [RemoteMessage] 객체
      */
@@ -81,6 +86,13 @@ class FCMService : FirebaseMessagingService() {
         }
     }
 
+    /**
+     * 개발자용 오류 보고 알림을 표시합니다. 클릭 시 오류 내용을 클립보드에 복사할 수 있습니다.
+     *
+     * @param title 알림 제목
+     * @param body 알림 본문
+     * @param traceback 복사할 오류 추적 정보
+     */
     private fun showErrorReportNotification(title: String, body: String, traceback: String) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -116,6 +128,12 @@ class FCMService : FirebaseMessagingService() {
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
+    /**
+     * 일반적인 상태 알림(진행 완료, 중단 경고 등)을 표시합니다.
+     *
+     * @param title 알림 제목
+     * @param body 알림 본문
+     */
     private fun showNotification(title: String, body: String) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -146,6 +164,11 @@ class FCMService : FirebaseMessagingService() {
         private const val ERROR_CHANNEL_ID = "error_reports"
         const val EXTRA_COPY_TEXT = "extra_copy_text"
 
+        /**
+         * 현재 기기의 FCM 토큰을 획득하여 서버에 등록합니다.
+         *
+         * @param authRepository 토큰 등록 처리를 수행할 저장소
+         */
         @OptIn(DelicateCoroutinesApi::class)
         fun registerToken(authRepository: AuthRepository) {
             FirebaseMessaging.getInstance().token
@@ -164,7 +187,16 @@ class FCMService : FirebaseMessagingService() {
     }
 }
 
+/**
+ * 알림 클릭 시 전달된 텍스트를 클립보드에 복사하는 BroadcastReceiver입니다.
+ */
 class CopyToClipboardReceiver : BroadcastReceiver() {
+    /**
+     * 알림 액션 등에 의해 인텐트를 수신했을 때 실행됩니다.
+     *
+     * @param context 안드로이드 컨텍스트
+     * @param intent 전달된 데이터가 포함된 인텐트
+     */
     override fun onReceive(context: Context, intent: Intent) {
         val text = intent.getStringExtra(FCMService.EXTRA_COPY_TEXT) ?: return
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
