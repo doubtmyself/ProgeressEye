@@ -62,7 +62,6 @@
     <string name="alert_type_offline">Offline</string>
     <string name="notification_channel_name">Progress Alerts</string>
     <string name="notification_channel_description">Alerts for task completion, freezing, and screen changes</string>
-    <string name="notification_copy_traceback">오류 내용 복사</string>
     <string name="alerts_clear_all">Clear all</string>
     <string name="alerts_just_now">Just now</string>
     <string name="alerts_yesterday">Yesterday</string>

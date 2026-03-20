@@ -2,14 +2,8 @@ package com.chg.progeresseye.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.os.Build
-import android.widget.Toast
 import timber.log.Timber
 import androidx.core.app.NotificationCompat
 import com.chg.progeresseye.R
@@ -68,8 +62,7 @@ class FCMService : FirebaseMessagingService() {
         val body = data["body"] ?: return
 
         if (type == "error_report") {
-            val traceback = data["traceback"] ?: body
-            showErrorReportNotification(title, body, traceback)
+            showErrorReportNotification(title, body)
             return
         }
 
@@ -88,13 +81,12 @@ class FCMService : FirebaseMessagingService() {
     }
 
     /**
-     * 개발자용 오류 보고 알림을 표시합니다. 클릭 시 오류 내용을 클립보드에 복사할 수 있습니다.
+     * 개발자용 오류 보고 알림을 표시합니다.
      *
      * @param title 알림 제목
      * @param body 알림 본문
-     * @param traceback 복사할 오류 추적 정보
      */
-    private fun showErrorReportNotification(title: String, body: String, traceback: String) {
+    private fun showErrorReportNotification(title: String, body: String) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -106,22 +98,11 @@ class FCMService : FirebaseMessagingService() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        val copyIntent = Intent(applicationContext, CopyToClipboardReceiver::class.java).apply {
-            putExtra(EXTRA_COPY_TEXT, traceback)
-        }
-        val copyPendingIntent = PendingIntent.getBroadcast(
-            applicationContext,
-            System.currentTimeMillis().toInt(),
-            copyIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
         val notification = NotificationCompat.Builder(this, ERROR_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .addAction(0, getString(R.string.notification_copy_traceback), copyPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
@@ -163,7 +144,6 @@ class FCMService : FirebaseMessagingService() {
     companion object {
         private const val CHANNEL_ID = "progress_alerts"
         private const val ERROR_CHANNEL_ID = "error_reports"
-        const val EXTRA_COPY_TEXT = "extra_copy_text"
 
         /**
          * 현재 기기의 FCM 토큰을 획득하여 서버에 등록합니다.
@@ -185,23 +165,5 @@ class FCMService : FirebaseMessagingService() {
                 }
                 .addOnFailureListener { error -> Timber.e(error, "Failed to fetch FCM token") }
         }
-    }
-}
-
-/**
- * 알림 클릭 시 전달된 텍스트를 클립보드에 복사하는 BroadcastReceiver입니다.
- */
-class CopyToClipboardReceiver : BroadcastReceiver() {
-    /**
-     * 알림 액션 등에 의해 인텐트를 수신했을 때 실행됩니다.
-     *
-     * @param context 안드로이드 컨텍스트
-     * @param intent 전달된 데이터가 포함된 인텐트
-     */
-    override fun onReceive(context: Context, intent: Intent) {
-        val text = intent.getStringExtra(FCMService.EXTRA_COPY_TEXT) ?: return
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("error_report", text))
-        Toast.makeText(context, "오류 내용이 복사되었습니다", Toast.LENGTH_SHORT).show()
     }
 }
