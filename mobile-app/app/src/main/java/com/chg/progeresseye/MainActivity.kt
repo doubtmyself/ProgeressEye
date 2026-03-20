@@ -292,7 +292,7 @@ class MainActivity : ComponentActivity() {
             // EEA 테스트:  DEBUG_GEOGRAPHY_EEA
             // 미국 테스트: DEBUG_GEOGRAPHY_REGULATED_US_STATE
             // 기타(광고):  DEBUG_GEOGRAPHY_OTHER
-            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA
+            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_REGULATED_US_STATE
             // ─────────────────────────────────────────────────────────────
             val debugSettings = ConsentDebugSettings.Builder(this)
                 .setDebugGeography(debugGeography)
@@ -386,9 +386,8 @@ class MainActivity : ComponentActivity() {
             val personalized = isPersonalizedAdsConsented()
             isPersonalizedAds = personalized
             lifecycleScope.launch { adPrefsRepository.setIsPersonalizedAds(personalized) }
-            // EEA에서 비맞춤형으로 변경 시 Pro 구독 유도
-            // US는 Manage options 개별 조정 시 오발동 문제로 제외
-            if (!personalized && isEeaRegion()) {
+            // 비맞춤형으로 변경 시 Pro 구독 유도 (EEA 및 US 공통)
+            if (!personalized) {
                 showConsentRequiredDialog()
             }
         }
@@ -454,13 +453,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * GPP(Global Privacy Platform) US 섹션 문자열(Base64URL)을 디코딩하여 완전 거부(Opt-out) 여부를 판단합니다.
+     * GPP(Global Privacy Platform) US 섹션 문자열(Base64URL)을 디코딩하여 판매/공유 거부 여부를 판단합니다.
      * US National (Section 7): bits 18-19=SaleOptOut, 20-21=SharingOptOut, 22-23=TargetedAdvertisingOptOut
-     * 세 필드 모두 1(거부)일 때만 완전 거부로 판단.
-     * Manage options에서 일부만 끈 경우(부분 거부)는 허용으로 처리.
+     * "Don't Sell or Share My Data"는 SaleOptOut 또는 SharingOptOut 중 하나라도 거부(1)이면 비동의로 처리.
      *
      * @param base64String GPP 섹션의 Base64URL 인코딩 문자열
-     * @return 모든 관련 항목(Sale, Sharing, Targeted Advertising)이 거부된 경우 true
+     * @return 판매 또는 공유 항목이 거부된 경우 true
      */
     private fun isGppUsSectionOptedOut(base64String: String): Boolean {
         return try {
@@ -470,10 +468,9 @@ class MainActivity : ComponentActivity() {
             )
             if (bytes.size < 3) return false
             val b = bytes[2].toInt() and 0xFF
-            val saleOptOut     = ((b ushr 5) and 0x1 shl 1) or ((b ushr 4) and 0x1)
-            val sharingOptOut  = ((b ushr 3) and 0x1 shl 1) or ((b ushr 2) and 0x1)
-            val targetedOptOut = ((b ushr 1) and 0x1 shl 1) or (b and 0x1)
-            saleOptOut == 1 && sharingOptOut == 1 && targetedOptOut == 1
+            val saleOptOut    = ((b ushr 5) and 0x1 shl 1) or ((b ushr 4) and 0x1)
+            val sharingOptOut = ((b ushr 3) and 0x1 shl 1) or ((b ushr 2) and 0x1)
+            saleOptOut == 1 || sharingOptOut == 1
         } catch (e: Exception) {
             Timber.w(e, "GPP US section decode failed: %s", base64String)
             false
