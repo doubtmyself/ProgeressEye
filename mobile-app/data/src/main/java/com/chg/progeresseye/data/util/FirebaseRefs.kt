@@ -1,4 +1,4 @@
-package com.chg.progeresseye.util
+package com.chg.progeresseye.data.util
 
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
@@ -30,6 +30,12 @@ object FirebaseRefs {
     fun mobileSessionRef(uid: String): DatabaseReference =
         userRef(uid).child("mobileSession")
 
+    fun mobileSessionsRef(uid: String): DatabaseReference =
+        userRef(uid).child("mobileSessions")
+
+    fun mobileSessionsRef(uid: String, deviceId: String): DatabaseReference =
+        mobileSessionsRef(uid).child(deviceId)
+
     fun commandRef(uid: String, command: String): DatabaseReference =
         userRef(uid).child("commands").child(command)
 
@@ -38,4 +44,12 @@ object FirebaseRefs {
 
     fun fcmTokensRef(uid: String): DatabaseReference =
         userRef(uid).child("fcmTokens")
+
+    fun fcmTokensRef(uid: String, token: String): DatabaseReference {
+        val tokenId = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray())
+            .take(8)
+            .joinToString("") { "%02x".format(it) }
+        return fcmTokensRef(uid).child(tokenId)
+    }
 }

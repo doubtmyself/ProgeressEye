@@ -261,6 +261,7 @@ class ProgressEyeApp:
         self._main_window.settings_requested.connect(self._open_settings)
         self._main_window.settings_saved.connect(self._on_settings_saved)
         self._main_window.settings_logout_requested.connect(self._do_logout)
+        self._main_window.settings_reset_requested.connect(self._do_reset_settings)
         self._main_window.settings_delete_account_requested.connect(
             self._do_delete_account
         )
@@ -279,6 +280,8 @@ class ProgressEyeApp:
         self._main_window.settings_bar_guide_requested.connect(
             self._on_show_bar_guide
         )
+        self._main_window.welcome_next_requested.connect(self._on_welcome_next)
+        self._main_window.tutorial_next_requested.connect(self._on_tutorial_next)
         self._main_window.close_requested.connect(self._quit)
         self._main_window.region_threshold_changed.connect(self._on_threshold_changed)
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
@@ -1913,6 +1916,23 @@ class ProgressEyeApp:
         log.info("로그아웃 완료 — 로그인 화면으로 전환")
         self._ensure_login()
 
+    def _do_reset_settings(self) -> None:
+        """[DEBUG] 설정 초기화: config.json 삭제 → 로그아웃 → 웰컴 화면."""
+        log.info("[DEBUG] 설정 초기화 시작")
+        # 로그아웃 전에 삭제해야 _do_logout()이 재생성하는 config에 웰컴 플래그가 없음
+        try:
+            config_path = self._config._path
+            if config_path.exists():
+                config_path.unlink()
+                log.info("[DEBUG] config.json 삭제 완료: %s", config_path)
+        except Exception as exc:
+            log.warning("[DEBUG] config.json 삭제 실패: %s", exc)
+        self._do_logout()
+        # _do_logout() → _ensure_login() → 로그인 완료 후 웰컴 화면 표시
+        if self._config.get("auth.uid", ""):
+            self._show_welcome()
+        log.info("[DEBUG] 설정 초기화 완료")
+
     def _do_delete_account(self) -> None:
         """회원탈퇴 요청: 7일 유예 후 삭제, 30일 재가입 제한."""
         confirm = QMessageBox.question(
@@ -2033,7 +2053,7 @@ class ProgressEyeApp:
             self._notify(t("privacy_policy_open_failed").format(error=exc))
 
     def _show_welcome(self) -> None:
-        """최초 로그인 후 웰컴 설정 가이드를 표시한다."""
+        """최초 로그인 후 웰컴 설정 가이드를 표시한다 (step 0: 언어 선택)."""
         self._main_window.show_settings(
             interval=self._config.get("capture.interval_seconds", 1),
             language=self._config.get("language", "en"),
@@ -2041,6 +2061,20 @@ class ProgressEyeApp:
             freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
             welcome_mode=True,
             app_version=APP_VERSION,
+        )
+
+    def _on_welcome_next(self, language: str) -> None:
+        """Welcome step 0 완료 → step 1: 사용법 안내 페이지 표시."""
+        self._pending_welcome_language = language
+        self._main_window.set_tutorial_mode(True)
+
+    def _on_tutorial_next(self) -> None:
+        """Tutorial 완료 → step 2: 기본 설정 페이지 표시."""
+        language = getattr(self, "_pending_welcome_language", self._config.get("language", "en"))
+        self._main_window.show_welcome_page(
+            interval=self._config.get("capture.interval_seconds", 1),
+            freeze_minutes=self._config.get("freeze_detection.timeout_minutes", 5),
+            language=language,
         )
 
     def _on_edit_region(self, region_id: str) -> None:

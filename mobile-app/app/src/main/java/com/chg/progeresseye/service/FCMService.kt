@@ -15,21 +15,36 @@ import androidx.core.app.NotificationCompat
 import com.chg.progeresseye.NotificationPrefs
 import com.chg.progeresseye.R
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ServerValue
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import java.security.MessageDigest
+import com.chg.progeresseye.domain.repository.AuthRepository
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Firebase Cloud Messaging을 처리하여 푸시 알림을 수신하고 표시하는 백그라운드 서비스
  */
+@AndroidEntryPoint
 class FCMService : FirebaseMessagingService() {
+
+    @Inject lateinit var authRepository: AuthRepository
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        saveTokenToRtdb(token)
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        @OptIn(DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                authRepository.registerFcmToken(uid, token)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save FCM token")
+            }
+        }
     }
 
     /**
@@ -78,7 +93,6 @@ class FCMService : FirebaseMessagingService() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // 탭 시 traceback 클립보드 복사
         val copyIntent = Intent(applicationContext, CopyToClipboardReceiver::class.java).apply {
             putExtra(EXTRA_COPY_TEXT, traceback)
         }
@@ -127,37 +141,25 @@ class FCMService : FirebaseMessagingService() {
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
-    private fun saveTokenToRtdb(token: String) {
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        val tokenId = sha256Short(token)
-        FirebaseDatabase.getInstance()
-            .getReference("users/$uid/fcmTokens/$tokenId")
-            .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
-            .addOnFailureListener { error -> Timber.e(error, "Failed to save FCM token") }
-    }
-
     companion object {
         private const val CHANNEL_ID = "progress_alerts"
         private const val ERROR_CHANNEL_ID = "error_reports"
         const val EXTRA_COPY_TEXT = "extra_copy_text"
 
-        fun registerToken() {
+        @OptIn(DelicateCoroutinesApi::class)
+        fun registerToken(authRepository: AuthRepository) {
             FirebaseMessaging.getInstance().token
                 .addOnSuccessListener { token ->
                     val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@addOnSuccessListener
-                    val tokenId = sha256Short(token)
-                    FirebaseDatabase.getInstance()
-                        .getReference("users/$uid/fcmTokens/$tokenId")
-                        .setValue(mapOf("token" to token, "updatedAt" to ServerValue.TIMESTAMP))
-                        .addOnFailureListener { error -> Timber.e(error, "Failed to register FCM token") }
+                    GlobalScope.launch(Dispatchers.IO) {
+                        try {
+                            authRepository.registerFcmToken(uid, token)
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to register FCM token")
+                        }
+                    }
                 }
                 .addOnFailureListener { error -> Timber.e(error, "Failed to fetch FCM token") }
-        }
-
-        private fun sha256Short(input: String): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hash = digest.digest(input.toByteArray())
-            return hash.take(8).joinToString("") { "%02x".format(it) }
         }
     }
 }

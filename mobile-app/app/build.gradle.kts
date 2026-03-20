@@ -85,6 +85,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            isDebuggable = true
+            // 디버그 빌드 ABI 분리: arm64-v8a만 설치 → APK 크기 감소 → 설치/시작 속도 향상
+            splits.abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a")
+                isUniversalApk = false
+            }
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true

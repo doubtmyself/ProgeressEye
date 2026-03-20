@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 from utils.logger import log
 from utils.i18n import t
 from ui.login_start_dialog import LoginStartDialog
-from ui.settings_dialog import SettingsOverlay
+from ui.settings_dialog import SettingsOverlay, TutorialPage, WelcomePage
 
 # ── Color Palette ──────────────────────────────────────────────
 APP_BG = "#0f0f1a"
@@ -488,12 +488,15 @@ class MainWindow(QMainWindow):
     settings_requested = pyqtSignal()
     settings_saved = pyqtSignal(int, str, int)  # (interval, lang, freeze)
     settings_logout_requested = pyqtSignal()
+    settings_reset_requested = pyqtSignal()
     settings_delete_account_requested = pyqtSignal()
     settings_withdrawal_expired_test_requested = pyqtSignal()
     settings_rejoin_expired_test_requested = pyqtSignal()
     settings_privacy_policy_requested = pyqtSignal()
     settings_third_party_licenses_requested = pyqtSignal()
     settings_bar_guide_requested = pyqtSignal()
+    welcome_next_requested = pyqtSignal(str)  # (language)
+    tutorial_next_requested = pyqtSignal()
     region_threshold_changed = pyqtSignal(str, int)  # (region_id, threshold)
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
@@ -532,34 +535,42 @@ class MainWindow(QMainWindow):
             if _icon_path.exists():
                 self.setWindowIcon(QIcon(str(_icon_path)))
                 break
-        self._app_min_size = (600, 750)
-        self._app_default_size = (630, 1050)
-        self._login_min_size = (380, 740)
-        self._login_default_size = (390, 780)
-        self.setMinimumSize(600, 750)
-        self.resize(630, 1050)
+        self._app_min_size = (600, 625)
+        self._app_default_size = (630, 875)
+        self._login_min_size = (380, 616)
+        self._login_default_size = (390, 650)
+        self.setMinimumSize(600, 625)
+        self.resize(630, 875)
 
         self._setup_ui()
         self._login_panel.login_requested.connect(self.login_start_requested)
         self._login_panel.cancel_requested.connect(self.login_cancel_requested)
 
-        # ── Settings overlay ──
+        # ── Settings panel (page-style, added to root layout in _setup_ui) ──
         self._settings_overlay = SettingsOverlay(
-            self,
+            self.centralWidget(),
             show_debug_buttons=self._show_test_buttons,
         )
+        self._root_layout.addWidget(self._settings_overlay, stretch=1)
         self._settings_overlay.hide()
         self._settings_overlay.saved.connect(self.settings_saved)
+        self._settings_overlay.saved.connect(lambda *_: self.set_settings_mode(False))
+        self._settings_overlay.closed.connect(lambda: self.set_settings_mode(False))
         self._settings_overlay.logout_requested.connect(self.settings_logout_requested)
+        self._settings_overlay.logout_requested.connect(lambda: self.set_settings_mode(False))
+        self._settings_overlay.reset_settings_requested.connect(self.settings_reset_requested)
         self._settings_overlay.delete_account_requested.connect(
             self.settings_delete_account_requested
         )
+        self._settings_overlay.delete_account_requested.connect(lambda: self.set_settings_mode(False))
         self._settings_overlay.withdrawal_expired_test_requested.connect(
             self.settings_withdrawal_expired_test_requested
         )
+        self._settings_overlay.withdrawal_expired_test_requested.connect(lambda: self.set_settings_mode(False))
         self._settings_overlay.rejoin_expired_test_requested.connect(
             self.settings_rejoin_expired_test_requested
         )
+        self._settings_overlay.rejoin_expired_test_requested.connect(lambda: self.set_settings_mode(False))
         self._settings_overlay.privacy_policy_requested.connect(
             self.settings_privacy_policy_requested
         )
@@ -569,6 +580,20 @@ class MainWindow(QMainWindow):
         self._settings_overlay.bar_guide_requested.connect(
             self.settings_bar_guide_requested
         )
+        self._settings_overlay.bar_guide_requested.connect(lambda: self.set_settings_mode(False))
+        self._settings_overlay.welcome_next_requested.connect(self._on_welcome_next)
+        self._settings_overlay.welcome_next_requested.connect(self.welcome_next_requested)
+
+        # ── Tutorial page (step 1) ──
+        self._tutorial_page = TutorialPage(self.centralWidget())
+        self._root_layout.addWidget(self._tutorial_page, stretch=1)
+        self._tutorial_page.next_requested.connect(self.tutorial_next_requested)
+
+        # ── Welcome page (step 2) ──
+        self._welcome_page = WelcomePage(self.centralWidget())
+        self._root_layout.addWidget(self._welcome_page, stretch=1)
+        self._welcome_page.started.connect(self.settings_saved)
+        self._welcome_page.started.connect(lambda *_: self.set_welcome_mode(False))
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
@@ -788,6 +813,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(*self._app_min_size)
         self.resize(*self._app_default_size)
         self._login_panel.hide()
+        self._hide_all_pages()
         self._app_container.show()
 
     def add_region_display(
@@ -989,6 +1015,54 @@ class MainWindow(QMainWindow):
         else:
             self._btn_toggle.setToolTip(t("tooltip_start"))
 
+    def _hide_all_pages(self) -> None:
+        """모든 페이지를 숨긴다."""
+        self._settings_overlay.hide()
+        self._tutorial_page.hide()
+        self._welcome_page.hide()
+        self._app_container.hide()
+
+    def set_settings_mode(self, enabled: bool) -> None:
+        """설정 페이지와 메인 화면을 전환한다."""
+        if enabled:
+            self._hide_all_pages()
+            self._settings_overlay.show()
+            self._settings_overlay.raise_()
+        else:
+            self._hide_all_pages()
+            self._app_container.show()
+
+    def set_tutorial_mode(self, enabled: bool) -> None:
+        """Tutorial 페이지를 전환한다."""
+        if enabled:
+            self._hide_all_pages()
+            self._tutorial_page.show()
+            self._tutorial_page.raise_()
+        else:
+            self._hide_all_pages()
+            self._app_container.show()
+
+    def set_welcome_mode(self, enabled: bool) -> None:
+        """Welcome step 2 페이지를 전환한다."""
+        if enabled:
+            self._hide_all_pages()
+            self._welcome_page.show()
+            self._welcome_page.raise_()
+        else:
+            self._hide_all_pages()
+            self._app_container.show()
+
+    def _on_welcome_next(self, language: str) -> None:
+        """Welcome step 0 완료 → tutorial 페이지 표시."""
+        self._settings_overlay.hide()
+        self._tutorial_page.refresh_texts()
+        self.set_tutorial_mode(True)
+
+    def show_welcome_page(self, interval: int, freeze_minutes: int, language: str) -> None:
+        """Welcome step 2 페이지를 표시한다."""
+        self._welcome_page.show_welcome(interval=interval, freeze_minutes=freeze_minutes, language=language)
+        self.set_welcome_mode(True)
+
     def show_settings(
         self,
         interval: int,
@@ -998,11 +1072,7 @@ class MainWindow(QMainWindow):
         welcome_mode: bool = False,
         app_version: str = "",
     ) -> None:
-        """설정 오버레이를 표시한다."""
-        central = self.centralWidget()
-        if central is None:
-            return
-        self._settings_overlay.setGeometry(central.geometry())
+        """설정 페이지를 표시한다."""
         self._settings_overlay.show_settings(
             interval,
             language,
@@ -1011,14 +1081,10 @@ class MainWindow(QMainWindow):
             welcome_mode,
             app_version,
         )
+        self.set_settings_mode(True)
 
     def resizeEvent(self, a0) -> None:  # noqa: N802
-        """오버레이가 창 크기에 맞게 조정된다."""
         super().resizeEvent(a0)
-        if hasattr(self, "_settings_overlay"):
-            central = self.centralWidget()
-            if central is not None:
-                self._settings_overlay.setGeometry(central.geometry())
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:  # noqa: N802
         """닫기 버튼을 누르면 cleanup 시그널을 발생시킨다."""

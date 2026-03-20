@@ -2,70 +2,68 @@ package com.chg.progeresseye.ui.screen.dashboard
 
 import android.app.Application
 import android.app.Activity
+import android.content.Context
 import timber.log.Timber
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.chg.progeresseye.data.model.DashboardUiState
-import com.chg.progeresseye.data.model.DeviceData
-import com.chg.progeresseye.data.model.TaskData
+import com.chg.progeresseye.ui.screen.dashboard.DashboardUiState
+import com.chg.progeresseye.BuildConfig
+import com.chg.progeresseye.domain.repository.PolicyRepository
+import com.chg.progeresseye.domain.repository.UserPlanRepository
+import com.chg.progeresseye.domain.usecase.CheckDeviceHeartbeatsUseCase
+import com.chg.progeresseye.domain.usecase.GetCurrentUserUidUseCase
+import com.chg.progeresseye.domain.usecase.ObserveDevicesUseCase
+import com.chg.progeresseye.domain.usecase.SendShutdownCommandUseCase
+import com.chg.progeresseye.domain.usecase.SendSleepCommandUseCase
+import com.chg.progeresseye.domain.usecase.SendScreenshotCommandUseCase
+import com.chg.progeresseye.domain.usecase.UpdateMobileHeartbeatUseCase
+import com.chg.progeresseye.util.isPro
+import com.chg.progeresseye.util.toNormalizedPlan
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.ChildEventListener
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
-import com.chg.progeresseye.domain.repository.PolicyRepository
-import com.chg.progeresseye.domain.repository.UserPlanRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import android.content.Context
-import com.chg.progeresseye.BuildConfig
-import com.chg.progeresseye.util.FirebaseRefs
-import com.chg.progeresseye.util.CommandBuilder
-import com.chg.progeresseye.util.isPro
-import com.chg.progeresseye.util.toNormalizedPlan
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-// ═════════════════════════════════════════════════════════
-// DashboardViewModel — RTDB listener for devices + tasks
-//
-// 데이터 경로 분리:
-//   users/{uid}/devices/{id}/...      → ChildEventListener (태스크/스크린샷 변경)
-//   users/{uid}/deviceStatus/{id}     → ValueEventListener (접속 상태, 실시간)
-//   users/{uid}/heartbeat/{id}        → pull-to-refresh 시 읽기 (크래시 감지, 2분 threshold)
-//   users/{uid}/mobileHeartbeat       → 30초마다 모바일 하트비트 갱신
-// ═════════════════════════════════════════════════════════
-
-@HiltViewModel
 /**
  * 대시보드 화면의 비즈니스 로직과 UI 상태를 관리하는 ViewModel
  *
- * 연동된 PC 기기들의 실시간 상태(온라인, 작업 목록 등)를 구독하며, 전원 제어 및 화면 캡쳐 요청 기능을 수행
+ * 연동된 PC 기기들의 실시간 상태를 구독하며 전원 제어 및 화면 캡쳐 요청을 수행
  *
- * @param application 리소스 및 SharedPreference 접근을 위한 컨텍스트
- * @param userPlanRepository 사용자 결제 플랜 상태를 관찰하는 저장소
- * @param policyRepository 전역 보안/광고 정책을 관찰하는 저장소
+ * @param application 리소스 및 SharedPreference 접근 컨텍스트
+ * @param observeDevicesUseCase 기기 목록 관찰 UseCase
+ * @param checkDeviceHeartbeatsUseCase 기기 오프라인 판별 UseCase
+ * @param updateMobileHeartbeatUseCase 모바일 활성 상태 보고 UseCase
+ * @param sendScreenshotCommandUseCase 스크린샷 캡처 요청 UseCase
+ * @param sendSleepCommandUseCase 절전 모드 요청 UseCase
+ * @param sendShutdownCommandUseCase 시스템 종료 요청 UseCase
+ * @param getCurrentUserUidUseCase 현재 사용자 ID 반환 UseCase
+ * @param userPlanRepository 사용자 결제 플랜 상태 관찰 저장소
+ * @param policyRepository 전역 보안/광고 정책 관찰 저장소
  * @constructor Create empty [DashboardViewModel]
  */
+@HiltViewModel
 class DashboardViewModel @Inject constructor(
     application: Application,
+    private val observeDevicesUseCase: ObserveDevicesUseCase,
+    private val checkDeviceHeartbeatsUseCase: CheckDeviceHeartbeatsUseCase,
+    private val updateMobileHeartbeatUseCase: UpdateMobileHeartbeatUseCase,
+    private val sendScreenshotCommandUseCase: SendScreenshotCommandUseCase,
+    private val sendSleepCommandUseCase: SendSleepCommandUseCase,
+    private val sendShutdownCommandUseCase: SendShutdownCommandUseCase,
+    private val getCurrentUserUidUseCase: GetCurrentUserUidUseCase,
     private val userPlanRepository: UserPlanRepository,
     private val policyRepository: PolicyRepository,
 ) : AndroidViewModel(application) {
 
-    private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseDatabase.getInstance()
     private val prefs = getApplication<Application>().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -79,163 +77,97 @@ class DashboardViewModel @Inject constructor(
 
     private val _isRewardedAdReady = MutableStateFlow(false)
 
-    // 광고 동의 거부 시 Pro 구독 유도 다이얼로그
     private val _showSubscribeDialog = MutableStateFlow(false)
     val showSubscribeDialog: StateFlow<Boolean> = _showSubscribeDialog.asStateFlow()
 
     fun dismissSubscribeDialog() { _showSubscribeDialog.value = false }
 
-    // 광고 1회 시청 → 리워드 수량 × 1시간 무료 패스
     private val _adFreePassRemainingMs = MutableStateFlow(0L)
     val adFreePassRemainingMs: StateFlow<Long> = _adFreePassRemainingMs.asStateFlow()
     private var adFreePassJob: Job? = null
 
-    // Listener A: devices (ChildEventListener — 태스크/스크린샷 변경)
-    private var devicesRef: DatabaseReference? = null
-    private var devicesChildListener: ChildEventListener? = null
+    private var devicesJob: Job? = null
+    private var mobileHeartbeatJob: Job? = null
+    private var planJob: Job? = null
+    private var policyJob: Job? = null
+    private var screenshotTimeoutJob: Job? = null
+    private var refreshStartedAtMs: Long = 0L
 
-    // Listener B: deviceStatus (ValueEventListener — 접속 상태 실시간)
-    private var statusRef: DatabaseReference? = null
-    private var statusChildListener: ChildEventListener? = null
-
-    // Rewarded ad state
     private var rewardedAd: RewardedAd? = null
     private val _isRewardedAdLoading = MutableStateFlow(false)
     val isRewardedAdLoading: StateFlow<Boolean> = _isRewardedAdLoading.asStateFlow()
     private var shouldPreloadRewardedAd = false
-    // 광고 로드 중 클릭 시 대기열 — 로드 완료 후 자동 실행
     private var pendingAdActivity: Activity? = null
     private var pendingAdAction: (() -> Unit)? = null
 
-    // Mobile heartbeat job (60초 간격 RTDB 갱신)
-    private var mobileHeartbeatJob: Job? = null
-    private var screenshotTimeoutJob: Job? = null
-    private var planJob: Job? = null
-    private var policyJob: Job? = null
-    private var refreshStartedAtMs: Long = 0L
-
-    // Local caches
-    private val deviceCache = mutableMapOf<String, DeviceData>()
-    private val statusCache = mutableMapOf<String, String>() // deviceId -> "online"/"offline"
-    private val heartbeatCache = mutableMapOf<String, Long>()
-
-    // ── Listener setup ─────────────────────────────────────────
-
     /**
-     * Firebase Realtime Database의 기기 및 작업 목록 데이터 구독을 시작하여 UI 상태를 초기화
+     * 기기 및 작업 목록 데이터 구독을 시작하여 UI 상태를 초기화
      */
     fun startListening() {
-        if (devicesChildListener != null) return // already listening
-        val uid = auth.currentUser?.uid
+        val uid = getCurrentUserUidUseCase()
+        Timber.d("[Dashboard] startListening: uid=$uid")
         if (uid == null) {
             _uiState.value = DashboardUiState(isLoading = false, error = "Not signed in")
             return
         }
 
-        deviceCache.clear()
-        statusCache.clear()
-        heartbeatCache.clear()
         shouldPreloadRewardedAd = true
         restoreAdFreePass()
 
-        setupDevicesListener(uid)
-        setupStatusListener(uid)
+        devicesJob?.cancel()
+        devicesJob = viewModelScope.launch {
+            Timber.d("[Dashboard] observeDevices 구독 시작")
+            observeDevicesUseCase(uid).collect { devices ->
+                Timber.d("[Dashboard] observeDevices emit: devices.size=${devices.size}")
+                val currentLoading = _uiState.value.screenshotLoadingDeviceId
+                val stillLoading = if (currentLoading != null) {
+                    val dev = devices.find { it.id == currentLoading }
+                    val prevDev = _uiState.value.devices.find { it.id == currentLoading }
+                    dev != null && dev.screenshotTs == prevDev?.screenshotTs
+                } else false
 
-        // ChildEventListener만 사용하면 노드가 비어 있을 때 콜백이 오지 않아
-        // 로딩이 끝나지 않을 수 있으므로 초기 1회 스냅샷으로 상태를 보정한다.
-        bootstrapInitialState(uid)
+                val screenshotError = if (!stillLoading && currentLoading != null) {
+                    screenshotTimeoutJob?.cancel()
+                    null
+                } else {
+                    _uiState.value.screenshotError
+                }
 
-        // 앱 진입 시 heartbeat 체크 → 크래시 감지 → deviceStatus "offline" 전환
-        checkHeartbeat(uid)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    devices = devices,
+                    screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
+                    screenshotError = screenshotError
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                checkDeviceHeartbeatsUseCase(uid)
+            } catch (e: Exception) {
+                Timber.w(e, "Check heartbeats failed")
+            }
+        }
 
         planJob = viewModelScope.launch {
-            userPlanRepository.observeUserPlan(uid).collect { applyUserEntitlement(it) }
+            Timber.d("[Dashboard] observeUserPlan 구독 시작")
+            userPlanRepository.observeUserPlan(uid).collect {
+                Timber.d("[Dashboard] observeUserPlan emit: plan=$it")
+                applyUserEntitlement(it)
+            }
         }
         policyJob = viewModelScope.launch {
-            policyRepository.observePolicy().collect { applyGlobalAdFreeMode(it) }
+            Timber.d("[Dashboard] observePolicy 구독 시작")
+            policyRepository.observePolicy().collect {
+                Timber.d("[Dashboard] observePolicy emit: adFreeMode=$it")
+                applyGlobalAdFreeMode(it)
+            }
         }
 
-        // ── Mobile heartbeat (60초 간격 RTDB 갱신) ──
         startMobileHeartbeat(uid)
     }
 
-    private fun setupDevicesListener(uid: String) {
-        devicesRef = FirebaseRefs.devicesRef(uid)
-        devicesChildListener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val device = parseDevice(snapshot) ?: return
-                deviceCache[device.id] = device
-                emitState()
-            }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                val device = parseDevice(snapshot) ?: return
-                deviceCache[device.id] = device
-                emitState()
-            }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                val id = snapshot.key ?: return
-                deviceCache.remove(id)
-                emitState()
-            }
-
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) = Unit
-
-            override fun onCancelled(error: DatabaseError) {
-                handleListenerCancelled(error, tag = "devices", updateError = true)
-            }
-        }
-        devicesRef?.addChildEventListener(devicesChildListener!!)
-    }
-
-    private fun setupStatusListener(uid: String) {
-        statusRef = FirebaseRefs.deviceStatusRef(uid)
-        statusChildListener = object : ChildEventListener {
-            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                val deviceId = snapshot.key ?: return
-                statusCache[deviceId] = snapshot.getValue(String::class.java) ?: "offline"
-                emitState()
-            }
-
-            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                val deviceId = snapshot.key ?: return
-                statusCache[deviceId] = snapshot.getValue(String::class.java) ?: "offline"
-                emitState()
-            }
-
-            override fun onChildRemoved(snapshot: DataSnapshot) {
-                val deviceId = snapshot.key ?: return
-                statusCache.remove(deviceId)
-                emitState()
-            }
-
-            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) = Unit
-
-            override fun onCancelled(error: DatabaseError) {
-                handleListenerCancelled(error, tag = "deviceStatus", updateError = false)
-            }
-        }
-        statusRef?.addChildEventListener(statusChildListener!!)
-    }
-
-    private fun handleListenerCancelled(error: DatabaseError, tag: String, updateError: Boolean) {
-        if (error.code == DatabaseError.PERMISSION_DENIED) {
-            Timber.w(error.toException(), "$tag:onCancelled permission denied -> force sign-out")
-            _uiState.value = _uiState.value.copy(isLoading = false, requiresForcedSignOut = true, error = null)
-        } else {
-            Timber.e(error.toException(), "$tag:onCancelled")
-            if (updateError) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = error.message)
-            }
-        }
-    }
-
-    /**
-     * 사용자가 Pro 계정이 아닌 경우 리워드 광고 로드 요청을 전송
-     *
-     * @param context 광고를 로드하기 위한 Android 컨텍스트
-     */
     fun loadRewardedAd(context: Context) {
         if (shouldSkipRewardedAds()) return
         if (_isRewardedAdLoading.value || rewardedAd != null) return
@@ -252,7 +184,6 @@ class DashboardViewModel @Inject constructor(
                     _isRewardedAdLoading.value = false
                     shouldPreloadRewardedAd = false
                     _isRewardedAdReady.value = true
-                    // 대기 중인 액션이 있으면 자동으로 광고 표시
                     val activity = pendingAdActivity
                     val action = pendingAdAction
                     if (activity != null && action != null) {
@@ -276,25 +207,22 @@ class DashboardViewModel @Inject constructor(
 
     private fun applyUserEntitlement(planRaw: String) {
         _userPlan.value = planRaw.toNormalizedPlan()
-
         syncAdGateState()
     }
 
     private fun applyGlobalAdFreeMode(enabled: Boolean) {
         _isAdFreeModeEnabled.value = enabled
         isAdFreeMode = enabled
-
         syncAdGateState()
     }
 
     private fun syncAdGateState() {
-
         if (shouldSkipRewardedAds()) {
             rewardedAd = null
             _isRewardedAdReady.value = false
             shouldPreloadRewardedAd = false
         } else if (shouldPreloadRewardedAd && rewardedAd == null && !_isRewardedAdLoading.value) {
-            loadRewardedAd(db.app.applicationContext)
+            loadRewardedAd(getApplication<Application>().applicationContext)
         }
     }
 
@@ -302,7 +230,6 @@ class DashboardViewModel @Inject constructor(
         return _userPlan.value.isPro() || isAdFreeMode || _adFreePassRemainingMs.value > 0L
     }
 
-    /** 광고 시청 보상: 1시간 */
     private fun grantAdFreePass(rewardAmount: Int) {
         val durationMs = rewardAmount * AD_FREE_PASS_DURATION_MS
         val now = System.currentTimeMillis()
@@ -313,7 +240,6 @@ class DashboardViewModel @Inject constructor(
         startAdFreePassCountdown(newExpiry - now)
     }
 
-    /** 앱 재시작 시 저장된 패스 복원 */
     private fun restoreAdFreePass() {
         val remaining = prefs.getLong(KEY_AD_FREE_UNTIL, 0L) - System.currentTimeMillis()
         if (remaining > 0L) {
@@ -338,19 +264,16 @@ class DashboardViewModel @Inject constructor(
                 left -= 1_000L
                 _adFreePassRemainingMs.value = maxOf(0L, left)
             }
-            // 만료 — 광고 미리 로드
             syncAdGateState()
         }
     }
 
-    /** 광고 게이트 통과 후 [action] 실행. 패스/Pro이면 바로 실행. */
     fun showRewardedAdThen(activity: Activity, action: () -> Unit) {
         if (shouldSkipRewardedAds()) {
             action()
             return
         }
 
-        // 광고 동의 거부 또는 비맞춤형 광고 상태 → Pro 구독 유도
         val adsConsented = prefs.getBoolean(KEY_ADS_CONSENTED, true)
         val isPersonalized = prefs.getBoolean(KEY_IS_PERSONALIZED_ADS, true)
         if (!adsConsented || !isPersonalized) {
@@ -360,7 +283,6 @@ class DashboardViewModel @Inject constructor(
 
         val ad = rewardedAd
         if (ad == null) {
-            // 광고 로드 중 — 대기열에 저장, 로드 완료 시 자동 실행
             pendingAdActivity = activity
             pendingAdAction = action
             loadRewardedAd(activity.applicationContext)
@@ -374,12 +296,11 @@ class DashboardViewModel @Inject constructor(
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
                 if (rewardEarned) {
-                    grantAdFreePass(1) // 광고 1회 시청 = 1시간 (콘솔 amount 무시)
+                    grantAdFreePass(1)
                     action()
                 }
                 loadRewardedAd(activity.applicationContext)
             }
-
             override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
                 Timber.w("rewarded:onAdFailedToShow: ${adError.message}")
                 action()
@@ -390,249 +311,28 @@ class DashboardViewModel @Inject constructor(
         ad.show(activity) { rewardEarned = true }
     }
 
-    // 하위 호환 래퍼
     fun showRewardedAdThenScreenshot(activity: Activity, deviceId: String) =
         showRewardedAdThen(activity) { requestScreenshot(deviceId) }
-
-        // ── Mobile heartbeat (60초 간격) ─────────────────────────
 
     private fun startMobileHeartbeat(uid: String) {
         mobileHeartbeatJob?.cancel()
         mobileHeartbeatJob = viewModelScope.launch {
             while (true) {
-                // ServerValue.TIMESTAMP is used here (not System.currentTimeMillis()) to keep
-                // the heartbeat server-authoritative and consistent across time zones.
-                FirebaseRefs.mobileHeartbeatRef(uid)
-                    .setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
-                    .addOnFailureListener { e -> Timber.w(e, "[HEARTBEAT] mobile heartbeat write failed") }
+                try {
+                    updateMobileHeartbeatUseCase(uid)
+                } catch (e: Exception) {
+                    Timber.w(e, "[HEARTBEAT] update mobile heartbeat failed")
+                }
                 delay(MOBILE_HEARTBEAT_INTERVAL_MS)
             }
         }
     }
 
-    // ── Heartbeat check (pull-to-refresh 시만) ───────────────
-
-    private fun bootstrapInitialState(uid: String) {
-        var pendingReads = 2
-
-        fun finishRead() {
-            pendingReads -= 1
-            if (
-                pendingReads == 0 &&
-                _uiState.value.isLoading &&
-                !_uiState.value.requiresForcedSignOut
-            ) {
-                emitState()
-            }
-        }
-
-        FirebaseRefs.devicesRef(uid)
-            .addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    if (deviceCache.isEmpty()) {
-                        snapshot.children.forEach { child ->
-                            parseDevice(child)?.let { device ->
-                                deviceCache[device.id] = device
-                            }
-                        }
-                    }
-                    finishRead()
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    if (error.code == DatabaseError.PERMISSION_DENIED) {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            requiresForcedSignOut = true,
-                            error = null,
-                        )
-                    } else {
-                        Timber.w(error.toException(), "devices bootstrap cancelled")
-                    }
-                    finishRead()
-                }
-            })
-
-        FirebaseRefs.deviceStatusRef(uid)
-            .addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    if (statusCache.isEmpty()) {
-                        snapshot.children.forEach { child ->
-                            val deviceId = child.key ?: return@forEach
-                            val status = child.getValue(String::class.java) ?: "offline"
-                            statusCache[deviceId] = status
-                        }
-                    }
-                    finishRead()
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    if (error.code == DatabaseError.PERMISSION_DENIED) {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            requiresForcedSignOut = true,
-                            error = null,
-                        )
-                    } else {
-                        Timber.w(error.toException(), "deviceStatus bootstrap cancelled")
-                    }
-                    finishRead()
-                }
-            })
-    }
-
-    private fun checkHeartbeat(uid: String) {
-        val deviceIds = deviceCache.keys.toList()
-        if (deviceIds.isEmpty()) {
-            finishRefreshIfNeeded()
-            return
-        }
-
-        val now = System.currentTimeMillis()
-        FirebaseRefs.heartbeatRef(uid)
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val offlineUpdates = mutableMapOf<String, Any>()
-                for (deviceId in deviceIds) {
-                    val ts = snapshot.child(deviceId).getValue(Long::class.java) ?: 0L
-                    heartbeatCache[deviceId] = ts
-
-                    // 크래시 감지: heartbeat 2분 이상 만료 + 아직 online 상태인 기기만 offline 처리
-                    val isExpired = ts <= 0L || (now - ts) >= OFFLINE_THRESHOLD_MS
-                    val currentStatus = statusCache[deviceId]
-                    if (isExpired && currentStatus != "offline") {
-                        offlineUpdates[deviceId] = "offline"
-                    }
-                }
-
-                if (offlineUpdates.isNotEmpty()) {
-                    FirebaseRefs.deviceStatusRef(uid)
-                        .updateChildren(offlineUpdates)
-                }
-                emitState()
-                finishRefreshIfNeeded()
-            }
-            .addOnFailureListener { e ->
-                Timber.e(e, "heartbeat batch check failed")
-                finishRefreshIfNeeded()
-            }
-    }
-
-    private fun finishRefreshIfNeeded() {
-        if (!_uiState.value.isRefreshing) return
-
-        val elapsed = System.currentTimeMillis() - refreshStartedAtMs
-        val remaining = (MIN_REFRESH_DISPLAY_MS - elapsed).coerceAtLeast(0L)
-
-        viewModelScope.launch {
-            if (remaining > 0L) delay(remaining)
-            _uiState.value = _uiState.value.copy(isRefreshing = false)
-        }
-    }
-
-    // ── State emission ─────────────────────────────────────
-
-    private fun emitState() {
-        val devices = deviceCache.values.map { device ->
-            val rawStatus = statusCache[device.id] ?: "offline"
-            val isOnline = rawStatus == "online" || rawStatus == "monitoring" || rawStatus == "sleep"
-            val isMonitoring = rawStatus == "monitoring"
-            val isSleeping = rawStatus == "sleep"
-            val heartbeatTs = heartbeatCache[device.id] ?: 0L
-            device.copy(isOnline = isOnline, isMonitoring = isMonitoring, isSleeping = isSleeping, lastSeen = heartbeatTs)
-        }
-
-        val currentLoading = _uiState.value.screenshotLoadingDeviceId
-        val stillLoading = if (currentLoading != null) {
-            val dev = devices.find { it.id == currentLoading }
-            val prevDev = _uiState.value.devices.find { it.id == currentLoading }
-            dev != null && dev.screenshotTs == prevDev?.screenshotTs
-        } else false
-
-        // 스크린샷 성공 시 timeout 취소 + 에러 초기화
-        val screenshotError = if (!stillLoading && currentLoading != null) {
-            screenshotTimeoutJob?.cancel()
-            null
-        } else {
-            _uiState.value.screenshotError
-        }
-
-        _uiState.value = DashboardUiState(
-            isLoading = false,
-            devices = devices,
-            screenshotLoadingDeviceId = if (stillLoading) currentLoading else null,
-            screenshotError = screenshotError,
-            isRefreshing = _uiState.value.isRefreshing,
-        )
-    }
-
-    // ── Snapshot parsing ───────────────────────────────────
-
-    private fun parseDevice(snapshot: DataSnapshot): DeviceData? {
-        val id = snapshot.key ?: return null
-        val name = snapshot.child("name").getValue(String::class.java) ?: id
-        val platform = snapshot.child("platform").getValue(String::class.java) ?: ""
-
-        val tasks = snapshot.child("tasks").children.mapNotNull { taskSnap ->
-            parseTask(taskSnap)
-        }
-
-        // Screenshot latest
-        val screenshotLatest = snapshot.child("screenshots").child("latest")
-        val rawScreenshotUrl = screenshotLatest.child("url").getValue(String::class.java)
-        val screenshotUrl = rawScreenshotUrl?.takeIf {
-            it.startsWith("https://firebasestorage.googleapis.com/") ||
-            it.startsWith("https://progresseye-49244.firebasestorage.app/")
-        }
-        val screenshotTs = screenshotLatest.child("ts").getValue(Long::class.java) ?: 0L
-
-        // Hardware stats
-        val statsSnap = snapshot.child("stats")
-        val cpuUsage = statsSnap.child("cpu").getValue(Double::class.java)?.toFloat()
-        val gpuUsage = statsSnap.child("gpu").getValue(Double::class.java)?.toFloat()
-        val ramUsage = statsSnap.child("ram").getValue(Double::class.java)?.toFloat()
-
-        return DeviceData(
-            id = id,
-            name = name,
-            platform = platform,
-            isOnline = false, // statusCache에서 emitState()가 덮어씄
-            lastSeen = 0L, // heartbeatCache에서 emitState()가 덮어씄
-            tasks = tasks,
-            screenshotUrl = screenshotUrl,
-            screenshotTs = screenshotTs,
-            cpuUsage = cpuUsage,
-            gpuUsage = gpuUsage,
-            ramUsage = ramUsage,
-        )
-    }
-
-    private fun parseTask(snapshot: DataSnapshot): TaskData? {
-        val id = snapshot.key ?: return null
-        val progressRaw = (snapshot.child("p").value as? Number)?.toFloat() ?: 0f
-        val status = snapshot.child("s").getValue(String::class.java) ?: "r"
-        val label = snapshot.child("l").getValue(String::class.java) ?: id
-
-        return TaskData(
-            id = id,
-            label = label,
-            progress = progressRaw / 100f, // RTDB 0-100 → UI 0f..1f
-            status = status,
-        )
-    }
-
-    // ── Screenshot command ─────────────────────────────────
-
     fun requestScreenshot(deviceId: String) {
-        val uid = auth.currentUser?.uid
-        if (uid == null) {
-            Timber.w("[SCREENSHOT] uid is null, aborting")
-            return
-        }
+        val uid = getCurrentUserUidUseCase() ?: return
         Timber.d("[SCREENSHOT] requesting screenshot for device=$deviceId uid=$uid")
         _uiState.value = _uiState.value.copy(screenshotLoadingDeviceId = deviceId)
 
-        // Timeout: 30s
         screenshotTimeoutJob?.cancel()
         screenshotTimeoutJob = viewModelScope.launch {
             delay(SCREENSHOT_TIMEOUT_MS)
@@ -645,19 +345,18 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        val commandRef = FirebaseRefs.commandRef(uid, "screenshot")
-        commandRef.setValue(CommandBuilder.build(deviceId))
-            .addOnSuccessListener {
-                Timber.d("[SCREENSHOT] command written to RTDB successfully")
-            }
-            .addOnFailureListener { e ->
-                Timber.e(e, "[SCREENSHOT] command write FAILED: ${e.message}")
+        viewModelScope.launch {
+            try {
+                sendScreenshotCommandUseCase(uid, deviceId)
+            } catch (e: Exception) {
+                Timber.e(e, "[SCREENSHOT] command write FAILED")
                 screenshotTimeoutJob?.cancel()
                 _uiState.value = _uiState.value.copy(
                     screenshotLoadingDeviceId = null,
                     screenshotError = getApplication<Application>().getString(com.chg.progeresseye.R.string.screenshot_command_failed, e.message ?: "")
                 )
             }
+        }
     }
 
     fun clearScreenshotError() {
@@ -665,49 +364,56 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun sendSleepCommand(deviceId: String) {
-        val uid = auth.currentUser?.uid ?: return
-        FirebaseRefs.commandRef(uid, "sleep")
-            .setValue(CommandBuilder.build(deviceId))
-            .addOnSuccessListener { Timber.d("[CMD] sleep command sent: $deviceId") }
-            .addOnFailureListener { e -> Timber.w(e, "[CMD] sleep command failed") }
+        val uid = getCurrentUserUidUseCase() ?: return
+        viewModelScope.launch {
+            try {
+                sendSleepCommandUseCase(uid, deviceId)
+                Timber.d("[CMD] sleep command sent: $deviceId")
+            } catch (e: Exception) {
+                Timber.w(e, "[CMD] sleep command failed")
+            }
+        }
     }
 
     fun sendShutdownCommand(deviceId: String) {
-        val uid = auth.currentUser?.uid ?: return
-        FirebaseRefs.commandRef(uid, "shutdown")
-            .setValue(CommandBuilder.build(deviceId))
-            .addOnSuccessListener { Timber.d("[CMD] shutdown command sent: $deviceId") }
-            .addOnFailureListener { e -> Timber.w(e, "[CMD] shutdown command failed") }
+        val uid = getCurrentUserUidUseCase() ?: return
+        viewModelScope.launch {
+            try {
+                sendShutdownCommandUseCase(uid, deviceId)
+                Timber.d("[CMD] shutdown command sent: $deviceId")
+            } catch (e: Exception) {
+                Timber.w(e, "[CMD] shutdown command failed")
+            }
+        }
     }
 
     fun consumeForcedSignOut() {
         _uiState.value = _uiState.value.copy(requiresForcedSignOut = false)
     }
 
-    // ── Pull-to-Refresh ────────────────────────────────
-
     fun refresh() {
-        val uid = auth.currentUser?.uid ?: return
+        val uid = getCurrentUserUidUseCase() ?: return
         if (_uiState.value.isRefreshing) return
         refreshStartedAtMs = System.currentTimeMillis()
         _uiState.value = _uiState.value.copy(isRefreshing = true)
-        // pull-to-refresh 시에만 heartbeat 확인 → 크래시 감지
-        checkHeartbeat(uid)
+        
+        viewModelScope.launch {
+            try {
+                checkDeviceHeartbeatsUseCase(uid)
+            } catch (e: Exception) {
+                Timber.w(e, "Check heartbeats failed during refresh")
+            }
+            
+            val elapsed = System.currentTimeMillis() - refreshStartedAtMs
+            val remaining = (MIN_REFRESH_DISPLAY_MS - elapsed).coerceAtLeast(0L)
+            if (remaining > 0L) delay(remaining)
+            _uiState.value = _uiState.value.copy(isRefreshing = false)
+        }
     }
 
-    // ── Lifecycle: pause / cleanup ──────────────────────
-
     fun stopListening() {
-        devicesChildListener?.let { listener: ChildEventListener ->
-            devicesRef?.removeEventListener(listener)
-        }
-        devicesChildListener = null
-
-        statusChildListener?.let { listener ->
-            statusRef?.removeEventListener(listener)
-        }
-        statusChildListener = null
-
+        devicesJob?.cancel()
+        devicesJob = null
         mobileHeartbeatJob?.cancel()
         mobileHeartbeatJob = null
         screenshotTimeoutJob?.cancel()
@@ -735,17 +441,12 @@ class DashboardViewModel @Inject constructor(
     }
 
     companion object {
-        /** Mobile heartbeat interval (60 seconds). */
         private const val MOBILE_HEARTBEAT_INTERVAL_MS = 60_000L
-        /** Consider device offline if heartbeat > 2 minutes ago. */
-        private const val OFFLINE_THRESHOLD_MS = 120_000L
-        /** Keep pull-to-refresh indicator visible long enough for smooth animation. */
         private const val MIN_REFRESH_DISPLAY_MS = 900L
-        /** Screenshot request timeout. */
         private const val SCREENSHOT_TIMEOUT_MS = 30_000L
         private const val REWARDED_AD_UNIT_ID = "ca-app-pub-6572076936506117/7864871780"
         private const val REWARDED_AD_UNIT_ID_TEST = "ca-app-pub-3940256099942544/5224354917"
-        private const val AD_FREE_PASS_DURATION_MS = 3_600_000L // 1시간
+        private const val AD_FREE_PASS_DURATION_MS = 3_600_000L
         private const val PREFS_NAME = "dashboard_prefs"
         private const val KEY_AD_FREE_UNTIL = "ad_free_until_ms"
         const val KEY_ADS_CONSENTED = "ads_consented"

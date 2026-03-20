@@ -3,46 +3,29 @@ package com.chg.progeresseye.auth
 import android.app.Application
 import android.content.Context
 import com.chg.progeresseye.BuildConfig
-import com.chg.progeresseye.data.util.FirebaseConstants
 import com.chg.progeresseye.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.database.FirebaseDatabase
-import com.chg.progeresseye.util.FirebaseRefs
-import com.google.firebase.database.ServerValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
 import com.google.firebase.auth.FirebaseUser
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.UUID
-import java.security.MessageDigest
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
-
-// ═════════════════════════════════════════════════════════
-// Auth UI state
-// ═════════════════════════════════════════════════════════
+import kotlinx.coroutines.tasks.await
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import timber.log.Timber
+import com.chg.progeresseye.domain.usecase.GetWithdrawalStateUseCase
+import com.chg.progeresseye.domain.usecase.CallWithdrawalApiUseCase
+import com.chg.progeresseye.domain.usecase.CheckExistingSessionUseCase
+import com.chg.progeresseye.domain.usecase.ActivateMobileSessionUseCase
+import com.chg.progeresseye.domain.usecase.ClearSessionIfOwnedUseCase
+import com.chg.progeresseye.domain.usecase.UpdateUserDocumentUseCase
 
 /**
  * 인증 및 세션 제어와 관련된 UI 상태 데이터를 보관하는 데이터 클래스
- *
- * @property isLoading 로그인 및 네트워크 요청 중인지 여부
- * @property user 처리된 Firebase 사용자 객체
- * @property error 발생한 에러 메시지
- * @property requiresSessionTakeover 다른 기기에서 로그인되어 세션 뺏기가 필요한 상태인지 여부
- * @property existingDeviceName 기존 로그인된 기기 이름
- * @property requiresWithdrawalCancel 회원탈퇴 대기 기간 중 재로그인으로 인한 취소 승인 필요 여부
- * @property withdrawalGraceEndDate 유예 기간 만료 날짜
- * @constructor Create empty [AuthUiState]
  */
 data class AuthUiState(
     val isLoading: Boolean = false,
@@ -54,28 +37,21 @@ data class AuthUiState(
     val withdrawalGraceEndDate: String? = null,
 )
 
-// ═════════════════════════════════════════════════════════
-// ViewModel — bridges UI ↔ GoogleAuthRepository
-// ═════════════════════════════════════════════════════════
-
+@HiltViewModel
 /**
  * 인증 화면 및 세션 유지 로직을 관리하는 ViewModel
- *
- * Google 로그인과 Firebase Auth를 연동하여 사용자를 식별하고, 디바이스 정보를 등록합니다.
- *
- * @param application 전체 앱 라이프사이클에 접근하기 위한 Application 컨텍스트
- * @constructor Create empty [AuthViewModel]
  */
-class AuthViewModel(
+class AuthViewModel @Inject constructor(
     application: Application,
+    private val getWithdrawalStateUseCase: GetWithdrawalStateUseCase,
+    private val callWithdrawalApiUseCase: CallWithdrawalApiUseCase,
+    private val checkExistingSessionUseCase: CheckExistingSessionUseCase,
+    private val activateMobileSessionUseCase: ActivateMobileSessionUseCase,
+    private val clearSessionIfOwnedUseCase: ClearSessionIfOwnedUseCase,
+    private val updateUserDocumentUseCase: UpdateUserDocumentUseCase
 ) : AndroidViewModel(application) {
+    
     private val repository = GoogleAuthRepository()
-    private companion object {
-        private const val FUNCTIONS_BASE_URL = "https://us-central1-progresseye-49244.cloudfunctions.net"
-    }
-
-    private val db = FirebaseDatabase.getInstance()
-    private val firestore = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
     private var pendingUser: FirebaseUser? = null
     private var pendingUid: String? = null
     private var pendingWithdrawalUser: FirebaseUser? = null
@@ -88,9 +64,6 @@ class AuthViewModel(
         val firebaseUser = repository.getCurrentUser()
         val hasSession = MobileSessionManager.getSessionId(application) != null
         if (firebaseUser != null && !hasSession) {
-            // Firebase 인증은 됐지만 세션이 확인되지 않은 상태
-            // (세션 탈취 다이얼로그 중 앱 종료 후 재실행 등)
-            // Firebase만 즉시 로그아웃하고 로그인 화면으로
             repository.signOutFirebaseOnly()
             MobileSessionManager.clearSession(application)
             _uiState = MutableStateFlow(AuthUiState())
@@ -100,18 +73,12 @@ class AuthViewModel(
         uiState = _uiState.asStateFlow()
     }
 
-    /** True when user already has a valid Firebase session. */
     val isSignedIn: Boolean
         get() = repository.getCurrentUser() != null
 
-    /**
-     * Google Credential Manager 로그인을 통해 Firebase 인증을 시도합니다.
-     *
-     * @param context 로그인 인텐트 및 리소스를 획득하기 위한 컨텍스트
-     * @param webClientId Google Cloud 콘솔에서 발급받은 웹 클라이언트 ID
-     */
     fun signInWithGoogle(context: Context, webClientId: String) {
         viewModelScope.launch {
+            Timber.d("[Auth] signInWithGoogle: 시작")
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             val signInResult = try {
@@ -119,14 +86,18 @@ class AuthViewModel(
                     repository.signInWithGoogle(context, webClientId)
                 }
             } catch (_: TimeoutCancellationException) {
+                Timber.w("[Auth] signInWithGoogle: Google 로그인 타임아웃(20s)")
                 GoogleSignInResult.Error(context.getString(R.string.auth_sign_in_timeout))
             }
 
             when (val result = signInResult) {
                 is GoogleSignInResult.Success -> {
                     val uid = result.user.uid
+                    Timber.d("[Auth] Google 로그인 성공: uid=$uid")
                     val now = System.currentTimeMillis()
-                    val withdrawalState = getWithdrawalState(uid, result.user.email)
+                    Timber.d("[Auth] getWithdrawalStateUseCase 호출 중...")
+                    val withdrawalState = getWithdrawalStateUseCase(uid, result.user.email)
+                    Timber.d("[Auth] getWithdrawalStateUseCase 완료: pending=${withdrawalState.pending}")
                     val deleteAt = withdrawalState.deleteAt
                     val rejoinAllowedAt = withdrawalState.rejoinAllowedAt
                     if (withdrawalState.pending && deleteAt > now) {
@@ -153,8 +124,8 @@ class AuthViewModel(
                     }
                     proceedSessionCheck(context, result.user, uid)
                 }
-
                 is GoogleSignInResult.Cancelled -> {
+                    Timber.d("[Auth] Google 로그인 취소됨")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = if (BuildConfig.DEBUG) {
@@ -164,8 +135,8 @@ class AuthViewModel(
                         },
                     )
                 }
-
                 is GoogleSignInResult.Error -> {
+                    Timber.w("[Auth] Google 로그인 에러: ${result.message}")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         error = result.message,
@@ -186,7 +157,7 @@ class AuthViewModel(
 
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                activateMobileSession(context, uid)
+                doActivateSession(context, uid)
                 pendingUser = null
                 pendingUid = null
                 _uiState.value = AuthUiState(user = user)
@@ -211,7 +182,8 @@ class AuthViewModel(
 
     fun signOut(context: Context) {
         viewModelScope.launch {
-            clearMobileSessionIfOwned(context)
+            Timber.d("[Auth] signOut: 시작")
+            clearMobileSessionIfOwnedUseCase(context)
             repository.signOut(context)
             MobileSessionManager.clearSession(context)
             pendingUser = null
@@ -219,7 +191,14 @@ class AuthViewModel(
             pendingWithdrawalUser = null
             pendingWithdrawalUid = null
             _uiState.value = AuthUiState()
+            Timber.d("[Auth] signOut: 완료")
         }
+    }
+
+    private suspend fun clearMobileSessionIfOwnedUseCase(context: Context) {
+        val user = repository.getCurrentUser() ?: return
+        val localSessionId = MobileSessionManager.getSessionId(context) ?: return
+        try { clearSessionIfOwnedUseCase(user.uid, localSessionId) } catch (e: Exception) { }
     }
 
     fun confirmWithdrawalCancellation(context: Context) {
@@ -233,7 +212,7 @@ class AuthViewModel(
 
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                cancelWithdrawal(user.email)
+                callWithdrawalApi("cancelWithdrawal", user.email, user)
                 pendingWithdrawalUser = null
                 pendingWithdrawalUid = null
                 proceedSessionCheck(context, user, uid)
@@ -259,7 +238,7 @@ class AuthViewModel(
             pendingWithdrawalUser = null
             pendingWithdrawalUid = null
 
-            val blockUntil = if (uid.isNullOrBlank()) 0L else getWithdrawalState(uid, email).rejoinAllowedAt
+            val blockUntil = if (uid.isNullOrBlank()) 0L else getWithdrawalStateUseCase(uid, email).rejoinAllowedAt
             val blockDate = (blockUntil.takeIf { it > 0 } ?: System.currentTimeMillis()).toYmdString()
             _uiState.value = AuthUiState(
                 isLoading = false,
@@ -273,14 +252,14 @@ class AuthViewModel(
             val user = repository.getCurrentUser() ?: return@launch
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
+            Timber.d("[Auth] deleteAccount: requestWithdrawal API 호출 중...")
             try {
-                callWithdrawalApi(action = "requestWithdrawal", email = user.email)
-
+                callWithdrawalApi("requestWithdrawal", user.email, user)
+                Timber.d("[Auth] deleteAccount: requestWithdrawal API 성공")
             } catch (e: Exception) {
-                // withdrawal mark failed — still sign out locally
+                Timber.e(e, "[Auth] deleteAccount: requestWithdrawal API 실패")
             }
 
-            // Always clear local state regardless of remote errors
             repository.signOut(context)
             MobileSessionManager.clearSession(context)
             pendingUser = null
@@ -289,119 +268,26 @@ class AuthViewModel(
         }
     }
 
-    private data class WithdrawalState(
-        val pending: Boolean,
-        val deleteAt: Long,
-        val rejoinAllowedAt: Long,
-    )
-
-    private suspend fun getWithdrawalState(uid: String, email: String?): WithdrawalState {
-        var pending = false
-        var deleteAt = 0L
-        var rejoinAllowedAt = 0L
-        try {
-            val tomb = firestore.collection("withdrawnUsers").document(uid).get().await()
-            val rejoin = tomb.getLong("rejoinAllowedAt")
-            if (rejoin != null) {
-                rejoinAllowedAt = maxOf(rejoinAllowedAt, rejoin)
-            }
-        } catch (_: Exception) {
-        }
-        try {
-            val userDoc = firestore.collection("users").document(uid).get().await()
-            val status = userDoc.getString("withdrawalStatus")
-            if (status == "pending") {
-                pending = true
-            }
-            val delete = userDoc.getLong("deleteAt")
-            if (delete != null) {
-                deleteAt = maxOf(deleteAt, delete)
-            }
-            val rejoin = userDoc.getLong("rejoinAllowedAt")
-            if (rejoin != null) {
-                rejoinAllowedAt = maxOf(rejoinAllowedAt, rejoin)
-            }
-        } catch (_: Exception) {
-        }
-        val emailKey = emailKey(email)
-        if (emailKey.isNotBlank()) {
-            try {
-                val emailDoc = firestore.collection("withdrawnEmails").document(emailKey).get().await()
-                val rejoin = emailDoc.getLong("rejoinAllowedAt")
-                if (rejoin != null) {
-                    rejoinAllowedAt = maxOf(rejoinAllowedAt, rejoin)
-                }
-            } catch (_: Exception) {
-            }
-        }
-        return WithdrawalState(
-            pending = pending,
-            deleteAt = deleteAt,
-            rejoinAllowedAt = rejoinAllowedAt,
-        )
-    }
-
-    private suspend fun cancelWithdrawal(email: String?) {
-        callWithdrawalApi(action = "cancelWithdrawal", email = email)
-    }
-
-    private suspend fun callWithdrawalApi(action: String, email: String?) {
-        val user = repository.getCurrentUser() ?: throw IllegalStateException("Not signed in")
-        val idToken = user.getIdToken(true).await().token ?: throw IllegalStateException("idToken unavailable")
-        val url = URL("$FUNCTIONS_BASE_URL/$action")
-
-        withContext(Dispatchers.IO) {
-            val conn = (url.openConnection() as HttpURLConnection)
-            try {
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.doOutput = true
-                conn.setRequestProperty("Authorization", "Bearer $idToken")
-                conn.setRequestProperty("Content-Type", "application/json")
-
-                val payload = JSONObject()
-                    .put("email", email?.trim()?.lowercase().orEmpty())
-                    .toString()
-
-                conn.outputStream.use { output ->
-                    output.write(payload.toByteArray(Charsets.UTF_8))
-                }
-
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    val errorText = conn.errorStream?.bufferedReader()?.use { it.readText() }
-                        ?: "HTTP $code"
-                    throw IllegalStateException("$action failed: $code $errorText")
-                }
-            } finally {
-                conn.disconnect()
-            }
-        }
+    private suspend fun callWithdrawalApi(action: String, email: String?, user: FirebaseUser) {
+        val idTokenResult = user.getIdToken(true).await()
+        val idToken = idTokenResult.token ?: throw IllegalStateException("idToken unavailable")
+        callWithdrawalApiUseCase(action, email, idToken)
     }
 
     private fun Long.toYmdString(): String =
         java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
             .format(java.util.Date(this))
 
-    private fun emailKey(email: String?): String {
-        val normalized = email?.trim()?.lowercase().orEmpty()
-        if (normalized.isBlank()) return ""
-        val digest = MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
-    }
-
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {
         val myDeviceId = MobileSessionManager.getOrCreateDeviceId(context)
-        val sessionRef = FirebaseRefs.mobileSessionRef(uid)
+        Timber.d("[Auth] proceedSessionCheck: 시작 (uid=$uid, deviceId=$myDeviceId)")
 
         try {
-            val snapshot = withTimeout(10000L) { sessionRef.get().await() }
-            val existingDeviceId = snapshot.child("deviceId").getValue(String::class.java)
-            val existingDeviceName = snapshot.child("deviceName").getValue(String::class.java)
-
-            if (!existingDeviceId.isNullOrBlank() && existingDeviceId != myDeviceId) {
-                // 세션 미확인 상태로 표시 → 앱 종료 후 재실행 시 자동 로그인 방지
+            Timber.d("[Auth] checkExistingSessionUseCase 호출 중...")
+            val existingDeviceName = checkExistingSessionUseCase(uid, myDeviceId)
+            Timber.d("[Auth] checkExistingSessionUseCase 완료: existingDevice=$existingDeviceName")
+            if (existingDeviceName != null) {
+                Timber.d("[Auth] 세션 충돌 감지 → 세션 인수 UI 표시")
                 MobileSessionManager.clearSession(context)
                 pendingUser = user
                 pendingUid = uid
@@ -411,15 +297,35 @@ class AuthViewModel(
                     existingDeviceName = existingDeviceName,
                 )
             } else {
-                activateMobileSession(context, uid)
+                Timber.d("[Auth] 기존 세션 없음 → doActivateSession 호출 중...")
+                doActivateSession(context, uid)
+                Timber.d("[Auth] doActivateSession 완료 → 로그인 성공")
                 _uiState.value = AuthUiState(user = user)
             }
         } catch (e: Exception) {
+            Timber.e(e, "[Auth] proceedSessionCheck 예외 발생")
             _uiState.value = AuthUiState(
                 isLoading = false,
                 error = e.message ?: context.getString(R.string.auth_session_check_failed),
             )
         }
+    }
+    
+    private suspend fun doActivateSession(context: Context, uid: String) {
+       val deviceId = MobileSessionManager.getOrCreateDeviceId(context)
+       val deviceName = MobileSessionManager.getDeviceName()
+       val sessionId = java.util.UUID.randomUUID().toString()
+       Timber.d("[Auth] doActivateSession: deviceId=$deviceId, deviceName=$deviceName, sessionId=$sessionId")
+
+       Timber.d("[Auth] activateMobileSessionUseCase 호출 중...")
+       activateMobileSessionUseCase(uid, deviceId, deviceName, sessionId)
+       Timber.d("[Auth] activateMobileSessionUseCase 완료 → 세션 저장 중...")
+       MobileSessionManager.saveSessionId(context, sessionId)
+       Timber.d("[Auth] 세션 저장 완료")
+
+       val user = repository.getCurrentUser()
+       // Also updates firestore users collection in the background
+       try { updateUserDocumentUseCase(uid, user?.email ?: "", user?.displayName ?: "") } catch (_: Exception) {}
     }
 
     fun forceSignOutBySessionConflict(context: Context) {
@@ -446,51 +352,5 @@ class AuthViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
-    }
-
-    private suspend fun activateMobileSession(context: Context, uid: String) {
-        val sessionId = UUID.randomUUID().toString()
-        val deviceId = MobileSessionManager.getOrCreateDeviceId(context)
-        val deviceName = MobileSessionManager.getDeviceName()
-        FirebaseRefs.mobileSessionRef(uid)
-            .setValue(
-                mapOf(
-                    "sessionId" to sessionId,
-                    "deviceId" to deviceId,
-                    "deviceName" to deviceName,
-                    // ServerValue.TIMESTAMP: RTDB write uses server time to avoid clock skew.
-                    "updatedAt" to ServerValue.TIMESTAMP,
-                ),
-            )
-            .await()
-        MobileSessionManager.saveSessionId(context, sessionId)
-
-        // Firestore users/{uid} 문서 자동 생성/갱신 (plan 필드 보존)
-        val user = repository.getCurrentUser()
-        val userData = mapOf(
-            "email" to (user?.email ?: ""),
-            "displayName" to (user?.displayName ?: ""),
-            // System.currentTimeMillis(): Firestore write uses local time (no ServerValue support here).
-            "lastLoginAt" to System.currentTimeMillis(),
-        )
-        try {
-            firestore
-                .collection("users").document(uid)
-                .set(userData, SetOptions.merge())
-                .await()
-        } catch (e: Exception) {
-            timber.log.Timber.d(e, "Firestore user doc upsert failed")
-        }
-    }
-
-    private suspend fun clearMobileSessionIfOwned(context: Context) {
-        val user = repository.getCurrentUser() ?: return
-        val localSessionId = MobileSessionManager.getSessionId(context) ?: return
-        val sessionRef = FirebaseRefs.mobileSessionRef(user.uid)
-        val snapshot = sessionRef.get().await()
-        val remoteSessionId = snapshot.child("sessionId").getValue(String::class.java)
-        if (remoteSessionId == localSessionId) {
-            sessionRef.removeValue().await()
-        }
     }
 }

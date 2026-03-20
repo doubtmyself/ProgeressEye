@@ -1,4 +1,4 @@
-package com.chg.progeresseye.util
+package com.chg.progeresseye.data.util
 
 import java.util.UUID
 

@@ -52,6 +52,8 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DataSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import com.chg.progeresseye.domain.repository.AuthRepository
 
 @AndroidEntryPoint
 /**
@@ -60,6 +62,7 @@ import kotlinx.coroutines.launch
  * @constructor Create empty [MainActivity]
  */
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var authRepository: AuthRepository
     private var mobileSessionRef: DatabaseReference? = null
     private var mobileSessionListener: ValueEventListener? = null
     private var isHandlingSessionConflict: Boolean = false
@@ -92,13 +95,18 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val t0 = System.currentTimeMillis()
+        Timber.d("[Startup] MainActivity.onCreate start")
         super.onCreate(savedInstanceState)
+        Timber.d("[Startup] super.onCreate: +${System.currentTimeMillis() - t0}ms")
         enableEdgeToEdge()
 
         // 강제 버전 체크 (Firestore progress DB — 인증 불필요)
         checkMinVersion()
+        Timber.d("[Startup] checkMinVersion dispatched: +${System.currentTimeMillis() - t0}ms")
 
         setContent {
+            Timber.d("[Startup] setContent lambda entered: +${System.currentTimeMillis() - t0}ms")
             ProgressEyeTheme {
                 val authViewModel: AuthViewModel = viewModel()
                 val authState by authViewModel.uiState.collectAsStateWithLifecycle()
@@ -191,7 +199,7 @@ class MainActivity : ComponentActivity() {
                     composable("main") {
                         LaunchedEffect(Unit) {
                             requestNotificationPermission()
-                            FCMService.registerToken()
+                            FCMService.registerToken(authRepository)
                         }
                         MainScreen(
                             onSignOut = {
@@ -208,7 +216,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        Timber.d("[Startup] setContent done: +${System.currentTimeMillis() - t0}ms")
         requestConsentAndInitAds()
+        Timber.d("[Startup] requestConsentAndInitAds dispatched: +${System.currentTimeMillis() - t0}ms")
     }
 
     private fun requestConsentAndInitAds() {

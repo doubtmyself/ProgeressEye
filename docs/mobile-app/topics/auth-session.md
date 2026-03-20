@@ -8,6 +8,20 @@
 - `mobile-app/app/src/main/java/com/chg/progeresseye/auth/GoogleAuthRepository.kt`
 - `mobile-app/app/src/main/java/com/chg/progeresseye/MainActivity.kt`
 
+## Firestore 인스턴스 규칙 (필수)
+
+모든 Firestore 접근은 반드시 named DB를 사용해야 한다.
+
+```kotlin
+// ✅ 올바름
+FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
+
+// ❌ 금지 — 기본 DB를 가리켜 쓰기 hang 또는 Security Rules 거부 유발
+FirebaseFirestore.getInstance()
+```
+
+> `FirebaseConstants.FIRESTORE_DB = "progress"` (`data/src/.../data/util/FirebaseConstants.kt`)
+
 ## 확인 포인트
 - Google 로그인 성공 후 분기
 - 세션 takeover 확인 다이얼로그

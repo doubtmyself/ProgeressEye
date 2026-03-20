@@ -2,6 +2,8 @@
 <resources>
 
     <!-- Base app theme (Compose takes over immediately) -->
-    <style name="Theme.ProgeressEye" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.ProgeressEye" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#0f0f1a</item>
+    </style>
 
 </resources>

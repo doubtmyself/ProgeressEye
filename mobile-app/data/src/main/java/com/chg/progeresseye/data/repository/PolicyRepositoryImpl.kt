@@ -8,6 +8,7 @@ import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -16,12 +17,17 @@ import javax.inject.Inject
 class PolicyRepositoryImpl @Inject constructor() : PolicyRepository {
     private val db = FirebaseDatabase.getInstance()
     override fun observePolicy(): Flow<Boolean> = callbackFlow {
+        Timber.d("[PolicyRepo] observePolicy callbackFlow 시작")
         val ref = db.reference.child("policy").child("isAdFreeModeEnabled")
         val listener = ref.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                trySend(snapshot.getValue(Boolean::class.java) ?: false)
+                val value = snapshot.getValue(Boolean::class.java) ?: false
+                Timber.d("[PolicyRepo] onDataChange: adFreeMode=$value")
+                trySend(value)
             }
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onCancelled(error: DatabaseError) {
+                Timber.e("[PolicyRepo] onCancelled: ${error.message}")
+            }
         })
         awaitClose { ref.removeEventListener(listener) }
     }

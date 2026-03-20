@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -38,8 +39,10 @@ class SettingsOverlay(QWidget):
     """MainWindow 내부 오버레이 설정 패널."""
 
     saved = pyqtSignal(int, str, int)  # (interval, language, freeze_min)
+    welcome_next_requested = pyqtSignal(str)  # (selected_language)
     logout_requested = pyqtSignal()
     delete_account_requested = pyqtSignal()
+    reset_settings_requested = pyqtSignal()
     withdrawal_expired_test_requested = pyqtSignal()
     rejoin_expired_test_requested = pyqtSignal()
     privacy_policy_requested = pyqtSignal()
@@ -53,25 +56,23 @@ class SettingsOverlay(QWidget):
         self._welcome_mode = False
         self._welcome_step = 0  # 0=언어 선택, 1=절전안내+설정
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("background: rgba(0, 0, 0, 150);")
+        self.setStyleSheet(f"background: {APP_BG};")
         self.hide()
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         """UI를 구성한다."""
-        # ── 중앙 배치용 외부 레이아웃 ──
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addStretch()
+        outer.setSpacing(0)
 
         card_row = QHBoxLayout()
-        card_row.addStretch()
+        card_row.setContentsMargins(0, 0, 0, 0)
 
-        # ── 카드 위젯 ──
+        # ── 카드 위젯 (전체 화면) ──
         self._card = QWidget()
-        self._card.setFixedWidth(360)
         self._card.setStyleSheet(
-            f"background: {APP_BG};border: 1px solid {CARD_BORDER};border-radius: 16px;"
+            f"background: {APP_BG};"
         )
 
         layout = QVBoxLayout(self._card)
@@ -236,7 +237,7 @@ class SettingsOverlay(QWidget):
         self._sleep_text = QLabel(t("sleep_prevention_info"))
         self._sleep_text.setWordWrap(True)
         self._sleep_text.setStyleSheet(
-            f"color: {SUBTITLE_TEXT}; font-size: 11px;"
+            f"color: {SUBTITLE_TEXT}; font-size: 13px;"
             f" background: transparent; border: none;"
         )
         si.addWidget(self._sleep_text)
@@ -278,23 +279,23 @@ class SettingsOverlay(QWidget):
         self._btn_bar_guide.setToolTip(t("tooltip_show_bar_guide"))
         self._btn_bar_guide.clicked.connect(self._on_bar_guide_clicked)
         acc.addWidget(self._btn_bar_guide)
-        account_row = QHBoxLayout()
         self._email_label = QLabel("")
         self._email_label.setStyleSheet(
             f"color: {TITLE_TEXT}; font-size: 13px; background: transparent; border: none;"
         )
-        account_row.addWidget(self._email_label)
-        account_row.addStretch()
+        acc.addWidget(self._email_label)
+
+        account_btn_row = QHBoxLayout()
         self._btn_logout = QPushButton(t("btn_logout"))
         self._btn_logout.setStyleSheet(btn_style_logout)
         self._btn_logout.setToolTip(t("tooltip_logout"))
         self._btn_logout.clicked.connect(self._on_logout_clicked)
-        account_row.addWidget(self._btn_logout)
+        account_btn_row.addWidget(self._btn_logout)
         self._btn_delete_account = QPushButton(t("btn_delete_account"))
         self._btn_delete_account.setStyleSheet(btn_style_withdraw)
         self._btn_delete_account.setToolTip(t("tooltip_delete_account"))
         self._btn_delete_account.clicked.connect(self._on_delete_account_clicked)
-        account_row.addWidget(self._btn_delete_account)
+        account_btn_row.addWidget(self._btn_delete_account)
         self._btn_test_withdrawal_expired = QPushButton(
             t("btn_test_withdrawal_expired")
         )
@@ -306,7 +307,7 @@ class SettingsOverlay(QWidget):
             self._on_test_withdrawal_expired_clicked
         )
         self._btn_test_withdrawal_expired.setVisible(self._show_debug_buttons)
-        account_row.addWidget(self._btn_test_withdrawal_expired)
+        account_btn_row.addWidget(self._btn_test_withdrawal_expired)
         self._btn_test_rejoin_expired = QPushButton(t("btn_test_rejoin_expired"))
         self._btn_test_rejoin_expired.setStyleSheet(btn_style_withdraw)
         self._btn_test_rejoin_expired.setToolTip(t("tooltip_test_rejoin_expired"))
@@ -314,8 +315,31 @@ class SettingsOverlay(QWidget):
             self._on_test_rejoin_expired_clicked
         )
         self._btn_test_rejoin_expired.setVisible(self._show_debug_buttons)
-        account_row.addWidget(self._btn_test_rejoin_expired)
-        acc.addLayout(account_row)
+        account_btn_row.addWidget(self._btn_test_rejoin_expired)
+        account_btn_row.addStretch()
+        acc.addLayout(account_btn_row)
+
+        # ── 디버그: 설정 초기화 버튼 ──
+        btn_style_reset = (
+            "QPushButton {"
+            "  background: transparent;"
+            "  border: 1px solid #6b7280;"
+            "  color: #6b7280;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #6b7280;"
+            "  color: #ffffff;"
+            "}"
+        )
+        self._btn_reset_settings = QPushButton("[DEBUG] 설정 초기화")
+        self._btn_reset_settings.setStyleSheet(btn_style_reset)
+        self._btn_reset_settings.setToolTip("설정 파일과 인증 토큰을 삭제하고 로그아웃합니다.")
+        self._btn_reset_settings.clicked.connect(self._on_reset_settings_clicked)
+        self._btn_reset_settings.setVisible(self._show_debug_buttons)
+        acc.addWidget(self._btn_reset_settings)
         layout.addWidget(self._account_section)
 
         # ══════════════════════════════════════════
@@ -384,11 +408,26 @@ class SettingsOverlay(QWidget):
         self._btn_save.clicked.connect(self._on_save_clicked)
         bs.addWidget(self._btn_save)
         layout.addWidget(self._btn_section)
+        layout.addStretch()  # 남은 공간을 아래로 밀어 항목들을 상단 정렬
 
-        card_row.addWidget(self._card)
-        card_row.addStretch()
-        outer.addLayout(card_row)
-        outer.addStretch()
+        # ── 스크롤 영역 (전체 화면 채움) ──
+        self._scroll = QScrollArea()
+        self._scroll.setWidget(self._card)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setStyleSheet(
+            f"QScrollArea {{ background: {APP_BG}; border: none; }}"
+            "QScrollBar:vertical {"
+            "  background: transparent; width: 6px; margin: 0;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            f"  background: {CARD_BORDER}; border-radius: 3px; min-height: 20px;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+        card_row.addWidget(self._scroll)
+        outer.addLayout(card_row, stretch=1)
 
     # ── 공개 메서드 ──
 
@@ -414,8 +453,7 @@ class SettingsOverlay(QWidget):
         version_text = app_version.strip() if app_version else "-"
         self._app_version_label.setText(f"{t('settings_app_version')}: {version_text}")
         self._apply_visibility()
-        self.show()
-        self.raise_()
+        self._scroll.setMaximumHeight(16777215)  # 높이 제한 해제 (페이지 뷰)
 
     @property
     def interval_seconds(self) -> int:
@@ -461,6 +499,7 @@ class SettingsOverlay(QWidget):
             self._btn_delete_account.hide()  # welcome에서 회원탈퇴 숨김
             self._btn_test_withdrawal_expired.hide()
             self._btn_test_rejoin_expired.hide()
+            self._btn_reset_settings.hide()
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -478,6 +517,7 @@ class SettingsOverlay(QWidget):
             self._btn_delete_account.show()
             self._btn_test_withdrawal_expired.setVisible(self._show_debug_buttons)
             self._btn_test_rejoin_expired.setVisible(self._show_debug_buttons)
+            self._btn_reset_settings.setVisible(self._show_debug_buttons)
             self._interval_section.show()
             self._freeze_section.show()
             self._btn_section.show()
@@ -535,8 +575,8 @@ class SettingsOverlay(QWidget):
                 refresh()
         # 다이얼로그 자체 텍스트 갱신
         self._refresh_dialog_texts()
-        self._welcome_step = 1
-        self._apply_visibility()
+        self.hide()
+        self.welcome_next_requested.emit(new_lang)
 
     def _on_save_clicked(self) -> None:
         self.saved.emit(
@@ -558,6 +598,10 @@ class SettingsOverlay(QWidget):
         self.hide()
         self.delete_account_requested.emit()
 
+    def _on_reset_settings_clicked(self) -> None:
+        self.hide()
+        self.reset_settings_requested.emit()
+
     def _on_test_withdrawal_expired_clicked(self) -> None:
         self.withdrawal_expired_test_requested.emit()
         self.hide()
@@ -577,11 +621,275 @@ class SettingsOverlay(QWidget):
         self.hide()
 
     def mousePressEvent(self, a0: QMouseEvent | None) -> None:  # noqa: N802
-        """배경(카드 바깥) 클릭 시 닫기. 웰컴 모드에서는 무시."""
-        if a0 is None:
-            return
-        if self._welcome_mode:
-            return
-        if not self._card.geometry().contains(a0.pos()):
-            self.closed.emit()
-            self.hide()
+        pass
+
+
+class WelcomePage(QWidget):
+    """Welcome step 2: 모니터링 간격 · 멈춤 감지 시간 · 절전 방지 안내 전용 페이지."""
+
+    started = pyqtSignal(int, str, int)  # (interval, language, freeze_min)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"background: {APP_BG};")
+        self.hide()
+        self._language = "en"
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(
+            f"QScrollArea {{ background: {APP_BG}; border: none; }}"
+            "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+            f"QScrollBar::handle:vertical {{ background: {CARD_BORDER}; border-radius: 3px; min-height: 20px; }}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+
+        content = QWidget()
+        content.setStyleSheet(f"background: {APP_BG};")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(20)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        label_style = f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent; border: none;"
+        hint_style = f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
+        input_style = (
+            f"QSpinBox {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER};"
+            f" border-radius: 6px; padding: 6px 10px; color: {TITLE_TEXT}; font-size: 13px; }}"
+            f"QSpinBox:focus {{ border-color: {CHECKBOX_BLUE}; }}"
+            "QSpinBox::up-button { width: 24px; } QSpinBox::down-button { width: 24px; }"
+        )
+
+        # ── 절전 방지 안내 ──
+        sleep_frame = QFrame()
+        sleep_frame.setStyleSheet(
+            "QFrame { background: #1a2332; border: 1px solid #2a3a55; border-radius: 10px; padding: 14px; }"
+        )
+        sf = QVBoxLayout(sleep_frame)
+        sf.setSpacing(8)
+        sf.setContentsMargins(14, 14, 14, 14)
+        self._sleep_title = QLabel(t("sleep_prevention_title"))
+        self._sleep_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self._sleep_title.setStyleSheet("color: #22d3ee; background: transparent; border: none;")
+        sf.addWidget(self._sleep_title)
+        self._sleep_text = QLabel(t("sleep_prevention_info"))
+        self._sleep_text.setWordWrap(True)
+        self._sleep_text.setStyleSheet(f"color: {SUBTITLE_TEXT}; font-size: 13px; background: transparent; border: none;")
+        sf.addWidget(self._sleep_text)
+        layout.addWidget(sleep_frame)
+
+        # ── 모니터링 간격 ──
+        interval_section = QWidget()
+        interval_section.setStyleSheet("background: transparent; border: none;")
+        inv = QVBoxLayout(interval_section)
+        inv.setContentsMargins(0, 0, 0, 0)
+        inv.setSpacing(8)
+        self._interval_label = QLabel(t("settings_interval"))
+        self._interval_label.setStyleSheet(label_style)
+        inv.addWidget(self._interval_label)
+        self._interval_spin = QSpinBox()
+        self._interval_spin.setRange(1, 600)
+        self._interval_spin.setValue(1)
+        self._interval_spin.setSuffix(t("settings_interval_suffix"))
+        self._interval_spin.setStyleSheet(input_style)
+        self._interval_spin.setFixedHeight(36)
+        inv.addWidget(self._interval_spin)
+        self._interval_hint = QLabel(t("settings_interval_hint"))
+        self._interval_hint.setStyleSheet(hint_style)
+        inv.addWidget(self._interval_hint)
+        layout.addWidget(interval_section)
+
+        # ── 멈춤 감지 시간 ──
+        freeze_section = QWidget()
+        freeze_section.setStyleSheet("background: transparent; border: none;")
+        frz = QVBoxLayout(freeze_section)
+        frz.setContentsMargins(0, 0, 0, 0)
+        frz.setSpacing(8)
+        self._freeze_label = QLabel(t("settings_freeze_timeout"))
+        self._freeze_label.setStyleSheet(label_style)
+        frz.addWidget(self._freeze_label)
+        self._freeze_spin = QSpinBox()
+        self._freeze_spin.setRange(1, 60)
+        self._freeze_spin.setValue(5)
+        self._freeze_spin.setSuffix(t("settings_freeze_suffix"))
+        self._freeze_spin.setStyleSheet(input_style)
+        self._freeze_spin.setFixedHeight(36)
+        frz.addWidget(self._freeze_spin)
+        self._freeze_hint = QLabel(t("settings_freeze_hint"))
+        self._freeze_hint.setStyleSheet(hint_style)
+        frz.addWidget(self._freeze_hint)
+        layout.addWidget(freeze_section)
+
+        layout.addStretch()
+
+        # ── 시작하기 버튼 ──
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self._btn_start = QPushButton(t("btn_start_app"))
+        self._btn_start.setStyleSheet(
+            f"QPushButton {{ background: {CHECKBOX_BLUE}; border: none; border-radius: 6px;"
+            f" padding: 8px 28px; color: #ffffff; font-size: 13px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: #2563eb; }}"
+        )
+        self._btn_start.setDefault(True)
+        self._btn_start.clicked.connect(self._on_start_clicked)
+        btn_row.addWidget(self._btn_start)
+        layout.addLayout(btn_row)
+
+        scroll.setWidget(content)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll)
+
+    def show_welcome(self, interval: int, freeze_minutes: int, language: str) -> None:
+        """값을 세팅하고 페이지를 표시한다."""
+        self._language = language
+        self._interval_spin.setValue(interval)
+        self._freeze_spin.setValue(freeze_minutes)
+        self._sleep_title.setText(t("sleep_prevention_title"))
+        self._sleep_text.setText(t("sleep_prevention_info"))
+        self._interval_label.setText(t("settings_interval"))
+        self._interval_spin.setSuffix(t("settings_interval_suffix"))
+        self._interval_hint.setText(t("settings_interval_hint"))
+        self._freeze_label.setText(t("settings_freeze_timeout"))
+        self._freeze_spin.setSuffix(t("settings_freeze_suffix"))
+        self._freeze_hint.setText(t("settings_freeze_hint"))
+        self._btn_start.setText(t("btn_start_app"))
+        self.show()
+        self.raise_()
+
+    def _on_start_clicked(self) -> None:
+        self.started.emit(self._interval_spin.value(), self._language, self._freeze_spin.value())
+        self.hide()
+
+
+class TutorialPage(QWidget):
+    """Welcome step 1: 앱 사용법 안내 페이지."""
+
+    next_requested = pyqtSignal()
+
+    _STEPS = [
+        ("📊", "tutorial_step1_title", "tutorial_step1_desc"),
+        ("🔢", "tutorial_step2_title", "tutorial_step2_desc"),
+        ("▶", "tutorial_step3_title", "tutorial_step3_desc"),
+    ]
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"background: {APP_BG};")
+        self.hide()
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(
+            f"QScrollArea {{ background: {APP_BG}; border: none; }}"
+            "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
+            f"QScrollBar::handle:vertical {{ background: {CARD_BORDER}; border-radius: 3px; min-height: 20px; }}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
+
+        content = QWidget()
+        content.setStyleSheet(f"background: {APP_BG};")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(12)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        # ── 타이틀 ──
+        self._title = QLabel(t("tutorial_title"))
+        self._title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        self._title.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent; border: none;")
+        layout.addWidget(self._title)
+
+        self._subtitle = QLabel(t("tutorial_subtitle"))
+        self._subtitle.setStyleSheet(
+            f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent; border: none;"
+        )
+        self._subtitle.setWordWrap(True)
+        layout.addWidget(self._subtitle)
+
+        layout.addSpacing(8)
+
+        # ── 단계 카드 ──
+        self._step_cards: list[tuple[QLabel, QLabel, QLabel]] = []
+        accent_colors = ["#3b82f6", "#8b5cf6", "#10b981"]
+        for i, (icon, title_key, desc_key) in enumerate(self._STEPS):
+            card = QFrame()
+            card.setStyleSheet(
+                f"QFrame {{ background: {CARD_BG}; border: 1px solid {CARD_BORDER};"
+                f" border-left: 3px solid {accent_colors[i]}; border-radius: 10px; }}"
+            )
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(16, 16, 16, 16)
+            card_layout.setSpacing(16)
+
+            icon_label = QLabel(icon)
+            icon_label.setFont(QFont("Segoe UI Emoji", 24))
+            icon_label.setFixedWidth(40)
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setStyleSheet("background: transparent; border: none;")
+            card_layout.addWidget(icon_label)
+
+            text_col = QVBoxLayout()
+            text_col.setSpacing(4)
+            title_label = QLabel(t(title_key))
+            title_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+            title_label.setStyleSheet(f"color: {TITLE_TEXT}; background: transparent; border: none;")
+            desc_label = QLabel(t(desc_key))
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet(
+                f"color: {SUBTITLE_TEXT}; font-size: 12px; background: transparent; border: none;"
+            )
+            text_col.addWidget(title_label)
+            text_col.addWidget(desc_label)
+            card_layout.addLayout(text_col, stretch=1)
+
+            self._step_cards.append((icon_label, title_label, desc_label))
+            layout.addWidget(card)
+
+        layout.addStretch()
+
+        # ── 다음 버튼 ──
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self._btn_next = QPushButton(t("btn_next") + "  →")
+        self._btn_next.setStyleSheet(
+            f"QPushButton {{ background: {CHECKBOX_BLUE}; border: none; border-radius: 6px;"
+            f" padding: 8px 28px; color: #ffffff; font-size: 13px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: #2563eb; }}"
+        )
+        self._btn_next.setDefault(True)
+        self._btn_next.clicked.connect(self._on_next_clicked)
+        btn_row.addWidget(self._btn_next)
+        layout.addLayout(btn_row)
+
+        scroll.setWidget(content)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll)
+
+    def refresh_texts(self) -> None:
+        """언어 변경 후 텍스트를 갱신한다."""
+        self._title.setText(t("tutorial_title"))
+        self._subtitle.setText(t("tutorial_subtitle"))
+        for (_, title_label, desc_label), (_, title_key, desc_key) in zip(
+            self._step_cards, self._STEPS
+        ):
+            title_label.setText(t(title_key))
+            desc_label.setText(t(desc_key))
+        self._btn_next.setText(t("btn_next") + "  →")
+
+    def _on_next_clicked(self) -> None:
+        self.hide()
+        self.next_requested.emit()

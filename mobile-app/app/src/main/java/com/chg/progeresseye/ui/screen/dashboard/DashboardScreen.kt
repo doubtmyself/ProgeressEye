@@ -93,10 +93,10 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.chg.progeresseye.R
-import com.chg.progeresseye.data.model.DashboardUiState
-import com.chg.progeresseye.data.model.DeviceData
-import com.chg.progeresseye.data.model.TaskData
-import com.chg.progeresseye.data.model.TaskStatus
+import com.chg.progeresseye.ui.screen.dashboard.DashboardUiState
+import com.chg.progeresseye.domain.model.DeviceData
+import com.chg.progeresseye.domain.model.TaskData
+import com.chg.progeresseye.domain.model.TaskStatus
 
 import com.chg.progeresseye.ui.component.PreviewAppScaffold
 import com.chg.progeresseye.ui.component.PreviewNavTab

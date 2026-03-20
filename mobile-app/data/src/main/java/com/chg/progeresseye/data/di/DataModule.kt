@@ -27,4 +27,12 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindPolicyRepository(impl: PolicyRepositoryImpl): PolicyRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDeviceRepository(impl: com.chg.progeresseye.data.repository.DeviceRepositoryImpl): com.chg.progeresseye.domain.repository.DeviceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthRepository(impl: com.chg.progeresseye.data.repository.AuthRepositoryImpl): com.chg.progeresseye.domain.repository.AuthRepository
 }

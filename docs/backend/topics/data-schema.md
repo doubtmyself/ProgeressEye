@@ -3,6 +3,20 @@
 ## 목적
 사용자/기기/작업/명령/알림 데이터 경로를 빠르게 확인한다.
 
+## Firestore named database 규칙 (필수)
+
+이 프로젝트는 기본(default) Firestore DB가 아닌 **`"progress"`** named database를 사용한다.
+
+| 플랫폼 | 올바른 접근 방법 |
+|---|---|
+| 모바일 (Android) | `FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)` |
+| PC (Python) | REST URL에 `/databases/progress/` 명시 |
+
+**모바일 주의:** `FirebaseFirestore.getInstance()` (인자 없음)는 기본 DB를 가리키므로 사용 금지.
+기본 DB에 대한 쓰기는 Security Rules 거부 또는 무한 대기(hang)를 유발한다.
+
+**PC 주의:** REST URL 예시: `https://firestore.googleapis.com/v1/projects/{project_id}/databases/progress/documents/...`
+
 ## 기준 문서
 - `docs/api-spec.md`
 

@@ -1,9 +1,4 @@
-package com.chg.progeresseye.data.model
-
-// ═════════════════════════════════════════════════════════
-// Firebase RTDB data models
-// Path: users/{uid}/devices/{deviceId}/
-// ═════════════════════════════════════════════════════════
+package com.chg.progeresseye.domain.model
 
 /**
  * 모니터링 대상인 개별 작업(예: 렌더링, 다운로드 등)의 상태를 나타내는 데이터 모델
@@ -23,7 +18,24 @@ data class TaskData(
     val status: String,
 )
 
-/** A registered PC device with its tasks. */
+/**
+ * 데스크탑 에이전트가 설치된 제어 대상 PC의 상태 및 하드웨어 점유율 정보를 담은 모델
+ *
+ * @property id 디바이스 식별자
+ * @property name 화면에 표시할 디바이스 이름
+ * @property platform OS 플랫폼
+ * @property isOnline 현재 실시간 통신 연결 상태
+ * @property lastSeen 마지막으로 하트비트가 확인된 시간
+ * @property isMonitoring 작업 모니터링이 활성화된 상태인지 여부
+ * @property isSleeping 기기가 절전 상태인지 여부
+ * @property tasks 모니터링 중인 작업 데이터 목록
+ * @property screenshotUrl 가장 최근에 캡처된 화면의 스토리지 URL
+ * @property screenshotTs 스크린샷이 캡처된 시간
+ * @property cpuUsage PC CPU 점유율
+ * @property gpuUsage PC GPU 점유율
+ * @property ramUsage PC RAM 점유율
+ * @constructor Create empty [DeviceData]
+ */
 data class DeviceData(
     val id: String,
     val name: String,
@@ -45,20 +57,6 @@ data class DeviceData(
     val gpuUsage: Float? = null,
     /** RAM usage 0-100 (from PC agent). Null if unavailable. */
     val ramUsage: Float? = null,
-)
-
-/** Dashboard screen UI state. */
-data class DashboardUiState(
-    val isLoading: Boolean = true,
-    val devices: List<DeviceData> = emptyList(),
-    val error: String? = null,
-    val requiresForcedSignOut: Boolean = false,
-    /** Device ID currently waiting for screenshot response. */
-    val screenshotLoadingDeviceId: String? = null,
-    /** Screenshot error message to display (timeout, failure). */
-    val screenshotError: String? = null,
-    /** True during pull-to-refresh. */
-    val isRefreshing: Boolean = false,
 )
 
 // ── Status constants (match PC Agent codes) ──
