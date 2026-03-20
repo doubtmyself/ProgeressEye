@@ -111,10 +111,10 @@ import com.chg.progeresseye.ui.theme.StatusSleep
 import com.chg.progeresseye.ui.theme.StatusStalled
 import com.chg.progeresseye.ui.theme.SurfaceContainerDark
 import com.chg.progeresseye.ui.theme.SurfaceContainerHighDark
+import com.chg.progeresseye.ui.theme.Slate400
 import com.chg.progeresseye.ui.theme.SurfaceDark
 
 // ── Local palette (dashboard-specific) ──
-private val Slate400 = Color(0xFF94A3B8)
 private val Slate800 = Color(0xFF1E293B)
 private val Blue300 = Color(0xFF93C5FD)
 private val Emerald300 = Color(0xFF6EE7B7)

@@ -533,6 +533,33 @@ private fun AppearanceCard(
 }
 
 // ═════════════════════════════════════════════════════════
+// Generic clickable row — reused in AboutCard
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun ClickableSettingRow(
+    label: String,
+    onClick: () -> Unit,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = OnSurfaceDark,
+            modifier = Modifier.weight(1f),
+        )
+        trailing?.invoke()
+    }
+}
+
+// ═════════════════════════════════════════════════════════
 // ABOUT card — version + licenses
 // ═════════════════════════════════════════════════════════
 
@@ -576,95 +603,74 @@ private fun AboutCard(
         HorizontalDivider(color = OutlineVariantDark)
 
         // Privacy policy
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { uriHandler.openUri(policyUrl) }
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_privacy_policy),
-                style = MaterialTheme.typography.bodyLarge,
-                color = OnSurfaceDark,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = OnSurfaceVariantDark,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-
-        // 광고 개인정보 설정 (미국 사용자 전용 — CCPA)
-        if (showPrivacyButton) {
-            HorizontalDivider(color = OutlineVariantDark)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onShowPrivacyOptions)
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_ad_privacy),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = OnSurfaceDark,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = stringResource(R.string.settings_ad_reward_personalized),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurfaceVariantDark,
-                )
+        ClickableSettingRow(
+            label = stringResource(R.string.settings_privacy_policy),
+            onClick = { uriHandler.openUri(policyUrl) },
+            trailing = {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     tint = OnSurfaceVariantDark,
                     modifier = Modifier.size(20.dp),
                 )
-            }
+            },
+        )
+
+        // 광고 개인정보 설정 (미국 사용자 전용 — CCPA)
+        if (showPrivacyButton) {
+            HorizontalDivider(color = OutlineVariantDark)
+            ClickableSettingRow(
+                label = stringResource(R.string.settings_ad_privacy),
+                onClick = onShowPrivacyOptions,
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.settings_ad_reward_personalized),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnSurfaceVariantDark,
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = OnSurfaceVariantDark,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+            )
         }
 
         HorizontalDivider(color = OutlineVariantDark)
 
         // Open Source Licenses
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    val intent = Intent(context, OssLicensesActivity::class.java)
-                    if (context !is Activity) {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
+        ClickableSettingRow(
+            label = stringResource(R.string.settings_oss_licenses),
+            onClick = {
+                val intent = Intent(context, OssLicensesActivity::class.java)
+                if (context !is Activity) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_oss_licenses),
-                style = MaterialTheme.typography.bodyLarge,
-                color = OnSurfaceDark,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = OnSurfaceVariantDark,
-                modifier = Modifier.size(20.dp),
-            )
-        }
+                context.startActivity(intent)
+            },
+            trailing = {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = OnSurfaceVariantDark,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
+        )
     }
 }
 
 // ═════════════════════════════════════════════════════════
-// Logout confirmation dialog
+// Generic confirmation dialog — reused by Logout and DeleteAccount
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun LogoutConfirmDialog(
+private fun ConfirmationDialog(
+    title: String,
+    message: String,
+    confirmText: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -673,35 +679,33 @@ private fun LogoutConfirmDialog(
         containerColor = SurfaceContainerDark,
         titleContentColor = OnSurfaceDark,
         textContentColor = OnSurfaceVariantDark,
-        title = {
-            Text(
-                text = stringResource(R.string.settings_logout_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
-        },
-        text = {
-            Text(
-                text = stringResource(R.string.settings_logout_message),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        },
+        title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
+        text = { Text(text = message, style = MaterialTheme.typography.bodyMedium) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.settings_logout),
-                    color = ErrorRed,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text(text = confirmText, color = ErrorRed, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.settings_cancel),
-                    color = OnSurfaceVariantDark,
-                )
+                Text(text = stringResource(R.string.settings_cancel), color = OnSurfaceVariantDark)
             }
         },
+    )
+}
+
+// ═════════════════════════════════════════════════════════
+// Logout confirmation dialog
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun LogoutConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmationDialog(
+        title = stringResource(R.string.settings_logout_title),
+        message = stringResource(R.string.settings_logout_message),
+        confirmText = stringResource(R.string.settings_logout),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
     )
 }
 
@@ -710,44 +714,13 @@ private fun LogoutConfirmDialog(
 // ═════════════════════════════════════════════════════════
 
 @Composable
-private fun DeleteAccountConfirmDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceContainerDark,
-        titleContentColor = OnSurfaceDark,
-        textContentColor = OnSurfaceVariantDark,
-        title = {
-            Text(
-                text = stringResource(R.string.settings_delete_account_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
-        },
-        text = {
-            Text(
-                text = stringResource(R.string.settings_delete_account_message),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.settings_delete_account_confirm),
-                    color = ErrorRed,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.settings_cancel),
-                    color = OnSurfaceVariantDark,
-                )
-            }
-        },
+private fun DeleteAccountConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmationDialog(
+        title = stringResource(R.string.settings_delete_account_title),
+        message = stringResource(R.string.settings_delete_account_message),
+        confirmText = stringResource(R.string.settings_delete_account_confirm),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
     )
 }
 

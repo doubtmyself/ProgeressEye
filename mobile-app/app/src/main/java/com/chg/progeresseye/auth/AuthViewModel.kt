@@ -8,6 +8,7 @@ import com.chg.progeresseye.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
+import com.chg.progeresseye.util.FirebaseRefs
 import com.google.firebase.database.ServerValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -366,10 +367,7 @@ class AuthViewModel(
 
     private suspend fun proceedSessionCheck(context: Context, user: FirebaseUser, uid: String) {
         val myDeviceId = MobileSessionManager.getOrCreateDeviceId(context)
-        val sessionRef = db.reference
-            .child("users")
-            .child(uid)
-            .child("mobileSession")
+        val sessionRef = FirebaseRefs.mobileSessionRef(uid)
 
         try {
             val snapshot = withTimeout(10000L) { sessionRef.get().await() }
@@ -428,15 +426,13 @@ class AuthViewModel(
         val sessionId = UUID.randomUUID().toString()
         val deviceId = MobileSessionManager.getOrCreateDeviceId(context)
         val deviceName = MobileSessionManager.getDeviceName()
-        db.reference
-            .child("users")
-            .child(uid)
-            .child("mobileSession")
+        FirebaseRefs.mobileSessionRef(uid)
             .setValue(
                 mapOf(
                     "sessionId" to sessionId,
                     "deviceId" to deviceId,
                     "deviceName" to deviceName,
+                    // ServerValue.TIMESTAMP: RTDB write uses server time to avoid clock skew.
                     "updatedAt" to ServerValue.TIMESTAMP,
                 ),
             )
@@ -448,6 +444,7 @@ class AuthViewModel(
         val userData = mapOf(
             "email" to (user?.email ?: ""),
             "displayName" to (user?.displayName ?: ""),
+            // System.currentTimeMillis(): Firestore write uses local time (no ServerValue support here).
             "lastLoginAt" to System.currentTimeMillis(),
         )
         try {
@@ -463,10 +460,7 @@ class AuthViewModel(
     private suspend fun clearMobileSessionIfOwned(context: Context) {
         val user = repository.getCurrentUser() ?: return
         val localSessionId = MobileSessionManager.getSessionId(context) ?: return
-        val sessionRef = db.reference
-            .child("users")
-            .child(user.uid)
-            .child("mobileSession")
+        val sessionRef = FirebaseRefs.mobileSessionRef(user.uid)
         val snapshot = sessionRef.get().await()
         val remoteSessionId = snapshot.child("sessionId").getValue(String::class.java)
         if (remoteSessionId == localSessionId) {

@@ -35,3 +35,4 @@ val ProgressGradientEnd = Color(0xFF22D3EE)  // cyan-400
 // ── Accent ──
 val Indigo400 = Color(0xFF818CF8)
 val Indigo500 = Color(0xFF6366F1)
+val Slate400 = Color(0xFF94A3B8)

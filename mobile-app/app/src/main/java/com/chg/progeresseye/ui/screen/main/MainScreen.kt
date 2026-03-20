@@ -70,14 +70,12 @@ import com.chg.progeresseye.ui.theme.BackgroundDark
 import com.chg.progeresseye.ui.theme.OnSurfaceDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
+import com.chg.progeresseye.ui.theme.Slate400
 import com.chg.progeresseye.ui.theme.SurfaceDark
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chg.progeresseye.ui.component.BannerAd
-
-// ── Local palette ──
-private val Slate400 = Color(0xFF94A3B8)
 
 // ── Nav items ──
 private data class NavItem(

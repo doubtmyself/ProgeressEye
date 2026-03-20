@@ -28,6 +28,9 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.chg.progeresseye.util.FirebaseRefs
+import com.chg.progeresseye.util.isPro
+import com.chg.progeresseye.util.toNormalizedPlan
 import timber.log.Timber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -109,7 +112,7 @@ class SettingsViewModel @Inject constructor(
             viewModelScope.launch {
                 userPlanRepository.observeUserPlan(uid).collect { plan ->
                     _uiState.update { state ->
-                        state.copy(currentPlan = if (plan == "pro") "pro" else "free")
+                        state.copy(currentPlan = plan.toNormalizedPlan())
                     }
                 }
             }
@@ -290,7 +293,7 @@ class SettingsViewModel @Inject constructor(
             if (purchases.isNullOrEmpty()) {
                 // 활성 구독 없음 → RTDB plan을 free로 갱신 (취소/만료 시 자동 반영)
                 val uid = auth.currentUser?.uid ?: return@queryPurchasesAsync
-                rtdb.reference.child("users").child(uid).child("plan").setValue("free")
+                FirebaseRefs.planRef(uid).setValue("free")
                 return@queryPurchasesAsync
             }
             processPurchases(purchases, showSuccessMessage = false)
@@ -363,7 +366,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun grantProEntitlement(purchase: Purchase, showSuccessMessage: Boolean) {
-        if (_uiState.value.currentPlan == "pro" && !showSuccessMessage) {
+        if (_uiState.value.currentPlan.isPro() && !showSuccessMessage) {
             _uiState.update { it.copy(isPurchaseLoading = false) }
             return
         }
@@ -380,7 +383,7 @@ class SettingsViewModel @Inject constructor(
         }
 
         // Google Play 확인 후 RTDB에 plan: "pro" 기록 (PC 앱에서도 읽을 수 있도록)
-        rtdb.reference.child("users").child(uid).child("plan").setValue("pro")
+        FirebaseRefs.planRef(uid).setValue("pro")
             .addOnSuccessListener {
                 // Firestore에 purchaseToken + 결제일 백업 (서버 검증 도입 시 활용)
                 firestore.collection("users")

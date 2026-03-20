@@ -30,9 +30,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.UUID
 import android.content.Context
 import com.chg.progeresseye.BuildConfig
+import com.chg.progeresseye.util.FirebaseRefs
+import com.chg.progeresseye.util.CommandBuilder
+import com.chg.progeresseye.util.isPro
+import com.chg.progeresseye.util.toNormalizedPlan
 
 // ═════════════════════════════════════════════════════════
 // DashboardViewModel — RTDB listener for devices + tasks
@@ -53,6 +56,7 @@ class DashboardViewModel @Inject constructor(
 
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseDatabase.getInstance()
+    private val prefs = getApplication<Application>().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -143,7 +147,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun setupDevicesListener(uid: String) {
-        devicesRef = db.reference.child("users").child(uid).child("devices")
+        devicesRef = FirebaseRefs.devicesRef(uid)
         devicesChildListener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val device = parseDevice(snapshot) ?: return
@@ -173,7 +177,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun setupStatusListener(uid: String) {
-        statusRef = db.reference.child("users").child(uid).child("deviceStatus")
+        statusRef = FirebaseRefs.deviceStatusRef(uid)
         statusChildListener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 val deviceId = snapshot.key ?: return
@@ -253,7 +257,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun applyUserEntitlement(planRaw: String) {
-        _userPlan.value = if (planRaw == "pro") "pro" else "free"
+        _userPlan.value = planRaw.toNormalizedPlan()
 
         syncAdGateState()
     }
@@ -277,13 +281,11 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun shouldSkipRewardedAds(): Boolean {
-        return _userPlan.value == "pro" || isAdFreeMode || _adFreePassRemainingMs.value > 0L
+        return _userPlan.value.isPro() || isAdFreeMode || _adFreePassRemainingMs.value > 0L
     }
 
     /** 광고 시청 보상: 1시간 */
     private fun grantAdFreePass(rewardAmount: Int) {
-        val prefs = getApplication<Application>()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val durationMs = rewardAmount * AD_FREE_PASS_DURATION_MS
         val now = System.currentTimeMillis()
         val existing = prefs.getLong(KEY_AD_FREE_UNTIL, 0L)
@@ -295,8 +297,6 @@ class DashboardViewModel @Inject constructor(
 
     /** 앱 재시작 시 저장된 패스 복원 */
     private fun restoreAdFreePass() {
-        val prefs = getApplication<Application>()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getLong(KEY_AD_FREE_UNTIL, 0L) - System.currentTimeMillis()
         if (remaining > 0L) {
             startAdFreePassCountdown(remaining)
@@ -306,9 +306,7 @@ class DashboardViewModel @Inject constructor(
     fun clearAdFreePass() {
         adFreePassJob?.cancel()
         _adFreePassRemainingMs.value = 0L
-        getApplication<Application>()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().remove(KEY_AD_FREE_UNTIL).apply()
+        prefs.edit().remove(KEY_AD_FREE_UNTIL).apply()
         syncAdGateState()
     }
 
@@ -334,8 +332,6 @@ class DashboardViewModel @Inject constructor(
             return
         }
 
-        val prefs = getApplication<Application>()
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         // 광고 동의 거부 또는 비맞춤형 광고 상태 → Pro 구독 유도
         val adsConsented = prefs.getBoolean(KEY_ADS_CONSENTED, true)
         val isPersonalized = prefs.getBoolean(KEY_IS_PERSONALIZED_ADS, true)
@@ -386,8 +382,9 @@ class DashboardViewModel @Inject constructor(
         mobileHeartbeatJob?.cancel()
         mobileHeartbeatJob = viewModelScope.launch {
             while (true) {
-                db.reference.child("users").child(uid)
-                    .child("mobileHeartbeat")
+                // ServerValue.TIMESTAMP is used here (not System.currentTimeMillis()) to keep
+                // the heartbeat server-authoritative and consistent across time zones.
+                FirebaseRefs.mobileHeartbeatRef(uid)
                     .setValue(com.google.firebase.database.ServerValue.TIMESTAMP)
                     .addOnFailureListener { e -> Timber.w(e, "[HEARTBEAT] mobile heartbeat write failed") }
                 delay(MOBILE_HEARTBEAT_INTERVAL_MS)
@@ -411,7 +408,7 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        db.reference.child("users").child(uid).child("devices")
+        FirebaseRefs.devicesRef(uid)
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     if (deviceCache.isEmpty()) {
@@ -438,7 +435,7 @@ class DashboardViewModel @Inject constructor(
                 }
             })
 
-        db.reference.child("users").child(uid).child("deviceStatus")
+        FirebaseRefs.deviceStatusRef(uid)
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     if (statusCache.isEmpty()) {
@@ -474,8 +471,7 @@ class DashboardViewModel @Inject constructor(
         }
 
         val now = System.currentTimeMillis()
-        db.reference.child("users").child(uid)
-            .child("heartbeat")
+        FirebaseRefs.heartbeatRef(uid)
             .get()
             .addOnSuccessListener { snapshot ->
                 val offlineUpdates = mutableMapOf<String, Any>()
@@ -492,8 +488,7 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 if (offlineUpdates.isNotEmpty()) {
-                    db.reference.child("users").child(uid)
-                        .child("deviceStatus")
+                    FirebaseRefs.deviceStatusRef(uid)
                         .updateChildren(offlineUpdates)
                 }
                 emitState()
@@ -632,16 +627,8 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        val commandRef = db.reference
-            .child("users").child(uid)
-            .child("commands").child("screenshot")
-        commandRef.setValue(
-            mapOf(
-                "ts" to System.currentTimeMillis() / 1000,
-                "cmdId" to UUID.randomUUID().toString(),
-                "targetDeviceId" to deviceId,
-            )
-        )
+        val commandRef = FirebaseRefs.commandRef(uid, "screenshot")
+        commandRef.setValue(CommandBuilder.build(deviceId))
             .addOnSuccessListener {
                 Timber.d("[SCREENSHOT] command written to RTDB successfully")
             }
@@ -661,24 +648,16 @@ class DashboardViewModel @Inject constructor(
 
     fun sendSleepCommand(deviceId: String) {
         val uid = auth.currentUser?.uid ?: return
-        db.reference.child("users").child(uid).child("commands").child("sleep")
-            .setValue(mapOf(
-                "ts" to System.currentTimeMillis() / 1000,
-                "cmdId" to UUID.randomUUID().toString(),
-                "targetDeviceId" to deviceId,
-            ))
+        FirebaseRefs.commandRef(uid, "sleep")
+            .setValue(CommandBuilder.build(deviceId))
             .addOnSuccessListener { Timber.d("[CMD] sleep command sent: $deviceId") }
             .addOnFailureListener { e -> Timber.w(e, "[CMD] sleep command failed") }
     }
 
     fun sendShutdownCommand(deviceId: String) {
         val uid = auth.currentUser?.uid ?: return
-        db.reference.child("users").child(uid).child("commands").child("shutdown")
-            .setValue(mapOf(
-                "ts" to System.currentTimeMillis() / 1000,
-                "cmdId" to UUID.randomUUID().toString(),
-                "targetDeviceId" to deviceId,
-            ))
+        FirebaseRefs.commandRef(uid, "shutdown")
+            .setValue(CommandBuilder.build(deviceId))
             .addOnSuccessListener { Timber.d("[CMD] shutdown command sent: $deviceId") }
             .addOnFailureListener { e -> Timber.w(e, "[CMD] shutdown command failed") }
     }
