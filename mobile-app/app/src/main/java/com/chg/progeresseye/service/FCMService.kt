@@ -121,7 +121,7 @@ class FCMService : FirebaseMessagingService() {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setContentIntent(copyPendingIntent)
+            .addAction(0, getString(R.string.notification_copy_traceback), copyPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
