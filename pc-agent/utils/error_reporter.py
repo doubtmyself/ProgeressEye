@@ -1,4 +1,7 @@
-"""미처리 예외를 Firestore에 기록하는 오류 보고 모듈."""
+"""미처리 예외를 Firestore에 버전별로 기록하는 오류 보고 모듈.
+
+구조: errorReports/{version}/reports/{reportId}
+"""
 
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ import uuid
 from utils.logger import log  # pyright: ignore[reportImplicitRelativeImport]
 
 _PROJECT_ID = "progresseye-49244"
-_FIRESTORE_URL = (
+_FIRESTORE_BASE = (
     f"https://firestore.googleapis.com/v1/projects/{_PROJECT_ID}"
     f"/databases/(default)/documents/errorReports"
 )
@@ -44,7 +47,6 @@ def _handle_exception(
     exc_tb: object,
 ) -> None:
     """미처리 예외를 캡처하여 Firestore에 전송한다."""
-    # KeyboardInterrupt는 무시
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return
@@ -61,7 +63,7 @@ def _handle_exception(
 
 
 def _send_report(error: str, traceback_str: str) -> None:
-    """Firestore errorReports 컬렉션에 오류를 기록한다."""
+    """errorReports/{version}/reports/{reportId} 에 오류를 기록한다."""
     if not _uid or not callable(_get_id_token):
         log.debug("[ErrorReporter] 미로그인 상태 — 오류 보고 건너뜀")
         return
@@ -77,20 +79,23 @@ def _send_report(error: str, traceback_str: str) -> None:
     report_id = uuid.uuid4().hex[:16]
     now = int(time.time() * 1000)
 
+    # errorReports/{version}/reports/{reportId}
+    url = f"{_FIRESTORE_BASE}/{APP_VERSION}/reports?documentId={report_id}"
+
     body = {
         "fields": {
-            "uid": {"stringValue": _uid},
-            "error": {"stringValue": error[:500]},
+            "uid":       {"stringValue": _uid},
+            "error":     {"stringValue": error[:500]},
             "traceback": {"stringValue": traceback_str[:4000]},
-            "appVersion": {"stringValue": APP_VERSION},
-            "os": {"stringValue": platform.platform()},
-            "ts": {"integerValue": str(now)},
+            "version":   {"stringValue": APP_VERSION},
+            "os":        {"stringValue": platform.platform()},
+            "ts":        {"integerValue": str(now)},
         }
     }
 
     try:
         resp = _requests.post(
-            f"{_FIRESTORE_URL}?documentId={report_id}",
+            url,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
@@ -99,7 +104,7 @@ def _send_report(error: str, traceback_str: str) -> None:
             timeout=8,
         )
         if resp.status_code in (200, 201):
-            log.info("[ErrorReporter] 오류 보고 전송 완료 (%s)", report_id)
+            log.info("[ErrorReporter] 오류 보고 전송 완료 (v%s / %s)", APP_VERSION, report_id)
         else:
             log.warning("[ErrorReporter] 전송 실패: %d", resp.status_code)
     except Exception as exc:

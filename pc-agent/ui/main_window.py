@@ -501,7 +501,6 @@ class MainWindow(QMainWindow):
     region_delay_changed = pyqtSignal(str, int)  # (region_id, delay_minutes)
     test_stall_requested = pyqtSignal(str)  # (region_id)
     test_complete_requested = pyqtSignal(str)  # (region_id)
-    test_crash_requested = pyqtSignal()  # FCM 크래시 보고 테스트용 시그널
     login_start_requested = pyqtSignal()
     login_cancel_requested = pyqtSignal()
     close_requested = pyqtSignal()  # 창 닫기 시 cleanup 요청
@@ -767,27 +766,6 @@ class MainWindow(QMainWindow):
         self._btn_toggle.setToolTip(t("tooltip_start"))
         btn_layout.addWidget(self._btn_toggle)
 
-        # ── Test crash button (Debug mode only) ──
-        if self._show_test_buttons:
-            self._btn_crash = QPushButton("Crash")
-            self._btn_crash.setFixedHeight(36)
-            self._btn_crash.setStyleSheet(
-                "QPushButton {"
-                "  background-color: #f44336;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 8px;"
-                "  font-weight: bold;"
-                "  font-size: 11px;"
-                "  padding: 0 10px;"
-                "}"
-                "QPushButton:hover {"
-                "  background-color: #d32f2f;"
-                "}"
-            )
-            self._btn_crash.clicked.connect(self.test_crash_requested.emit)
-            self._btn_crash.setToolTip("의도적인 오류 발생 (FCM 보고 테스트용)")
-            btn_layout.addWidget(self._btn_crash)
 
         app_layout.addLayout(btn_layout)
 

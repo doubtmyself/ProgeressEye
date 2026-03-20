@@ -287,7 +287,6 @@ class ProgressEyeApp:
         self._main_window.region_delay_changed.connect(self._on_delay_changed)
         self._main_window.test_stall_requested.connect(self._on_test_stall)
         self._main_window.test_complete_requested.connect(self._on_test_complete)
-        self._main_window.test_crash_requested.connect(self._on_test_crash)
         # 기존 영역 복원
         self._restore_regions()
 
@@ -1887,13 +1886,12 @@ class ProgressEyeApp:
             self._command_listener.stop_nowait()
             self._command_listener = None
 
-        error_reporter.reset()
-
         # Firebase 정리를 별도 스레드에서 수행 (메인 스레드 블로킹 방지)
         dm = self._device_manager
         self._device_manager = None
         self._realtime_db = None
         self._firebase_id_token = None
+        error_reporter.reset()
 
         def _cleanup_firebase() -> None:
             if dm is not None:
@@ -3121,13 +3119,6 @@ class ProgressEyeApp:
         self._device_manager.push_alert("completion", self._device_manager.name, alert_msg)
         self._notify(f"[TEST] {alert_msg}")
         log.info("[TEST] 완료 알림 전송: %s", region_id)
-
-    def _on_test_crash(self) -> None:
-        """의도적인 크래시 발생 테스트."""
-        log.info("[TEST] 의도적인 ZeroDivisionError 발생")
-        # 이 코드가 실행되면 sys.excepthook(_handle_exception)이 호출되어
-        # Firestore로 오류가 전송되고 앱이 종료됩니다.
-        _ = 1 / 0
 
     def _quit(self) -> None:
         """애플리케이션을 종료한다."""
