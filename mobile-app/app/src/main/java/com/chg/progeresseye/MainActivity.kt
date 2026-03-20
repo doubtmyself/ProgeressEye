@@ -25,9 +25,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.chg.progeresseye.ui.screen.dashboard.DashboardViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             Timber.d("[Startup] setContent lambda entered: +${System.currentTimeMillis() - t0}ms")
             ProgressEyeTheme {
-                val authViewModel: AuthViewModel = viewModel()
+                val authViewModel: AuthViewModel = hiltViewModel()
                 val authState by authViewModel.uiState.collectAsStateWithLifecycle()
                 val navController = rememberNavController()
 
