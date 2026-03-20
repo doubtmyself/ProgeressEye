@@ -152,6 +152,7 @@ Main -> Main: 시스템 제어 수행 (Shutdown 등)
 *   **ImageCacheMixin:** 모든 이미지 분석 클래스(`BarAnalyzer`, `OcrReader`)의 베이스 클래스로, 이미지의 원본 해시(MD5)를 비교하여 변화가 없을 경우 캐시된 결과를 즉시 반환합니다.
 *   **상세 로직 다이어그램:**
     *   [게이지 바 분석 로직 (BarAnalyzer)](./diagrams/gauge-bar-analysis.puml)
+    *   [게이지 색상 기반 분석 로직 (analyze_by_color)](./diagrams/gauge-color-analysis.puml)
     *   [게이지 숫자 인식 로직 (OcrReader)](./diagrams/gauge-number-ocr.puml)
 
 ### 3.3 영역 선택 → 모드 분기 → 탐지 → 등록 플로우
