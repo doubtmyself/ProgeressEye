@@ -30,7 +30,6 @@
 pc-agent/
 ├── main.py                  # 엔트리포인트, 앱 초기화 + 인증 통합 + Firebase 연동
 ├── config.py                # 설정 관리 (JSON)
-├── setup_tesseract.py       # Tesseract OCR 번들 설치 스크립트
 ├── auth/
 │   ├── google_oauth.py      # InstalledAppFlow.run_local_server(port=8080)으로 브라우저 팝업 → id_token 획득
 │   ├── firebase_auth.py     # Firebase REST API (signInWithIdp + refresh_token)로 Firebase 로그인
@@ -57,6 +56,7 @@ pc-agent/
 │   └── region_viewer.py     # 전체 화면 탐지 결과 오버레이
 ├── utils/
 │   ├── i18n.py              # 한/영 번역 모듈
+│   ├── error_reporter.py    # sys.excepthook → Firestore errorReports/{version}/reports/ 기록
 │   └── logger.py
 └── resources/
     └── icon.ico
@@ -337,7 +337,7 @@ powershell -ExecutionPolicy Bypass -File .\packaging\msix\build_store_msix.ps1 -
 | Google 로그인 실패 | 에러 메시지 표시, 재시도 안내 |
 | 토큰 갱신 실패 | 자동 재로그인 시도, 실패 시 로그인 화면 표시 |
 | 바 탐지 실패 | 4전략 모두 실패 시 수동 색상 지정 안내 |
-| OCR 인식 실패 | Tesseract 미설치 안내 또는 이전 값 유지 |
+| OCR 인식 실패 | RapidOCR 초기화 실패 시 PaddleOCR 호환 모드 자동 전환, 이전 값 유지 |
 | 분석 신뢰도 낮음 | 이전 값 유지, 3회 연속 시 "분석 오류" 상태 전송 |
 | 네트워크 끊김 | 로컬 큐에 데이터 저장, 재연결 시 일괄 전송 |
 | 캡처 영역 사라짐 | 대상 창 최소화/닫힘 감지 → "대기중" 상태 전환 |

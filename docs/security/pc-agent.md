@@ -1,6 +1,6 @@
 # PC Agent 보안 체크리스트
 
-> 마지막 감사: 2026-03-11
+> 마지막 감사: 2026-03-20
 
 ---
 
@@ -126,3 +126,4 @@
 | 1-1. OAuth 시크릿 하드코딩 | 🔒 수정 불가 (사유 위 참고) |
 | 3-1. 토큰 Authorization 헤더로 전환 | ✅ 완료 |
 | 4-1. MD5 → SHA-256 | ✅ 완료 |
+| error_reporter.py Firestore DB 경로 | ✅ 완료 (`(default)` → `progress` named DB 수정) |

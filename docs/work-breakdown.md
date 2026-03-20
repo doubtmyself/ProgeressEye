@@ -118,7 +118,7 @@
 | # | 작업 | 설명 | 우선순위 | 상태 |
 |---|------|------|----------|------|
 | 3.10 | CI/CD 파이프라인 | GitHub Actions: 린트, 테스트, 빌드 자동화 | P1 | 🚫 구현 안 함 |
-| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Sentry (PC) | P2 | ✅ 완료 (Android Crashlytics 활성화됨, PC: sys.excepthook → Firestore errorReports → FCM 개발자 알림) |
+| 3.11 | 에러 모니터링 | Firebase Crashlytics (모바일), Firestore 오류 보고 (PC) | P2 | ✅ 완료 (Android: Crashlytics 릴리즈만 활성화, PC: sys.excepthook → Firestore `errorReports/{version}/reports/` 버전별 기록) |
 
 ---
 
@@ -149,7 +149,12 @@
 | A.21 | Cloud Functions TypeScript 마이그레이션 | functions/index.js → functions/src/index.ts. firebase.json predeploy 빌드 훅 추가 | ✅ 완료 |
 | A.22 | 기기 충돌 다이얼로그 로그아웃 버튼 | "취소" 버튼 → "로그아웃" 버튼으로 변경, 실제 로그아웃 동작 연결 | ✅ 완료 |
 | A.23 | 모니터링 재시작 버그 수정 | 영역 완료 시 config에서 enabled=false로 설정하던 로직 제거 → 재시작 시 체크박스 상태와 실제 동작 불일치 해소 | ✅ 완료 |
-| A.24 | PC 오류 개발자 알림 | PC 미처리 예외 → Firestore errorReports → onErrorReport CF → masterUid FCM. 안드로이드 알림 탭 시 트레이스백 클립보드 복사 | ✅ 완료 |
+| A.24 | PC 오류 보고 | PC 미처리 예외 → Firestore `errorReports/{version}/reports/{id}` 버전별 기록 (FCM 알림 없음, Firestore Console에서 확인) | ✅ 완료 |
+| A.25 | Android Clean Architecture 리팩토링 | 기존 앱 레이어 직접 Firebase 호출 → domain/usecase + data/repository 패턴으로 분리. AuthRepository, DeviceRepository 등 신규 추가 | ✅ 완료 |
+| A.26 | Android 시작 속도 개선 | windowBackground 다크 테마로 흰 화면 제거, Crashlytics 디버그 비활성화, ABI splits(arm64-v8a) | ✅ 완료 |
+| A.27 | hiltViewModel() 수정 | MainActivity에서 viewModel() → hiltViewModel() 변경. Android 15에서 NoSuchMethodException 크래시 수정 | ✅ 완료 |
+| A.28 | PC 설정화면 페이지 전환 | 설정 모달 오버레이 → 전체 화면 페이지 방식으로 변경. TutorialPage(사용법 3단계), WelcomePage(간격/동결 설정) 온보딩 페이지 추가 | ✅ 완료 |
+| A.29 | Pro 업그레이드 배너 i18n | 하드코딩 문자열 → strings.xml 한/영 분리. "여러 PC에 앱을 연결하려면 / PRO로 업그레이드하세요" | ✅ 완료 |
 
 ---
 

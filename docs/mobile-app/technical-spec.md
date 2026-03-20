@@ -31,9 +31,12 @@ mobile-app/
 ├── domain/                          # 순수 Kotlin (JVM 17, android 의존 없음)
 │   └── src/main/java/com/chg/progeresseye/domain/
 │       ├── model/
-│       │   └── Alert.kt             # AlertItem data class, AlertType enum
+│       │   ├── Alert.kt             # AlertItem data class, AlertType enum
+│       │   └── Device.kt            # Device data class (tasks, stats, screenshots 포함)
 │       ├── repository/
-│       │   ├── AlertRepository.kt   # sealed interface AlertEvent + interface
+│       │   ├── AlertRepository.kt
+│       │   ├── AuthRepository.kt    # 로그인/로그아웃/FCM 토큰 등록
+│       │   ├── DeviceRepository.kt  # 기기 목록, heartbeat, 명령 전송
 │       │   ├── UserPlanRepository.kt
 │       │   └── PolicyRepository.kt
 │       └── usecase/
@@ -41,40 +44,61 @@ mobile-app/
 │           ├── DeleteAlertUseCase.kt
 │           ├── ClearAlertsUseCase.kt
 │           ├── ObserveUserPlanUseCase.kt
-│           └── ObservePolicyUseCase.kt
+│           ├── UpdateUserPlanUseCase.kt
+│           ├── ObservePolicyUseCase.kt
+│           ├── ObserveDevicesUseCase.kt
+│           ├── CheckDeviceHeartbeatsUseCase.kt
+│           ├── UpdateMobileHeartbeatUseCase.kt
+│           ├── SendScreenshotCommandUseCase.kt
+│           ├── SendShutdownCommandUseCase.kt
+│           ├── SendSleepCommandUseCase.kt
+│           ├── RegisterFcmTokenUseCase.kt
+│           ├── GetCurrentUserUidUseCase.kt
+│           ├── ActivateMobileSessionUseCase.kt
+│           ├── CheckExistingSessionUseCase.kt
+│           ├── ClearSessionIfOwnedUseCase.kt
+│           ├── UpdateUserDocumentUseCase.kt
+│           ├── GetWithdrawalStateUseCase.kt
+│           ├── CallWithdrawalApiUseCase.kt
+│           └── RecordSubscriptionPurchaseUseCase.kt
 │
 ├── data/                            # Android Library — Firebase + Hilt 구현체
 │   └── src/main/java/com/chg/progeresseye/data/
 │       ├── repository/
-│       │   ├── AlertRepositoryImpl.kt      # RTDB callbackFlow 구현
-│       │   ├── UserPlanRepositoryImpl.kt   # RTDB users/{uid}/plan
+│       │   ├── AlertRepositoryImpl.kt
+│       │   ├── AuthRepositoryImpl.kt       # GoogleAuthRepository 래퍼, FCM 토큰
+│       │   ├── DeviceRepositoryImpl.kt     # RTDB devices, commands, heartbeat
+│       │   ├── UserPlanRepositoryImpl.kt   # Firestore users/{uid}.plan
 │       │   └── PolicyRepositoryImpl.kt     # RTDB policy/isAdFreeModeEnabled
 │       ├── di/
 │       │   └── DataModule.kt              # @Binds @Singleton — Hilt 바인딩
 │       └── util/
-│           └── FirebaseConstants.kt
+│           ├── FirebaseConstants.kt        # FIRESTORE_DB = "progress"
+│           ├── FirebaseRefs.kt             # RTDB 경로 상수
+│           └── CommandBuilder.kt          # 명령 Map 생성 헬퍼
 │
 └── app/                             # Android Application — UI + ViewModel
     └── src/main/java/com/chg/progeresseye/
-        ├── ProgressEyeApp.kt        # @HiltAndroidApp
-        ├── MainActivity.kt          # @AndroidEntryPoint
+        ├── ProgressEyeApp.kt        # @HiltAndroidApp, Crashlytics(릴리즈만)
+        ├── MainActivity.kt          # @AndroidEntryPoint, 세션/forceLogout/탈퇴 리스너
         ├── AppConstants.kt          # NotificationPrefs 등 앱 상수
         ├── auth/
-        │   └── AuthViewModel.kt
-        ├── data/model/
-        │   └── DashboardModels.kt   # UI 상태 모델 (앱 레이어에 잔류)
+        │   ├── AuthViewModel.kt     # @HiltViewModel, 로그인/세션/탈퇴 처리
+        │   ├── GoogleAuthRepository.kt
+        │   └── MobileSessionManager.kt
         └── ui/screen/
             ├── main/
             │   └── MainScreen.kt
             ├── dashboard/
             │   ├── DashboardScreen.kt
+            │   ├── DashboardUiState.kt     # UI 상태 data class 분리
             │   └── DashboardViewModel.kt  # @HiltViewModel
             ├── alerts/
             │   ├── AlertsScreen.kt
             │   └── AlertsViewModel.kt     # @HiltViewModel
             └── settings/
                 ├── SettingsScreen.kt
-                └── SettingsViewModel.kt   # @HiltViewModel
+                └── SettingsViewModel.kt   # @HiltViewModel, 구독 결제
 ```
 
 ### 의존 관계

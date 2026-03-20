@@ -29,3 +29,4 @@
 - Firestore 탈퇴 정책(기준): `users/{uid}.withdrawalStatus`, `deleteAt`, `rejoinAllowedAt`
 - Firestore 탈퇴 tombstone(최소): `withdrawnUsers/{uid}.rejoinAllowedAt` (`deletedAt`은 운영 추적용 선택)
 - Firestore 이메일 기준 재가입 제한: `withdrawnEmails/{emailKey}.rejoinAllowedAt`
+- Firestore PC 오류 보고: `errorReports/{version}/reports/{reportId}` — uid, error, traceback, version, os, ts

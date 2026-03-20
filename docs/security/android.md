@@ -1,6 +1,6 @@
 # Android 앱 보안 체크리스트
 
-> 마지막 감사: 2026-03-11
+> 마지막 감사: 2026-03-20
 
 ---
 
@@ -11,6 +11,7 @@
 | 스크린샷 URL Firebase Storage 도메인 검증 | ✅ 완료 |
 | R8/ProGuard 난독화 | ✅ 안전 |
 | Timber 로그 (릴리즈 비활성화) | ✅ 안전 |
+| Crashlytics 디버그 빌드 비활성화 | ✅ 완료 |
 | AndroidManifest exported 컴포넌트 | ✅ 안전 |
 | Firebase 인증 토큰 저장 | ✅ 안전 |
 | google-services.json 노출 | ✅ 정상 |
@@ -89,6 +90,12 @@
 - **내용:** `BuildConfig.DEBUG`가 true일 때만 Timber tree 등록 → 릴리즈 빌드에서 로그 없음
 - **위험도:** 없음
 - **현재 상태:** 안전
+
+### 4-3. Crashlytics 디버그 비활성화 ✅ 완료
+- **파일:** `ProgressEyeApp.kt`
+- **내용:** `FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = !BuildConfig.DEBUG`
+- **효과:** 디버그 빌드에서 Crashlytics 초기화 생략 → 시작 속도 개선 + 디버그 데이터 오염 방지
+- **현재 상태:** 완료
 
 ---
 
