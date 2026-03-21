@@ -6,7 +6,8 @@ Param(
     [switch]$EnableUpx,
     [switch]$SkipBundleVCRuntime,
     [int]$NuitkaJobs = 0,
-    [string]$UpxExe = ""
+    [string]$UpxExe = "",
+    [switch]$EnablePyarmor
 )
 
 $ErrorActionPreference = "Stop"
@@ -329,6 +330,37 @@ function Assert-OpenCvHeadlessOnly {
     }
 }
 
+function Invoke-PyarmorObfuscation {
+    param(
+        [string]$PythonPath,
+        [string]$SourceRoot,
+        [string]$OutputDir
+    )
+
+    Write-Host "[build_exe_nuitka] Installing PyArmor..."
+    & $PythonPath -m pip install --upgrade pyarmor --quiet
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyArmor installation failed with exit code $LASTEXITCODE"
+    }
+
+    if (Test-Path $OutputDir) {
+        Remove-Item $OutputDir -Recurse -Force
+    }
+
+    Write-Host "[build_exe_nuitka] Obfuscating sources with PyArmor (recursive)..."
+    Push-Location $SourceRoot
+    try {
+        & $PythonPath -m pyarmor gen --recursive --output $OutputDir main.py
+        if ($LASTEXITCODE -ne 0) {
+            throw "PyArmor obfuscation failed with exit code $LASTEXITCODE"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    Write-Host "[build_exe_nuitka] PyArmor obfuscation complete: $OutputDir"
+}
+
 Push-Location $PcAgentRoot
 try {
     if ($NuitkaJobs -le 0) {
@@ -341,7 +373,7 @@ try {
         # Stop possibly running app/processes that can lock dist artifacts (.exe/.pyd)
         Stop-LockingProcesses -PathPrefix (Join-Path $PcAgentRoot "dist")
 
-        foreach ($dir in @("build", "dist", "main.build", "main.dist", "main.onefile-build")) {
+        foreach ($dir in @("build", "dist", "main.build", "main.dist", "main.onefile-build", "obf_build")) {
             $p = Join-Path $PcAgentRoot $dir
             if (Test-Path $p) {
                 Write-Host "[build_exe_nuitka] Removing $dir"
@@ -388,8 +420,7 @@ try {
         "--nofollow-import-to=sympy",
         "--nofollow-import-to=mpmath",
         "--nofollow-import-to=IPython",
-        "--nofollow-import-to=PIL._webp",
-        "main.py"
+        "--nofollow-import-to=PIL._webp"
     )
 
     # Fast OCR baseline: no Paddle fallback chain (large dependency tree).
@@ -404,6 +435,39 @@ try {
 
     if ($Fast) {
         Write-Host "[build_exe_nuitka] Fast flag enabled (already baseline)"
+    }
+
+    # PyArmor obfuscation step (optional)
+    $obfDir = $null
+    if ($EnablePyarmor) {
+        $obfDir = Join-Path $PcAgentRoot "obf_build"
+        Invoke-PyarmorObfuscation -PythonPath $PythonExe -SourceRoot $PcAgentRoot -OutputDir $obfDir
+
+        # Fix data-dir paths to absolute so Nuitka resolves them from PcAgentRoot
+        $nuitkaArgs = $nuitkaArgs | ForEach-Object {
+            switch ($_) {
+                "--include-data-dir=templates=templates" { "--include-data-dir=$PcAgentRoot\templates=templates" }
+                "--include-data-dir=resources=resources"  { "--include-data-dir=$PcAgentRoot\resources=resources" }
+                default { $_ }
+            }
+        }
+
+        # Auto-detect pyarmor_runtime_xxxxx package name and include it
+        $runtimePkg = Get-ChildItem $obfDir -Directory -Filter "pyarmor_runtime*" |
+            Select-Object -First 1 -ExpandProperty Name
+        if ($runtimePkg) {
+            $nuitkaArgs += "--include-package=$runtimePkg"
+            $nuitkaArgs += "--include-package-data=$runtimePkg"
+            Write-Host "[build_exe_nuitka] Detected PyArmor runtime: $runtimePkg"
+        } else {
+            Write-Warning "[build_exe_nuitka] pyarmor_runtime package not found in $obfDir"
+        }
+
+        # Entry point: obfuscated main.py
+        $nuitkaArgs += "$obfDir\main.py"
+        Write-Host "[build_exe_nuitka] Building from obfuscated sources: $obfDir"
+    } else {
+        $nuitkaArgs += "main.py"
     }
 
     & $PythonExe @nuitkaArgs
@@ -448,6 +512,12 @@ try {
     if ($EnableUpx) {
         $resolvedUpx = Resolve-UpxExecutable -ExplicitPath $UpxExe
         Compress-WithUpx -DistRoot $targetDir -UpxPath $resolvedUpx
+    }
+
+    # Clean up obfuscated source staging directory
+    if ($obfDir -and (Test-Path $obfDir)) {
+        Write-Host "[build_exe_nuitka] Cleaning up PyArmor staging: $obfDir"
+        Remove-Item $obfDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     Write-Host "[build_exe_nuitka] Done: $exePath"
