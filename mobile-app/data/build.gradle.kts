@@ -35,4 +35,6 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.timber)
+
+    testImplementation(libs.junit)
 }
