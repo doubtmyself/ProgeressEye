@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -326,7 +328,9 @@ fun LoginScreen(
 
         // ── Main vertical layout ──
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Center content (weight pushes bottom actions down)
@@ -769,8 +773,9 @@ private fun BottomActions(
                     endY = 100f,
                 ),
             )
+            .navigationBarsPadding()
             .padding(horizontal = 24.dp)
-            .padding(bottom = 48.dp, top = 24.dp),
+            .padding(bottom = 24.dp, top = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
