@@ -11,7 +11,7 @@ import com.chg.progeresseye.data.db.entity.SessionEntity
 
 @Database(
     entities = [SessionEntity::class, NotificationSettingsEntity::class, AdPrefsEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

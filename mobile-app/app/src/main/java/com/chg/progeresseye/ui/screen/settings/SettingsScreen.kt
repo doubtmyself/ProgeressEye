@@ -74,6 +74,7 @@ import com.chg.progeresseye.ui.theme.OutlineVariantDark
 import com.chg.progeresseye.ui.theme.Primary
 import com.chg.progeresseye.ui.theme.ProgressEyeTheme
 import com.chg.progeresseye.ui.theme.SurfaceContainerDark
+import com.chg.progeresseye.util.isPro
 import com.google.firebase.auth.FirebaseAuth
 
 // ═════════════════════════════════════════════════════════
@@ -187,6 +188,19 @@ fun SettingsContent(
                 onToggleStall = viewModel::toggleStallWarnings,
 
             )
+        }
+
+        // ── DISPLAY ──
+        if (!state.currentPlan.isPro() && !state.isAdFreeMode) {
+            item { Spacer(Modifier.height(24.dp)) }
+            item { SectionHeader(stringResource(R.string.settings_section_display)) }
+            item { Spacer(Modifier.height(8.dp)) }
+            item {
+                DisplayCard(
+                    showAllPcs = state.showAllPcs,
+                    onToggleShowAllPcs = viewModel::toggleShowAllPcs,
+                )
+            }
         }
 
         // ── ABOUT ──
@@ -516,6 +530,16 @@ private fun NotificationsCard(
         HorizontalDivider(color = OutlineVariantDark)
         ToggleRow(stringResource(R.string.settings_stall_warnings), stallWarnings, onToggleStall)
 
+    }
+}
+
+@Composable
+private fun DisplayCard(
+    showAllPcs: Boolean,
+    onToggleShowAllPcs: () -> Unit,
+) {
+    SettingsCard {
+        ToggleRow(stringResource(R.string.settings_show_all_pcs), showAllPcs, onToggleShowAllPcs)
     }
 }
 

@@ -189,4 +189,10 @@ class DeviceRepositoryImpl @Inject constructor() : DeviceRepository {
     override suspend fun sendShutdownCommand(uid: String, deviceId: String) {
         FirebaseRefs.commandRef(uid, "shutdown").setValue(CommandBuilder.build(deviceId)).await()
     }
+
+    override suspend fun deleteDevice(uid: String, deviceId: String) {
+        FirebaseRefs.devicesRef(uid).child(deviceId).removeValue().await()
+        FirebaseRefs.deviceStatusRef(uid).child(deviceId).removeValue().await()
+        FirebaseRefs.heartbeatRef(uid).child(deviceId).removeValue().await()
+    }
 }

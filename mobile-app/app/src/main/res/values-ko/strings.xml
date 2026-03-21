@@ -40,6 +40,12 @@
     <string name="dashboard_shutdown_confirm_body">30초 후 PC가 종료됩니다.</string>
     <string name="dashboard_shutdown_confirm_ok">종료</string>
     <string name="dashboard_shutdown_confirm_cancel">취소</string>
+    <string name="dashboard_delete_device">PC 삭제</string>
+    <string name="dashboard_delete_device_confirm_title">PC를 삭제하시겠습니까?</string>
+    <string name="dashboard_delete_device_confirm_body">이 PC가 기기 목록에서 제거됩니다.</string>
+    <string name="dashboard_delete_device_confirm_ok">삭제</string>
+    <string name="dashboard_delete_device_blocked_title">PC가 온라인 상태입니다</string>
+    <string name="dashboard_delete_device_blocked_body">PC 앱 종료 이후 삭제해 주세요.</string>
     <string name="dashboard_image_load_failed">이미지를 불러올 수 없습니다</string>
     <string name="cd_screenshot_preview">스크린샷 미리보기</string>
     <string name="cd_screenshot_fullscreen">스크린샷 전체 화면</string>
@@ -77,7 +83,9 @@
     <!-- ── Settings ── -->
     <string name="settings_section_account">계정</string>
     <string name="settings_section_notifications">알림</string>
+    <string name="settings_section_display">화면 설정</string>
     <string name="settings_section_about">정보</string>
+    <string name="settings_show_all_pcs">모든 PC 보기</string>
     <string name="settings_no_email">이메일 없음</string>
     <string name="settings_free_plan">무료 플랜</string>
     <string name="settings_pro_plan">Pro 플랜</string>

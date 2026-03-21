@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.chg.progeresseye.domain.repository.AdPrefsRepository
 import com.chg.progeresseye.domain.repository.NotificationPrefsRepository
 import com.chg.progeresseye.domain.repository.PolicyRepository
 import com.chg.progeresseye.domain.repository.UserPlanRepository
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.update
 data class SettingsUiState(
     val completionAlerts: Boolean = true,
     val stallWarnings: Boolean = true,
+    val showAllPcs: Boolean = false,
     val currentPlan: String = "free",
     val isAdFreeMode: Boolean = false,
     val isPolicyLoaded: Boolean = false,
@@ -75,6 +77,7 @@ class SettingsViewModel @Inject constructor(
     private val userPlanRepository: UserPlanRepository,
     private val policyRepository: PolicyRepository,
     private val notificationPrefsRepository: NotificationPrefsRepository,
+    private val adPrefsRepository: AdPrefsRepository,
     private val getCurrentUserUidUseCase: GetCurrentUserUidUseCase,
     private val updateUserPlanUseCase: UpdateUserPlanUseCase,
     private val recordSubscriptionPurchaseUseCase: RecordSubscriptionPurchaseUseCase
@@ -136,6 +139,11 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(stallWarnings = enabled) }
             }
         }
+        viewModelScope.launch {
+            adPrefsRepository.observeShowAllPcs().collect { show ->
+                _uiState.update { it.copy(showAllPcs = show) }
+            }
+        }
         getCurrentUserUidUseCase()?.let { uid ->
             viewModelScope.launch {
                 userPlanRepository.observeUserPlan(uid).collect { plan ->
@@ -171,6 +179,15 @@ class SettingsViewModel @Inject constructor(
         val newValue = !_uiState.value.stallWarnings
         _uiState.update { it.copy(stallWarnings = newValue) }
         viewModelScope.launch { notificationPrefsRepository.setStallWarnings(newValue) }
+    }
+
+    /**
+     * 모든 PC 보기 설정 값을 반전시키고 영구 저장소에 저장합니다.
+     */
+    fun toggleShowAllPcs() {
+        val newValue = !_uiState.value.showAllPcs
+        _uiState.update { it.copy(showAllPcs = newValue) }
+        viewModelScope.launch { adPrefsRepository.setShowAllPcs(newValue) }
     }
 
     /**

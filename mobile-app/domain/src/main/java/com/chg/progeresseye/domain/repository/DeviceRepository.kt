@@ -52,4 +52,12 @@ interface DeviceRepository {
      * @param deviceId 명령을 받을 기기의 ID
      */
     suspend fun sendShutdownCommand(uid: String, deviceId: String)
+
+    /**
+     * 연동된 기기를 서버에서 삭제
+     *
+     * @param uid 사용자 고유 ID
+     * @param deviceId 삭제할 기기의 ID
+     */
+    suspend fun deleteDevice(uid: String, deviceId: String)
 }

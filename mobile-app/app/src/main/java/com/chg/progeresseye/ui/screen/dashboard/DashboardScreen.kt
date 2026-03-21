@@ -5,13 +5,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
@@ -77,7 +83,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -150,9 +158,13 @@ fun DashboardContent(
     userPlan: String = "free",
     isAdFreeMode: Boolean = false,
     isAdLoading: Boolean = false,
+    showAllPcs: Boolean = false,
+    defaultDeviceId: String? = null,
+    onSelectDevice: (deviceId: String) -> Unit = {},
     onRequestScreenshot: (deviceId: String) -> Unit = {},
     onSleep: (deviceId: String) -> Unit = {},
     onShutdown: (deviceId: String) -> Unit = {},
+    onDeleteDevice: (deviceId: String) -> Unit = {},
     onRefresh: () -> Unit = {},
     onUpgradeToPro: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -221,9 +233,16 @@ fun DashboardContent(
         }
 
         else -> {
-            val isFreeWithMultiPc = userPlan == "free" && !isAdFreeMode && uiState.devices.size > 1
+            val isFreeWithMultiPc = userPlan == "free" && !isAdFreeMode && uiState.devices.size > 1 && !showAllPcs
             var selectedDeviceIndex by rememberSaveable { mutableIntStateOf(0) }
             val safeDeviceIndex = selectedDeviceIndex.coerceIn(0, uiState.devices.lastIndex)
+
+            LaunchedEffect(defaultDeviceId, uiState.devices) {
+                if (defaultDeviceId != null) {
+                    val idx = uiState.devices.indexOfFirst { it.id == defaultDeviceId }
+                    if (idx >= 0) selectedDeviceIndex = idx
+                }
+            }
 
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
@@ -238,7 +257,10 @@ fun DashboardContent(
                         DeviceSelectorTabs(
                             devices = uiState.devices,
                             selectedIndex = safeDeviceIndex,
-                            onSelect = { selectedDeviceIndex = it },
+                            onSelect = { idx ->
+                                selectedDeviceIndex = idx
+                                uiState.devices.getOrNull(idx)?.id?.let { onSelectDevice(it) }
+                            },
                         )
                     }
                     LazyColumn(
@@ -256,11 +278,9 @@ fun DashboardContent(
                                         onRequestScreenshot = { onRequestScreenshot(device.id) },
                                         onSleep = { onSleep(device.id) },
                                         onShutdown = { onShutdown(device.id) },
+                                        onDelete = { onDeleteDevice(device.id) },
                                     )
                                 }
-                            }
-                            item(key = "pro-upgrade-banner") {
-                                ProUpgradeBanner(onUpgrade = onUpgradeToPro)
                             }
                         } else {
                             items(uiState.devices, key = { it.id }) { device ->
@@ -271,7 +291,13 @@ fun DashboardContent(
                                     onRequestScreenshot = { onRequestScreenshot(device.id) },
                                     onSleep = { onSleep(device.id) },
                                     onShutdown = { onShutdown(device.id) },
+                                    onDelete = { onDeleteDevice(device.id) },
                                 )
+                            }
+                        }
+                        if (userPlan != "pro" && !isAdFreeMode) {
+                            item(key = "pro-upgrade-banner") {
+                                ProUpgradeBanner(onUpgrade = onUpgradeToPro)
                             }
                         }
                         item(key = "pc-app-install-link") {
@@ -502,9 +528,13 @@ private fun DeviceCard(
     onRequestScreenshot: () -> Unit,
     onSleep: () -> Unit = {},
     onShutdown: () -> Unit = {},
+    onDelete: () -> Unit = {},
 ) {
     var showFullScreenshot by rememberSaveable { mutableStateOf(false) }
     var showShutdownConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showDeleteBlockedMessage by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     
     val dName = device.name
     val dIsOnline = device.isOnline
@@ -543,6 +573,10 @@ private fun DeviceCard(
                 cpuUsage = dCpu,
                 gpuUsage = dGpu,
                 ramUsage = dRam,
+                onDeleteRequest = {
+                    if (dIsOnline) showDeleteBlockedMessage = true
+                    else showDeleteConfirm = true
+                },
             )
             HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
 
@@ -550,24 +584,36 @@ private fun DeviceCard(
 
             DeviceTasksSection(tasks = dTasks, isActive = isActive)
 
-            // Screenshot preview (if available)
-            if (dUrl != null) {
-                ScreenshotPreview(
-                    url = dUrl,
-                    onClick = { showFullScreenshot = true },
-                )
-            }
-
-            HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
-
-            PcControlRow(
-                isOnline = dIsOnline,
-                isScreenshotLoading = isScreenshotLoading,
-                isAdLoading = isAdLoading,
-                onRequestScreenshot = onRequestScreenshot,
-                onSleep = onSleep,
-                onShutdown = { showShutdownConfirm = true },
+            SwipeHandle(
+                expanded = expanded,
+                onToggle = { expanded = !expanded },
             )
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(animationSpec = tween(280, easing = EaseOutCubic)) + fadeIn(tween(280)),
+                exit = shrinkVertically(animationSpec = tween(220, easing = EaseOutCubic)) + fadeOut(tween(160)),
+            ) {
+                Column {
+                    if (dUrl != null) {
+                        ScreenshotPreview(
+                            url = dUrl,
+                            onClick = { showFullScreenshot = true },
+                        )
+                    }
+
+                    HorizontalDivider(color = SurfaceContainerHighDark, thickness = 1.dp)
+
+                    PcControlRow(
+                        isOnline = dIsOnline,
+                        isScreenshotLoading = isScreenshotLoading,
+                        isAdLoading = isAdLoading,
+                        onRequestScreenshot = onRequestScreenshot,
+                        onSleep = onSleep,
+                        onShutdown = { showShutdownConfirm = true },
+                    )
+                }
+            }
         }
     }
 
@@ -584,6 +630,44 @@ private fun DeviceCard(
             },
             dismissButton = {
                 TextButton(onClick = { showShutdownConfirm = false }) {
+                    Text(stringResource(R.string.dashboard_shutdown_confirm_cancel))
+                }
+            },
+            containerColor = SurfaceContainerDark,
+            titleContentColor = OnSurfaceDark,
+            textContentColor = OnSurfaceDark,
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.dashboard_delete_device_confirm_title)) },
+            text = { Text(stringResource(R.string.dashboard_delete_device_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDeleteConfirm = false; onDelete() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF4444)),
+                ) { Text(stringResource(R.string.dashboard_delete_device_confirm_ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(R.string.dashboard_shutdown_confirm_cancel))
+                }
+            },
+            containerColor = SurfaceContainerDark,
+            titleContentColor = OnSurfaceDark,
+            textContentColor = OnSurfaceDark,
+        )
+    }
+
+    if (showDeleteBlockedMessage) {
+        AlertDialog(
+            onDismissRequest = { showDeleteBlockedMessage = false },
+            title = { Text(stringResource(R.string.dashboard_delete_device_blocked_title)) },
+            text = { Text(stringResource(R.string.dashboard_delete_device_blocked_body)) },
+            confirmButton = {
+                TextButton(onClick = { showDeleteBlockedMessage = false }) {
                     Text(stringResource(R.string.dashboard_shutdown_confirm_cancel))
                 }
             },
@@ -758,6 +842,67 @@ private fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
 }
 
 // ═════════════════════════════════════════════════════════
+// Swipe Handle
+// ═════════════════════════════════════════════════════════
+
+@Composable
+private fun SwipeHandle(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(280, easing = EaseOutCubic),
+        label = "swipe_handle_rotation",
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(expanded) {
+                var accumulatedDrag = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { accumulatedDrag = 0f },
+                    onDragEnd = {
+                        if (!expanded && accumulatedDrag > 40f) onToggle()
+                        else if (expanded && accumulatedDrag < -40f) onToggle()
+                    },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        accumulatedDrag += dragAmount
+                    },
+                )
+            }
+            .clickable(onClick = onToggle)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(
+            modifier = Modifier
+                .size(20.dp, 10.dp)
+                .graphicsLayer { rotationZ = chevronRotation },
+        ) {
+            val w = size.width
+            val h = size.height
+            drawLine(
+                color = Slate400.copy(alpha = 0.6f),
+                start = Offset(0f, 0f),
+                end = Offset(w / 2f, h),
+                strokeWidth = 2.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = Slate400.copy(alpha = 0.6f),
+                start = Offset(w / 2f, h),
+                end = Offset(w, 0f),
+                strokeWidth = 2.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════
 // Device Header
 // ═════════════════════════════════════════════════════════
 
@@ -781,7 +926,9 @@ private fun DeviceHeader(
     cpuUsage: Float? = null,
     gpuUsage: Float? = null,
     ramUsage: Float? = null,
+    onDeleteRequest: () -> Unit = {},
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -851,8 +998,27 @@ private fun DeviceHeader(
                 }
             }
 
-            IconButton(onClick = { /* TODO: device options menu */ }) {
-                Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Outlined.MoreVert, stringResource(R.string.cd_more_options), tint = Slate400)
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.dashboard_delete_device),
+                                color = Color(0xFFEF4444),
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDeleteRequest()
+                        },
+                    )
+                }
             }
         }
 

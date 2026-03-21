@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.chg.progeresseye.data.db.entity.AdPrefsEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AdPrefsDao {
@@ -16,4 +17,7 @@ interface AdPrefsDao {
 
     @Query("UPDATE ad_prefs SET adFreeUntilMs = 0 WHERE id = 1")
     suspend fun clearAdFreeUntil()
+
+    @Query("SELECT showAllPcs FROM ad_prefs WHERE id = 1")
+    fun observeShowAllPcs(): Flow<Boolean?>
 }

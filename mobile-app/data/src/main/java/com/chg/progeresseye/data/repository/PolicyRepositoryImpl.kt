@@ -16,6 +16,18 @@ import javax.inject.Inject
  */
 class PolicyRepositoryImpl @Inject constructor() : PolicyRepository {
     private val db = FirebaseDatabase.getInstance()
+
+    /**
+     * Observe policy
+     * 광거 제거 강제 실행
+     * @return
+     */
+//    override fun observePolicy(): Flow<Boolean> = kotlinx.coroutines.flow.flow {
+//        emit(true)
+//        return@flow
+//    }
+
+//
     override fun observePolicy(): Flow<Boolean> = callbackFlow {
         Timber.d("[PolicyRepo] observePolicy callbackFlow 시작")
         val ref = db.reference.child("policy").child("isAdFreeModeEnabled")
@@ -31,5 +43,6 @@ class PolicyRepositoryImpl @Inject constructor() : PolicyRepository {
         })
         awaitClose { ref.removeEventListener(listener) }
     }
-    override fun reset() {}
+
+        override fun reset() {}
 }

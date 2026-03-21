@@ -12,6 +12,7 @@ import com.chg.progeresseye.domain.repository.AdPrefsRepository
 import com.chg.progeresseye.domain.repository.PolicyRepository
 import com.chg.progeresseye.domain.repository.UserPlanRepository
 import com.chg.progeresseye.domain.usecase.CheckDeviceHeartbeatsUseCase
+import com.chg.progeresseye.domain.usecase.DeleteDeviceUseCase
 import com.chg.progeresseye.domain.usecase.GetCurrentUserUidUseCase
 import com.chg.progeresseye.domain.usecase.ObserveDevicesUseCase
 import com.chg.progeresseye.domain.usecase.SendShutdownCommandUseCase
@@ -63,6 +64,7 @@ class DashboardViewModel @Inject constructor(
     private val userPlanRepository: UserPlanRepository,
     private val policyRepository: PolicyRepository,
     private val adPrefsRepository: AdPrefsRepository,
+    private val deleteDeviceUseCase: DeleteDeviceUseCase,
 ) : AndroidViewModel(application) {
 
     private var cachedAdFreeUntilMs = 0L
@@ -76,6 +78,12 @@ class DashboardViewModel @Inject constructor(
     val userPlan: StateFlow<String> = _userPlan.asStateFlow()
     private val _isAdFreeModeEnabled = MutableStateFlow(false)
     val isAdFreeModeEnabled: StateFlow<Boolean> = _isAdFreeModeEnabled.asStateFlow()
+
+    private val _showAllPcs = MutableStateFlow(false)
+    val showAllPcs: StateFlow<Boolean> = _showAllPcs.asStateFlow()
+
+    private val _defaultDeviceId = MutableStateFlow<String?>(null)
+    val defaultDeviceId: StateFlow<String?> = _defaultDeviceId.asStateFlow()
     private var isAdFreeMode: Boolean = false
 
     private val _isRewardedAdReady = MutableStateFlow(false)
@@ -88,6 +96,14 @@ class DashboardViewModel @Inject constructor(
      */
     fun dismissSubscribeDialog() { _showSubscribeDialog.value = false }
 
+    /**
+     * 선택된 기기를 기본 기기로 저장합니다.
+     */
+    fun saveDefaultDevice(deviceId: String) {
+        _defaultDeviceId.value = deviceId
+        viewModelScope.launch { adPrefsRepository.setDefaultDeviceId(deviceId) }
+    }
+
     private val _adFreePassRemainingMs = MutableStateFlow(0L)
     val adFreePassRemainingMs: StateFlow<Long> = _adFreePassRemainingMs.asStateFlow()
     private var adFreePassJob: Job? = null
@@ -96,6 +112,7 @@ class DashboardViewModel @Inject constructor(
     private var mobileHeartbeatJob: Job? = null
     private var planJob: Job? = null
     private var policyJob: Job? = null
+    private var showAllPcsJob: Job? = null
     private var screenshotTimeoutJob: Job? = null
     private var refreshStartedAtMs: Long = 0L
 
@@ -123,6 +140,11 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             cachedAdsConsented = adPrefsRepository.getAdsConsented()
             cachedIsPersonalizedAds = adPrefsRepository.getIsPersonalizedAds()
+            _defaultDeviceId.value = adPrefsRepository.getDefaultDeviceId()
+        }
+        showAllPcsJob?.cancel()
+        showAllPcsJob = viewModelScope.launch {
+            adPrefsRepository.observeShowAllPcs().collect { _showAllPcs.value = it }
         }
 
         devicesJob?.cancel()
@@ -479,6 +501,23 @@ class DashboardViewModel @Inject constructor(
     }
 
     /**
+     * 연동된 기기를 서버에서 삭제합니다.
+     *
+     * @param deviceId 삭제할 기기 ID
+     */
+    fun deleteDevice(deviceId: String) {
+        val uid = getCurrentUserUidUseCase() ?: return
+        viewModelScope.launch {
+            try {
+                deleteDeviceUseCase(uid, deviceId)
+                Timber.d("[CMD] device deleted: $deviceId")
+            } catch (e: Exception) {
+                Timber.w(e, "[CMD] delete device failed")
+            }
+        }
+    }
+
+    /**
      * 강제 로그아웃 플래그를 소비(초기화)합니다.
      */
     fun consumeForcedSignOut() {
@@ -533,6 +572,9 @@ class DashboardViewModel @Inject constructor(
         policyJob?.cancel()
         policyJob = null
         policyRepository.reset()
+
+        showAllPcsJob?.cancel()
+        showAllPcsJob = null
     }
 
     /**

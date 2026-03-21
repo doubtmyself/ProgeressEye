@@ -9,4 +9,6 @@ data class AdPrefsEntity(
     val adFreeUntilMs: Long = 0L,
     val adsConsented: Boolean = false,
     val isPersonalizedAds: Boolean = true,
+    val defaultDeviceId: String? = null,
+    val showAllPcs: Boolean = false,
 )

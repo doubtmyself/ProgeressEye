@@ -110,6 +110,8 @@ fun MainScreen(
     val isAdFreeModeEnabled by dashboardViewModel.isAdFreeModeEnabled.collectAsStateWithLifecycle()
     val adFreePassRemainingMs by dashboardViewModel.adFreePassRemainingMs.collectAsStateWithLifecycle()
     val isRewardedAdLoading by dashboardViewModel.isRewardedAdLoading.collectAsStateWithLifecycle()
+    val showAllPcs by dashboardViewModel.showAllPcs.collectAsStateWithLifecycle()
+    val defaultDeviceId by dashboardViewModel.defaultDeviceId.collectAsStateWithLifecycle()
     val requiresForcedSignOut = dashboardState.requiresForcedSignOut
     val context = LocalContext.current
     val activity = context as? Activity
@@ -203,6 +205,10 @@ fun MainScreen(
                     userPlan = userPlan,
                     isAdFreeMode = isAdFreeModeEnabled,
                     isAdLoading = isRewardedAdLoading,
+                    showAllPcs = showAllPcs,
+                    defaultDeviceId = defaultDeviceId,
+                    onSelectDevice = { dashboardViewModel.saveDefaultDevice(it) },
+                    onDeleteDevice = { dashboardViewModel.deleteDevice(it) },
                     onRequestScreenshot = { deviceId ->
                         if (userPlan == "free" && !isAdFreeModeEnabled && adFreePassRemainingMs <= 0L && activity != null) {
                             dashboardViewModel.showRewardedAdThen(activity) { dashboardViewModel.requestScreenshot(deviceId) }

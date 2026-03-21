@@ -44,6 +44,12 @@
     <string name="dashboard_shutdown_confirm_body">The PC will shut down in 30 seconds.</string>
     <string name="dashboard_shutdown_confirm_ok">Shut down</string>
     <string name="dashboard_shutdown_confirm_cancel">Cancel</string>
+    <string name="dashboard_delete_device">Delete PC</string>
+    <string name="dashboard_delete_device_confirm_title">Delete PC?</string>
+    <string name="dashboard_delete_device_confirm_body">This PC will be removed from your device list.</string>
+    <string name="dashboard_delete_device_confirm_ok">Delete</string>
+    <string name="dashboard_delete_device_blocked_title">PC is online</string>
+    <string name="dashboard_delete_device_blocked_body">Please close the PC app before deleting.</string>
     <string name="dashboard_image_load_failed">Failed to load image</string>
     <string name="cd_screenshot_preview">Screenshot preview</string>
     <string name="cd_screenshot_fullscreen">Screenshot fullscreen</string>
@@ -85,7 +91,9 @@
     <!-- ── Settings ── -->
     <string name="settings_section_account">ACCOUNT</string>
     <string name="settings_section_notifications">NOTIFICATIONS</string>
+    <string name="settings_section_display">DISPLAY</string>
     <string name="settings_section_about">ABOUT</string>
+    <string name="settings_show_all_pcs">Show all PCs</string>
     <string name="settings_no_email">No email</string>
     <string name="settings_free_plan">Free Plan</string>
     <string name="settings_pro_plan">Pro Plan</string>
