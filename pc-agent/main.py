@@ -2477,7 +2477,7 @@ class ProgressEyeApp:
         if self._scheduler.is_running:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
-            self._set_runtime_hint("ProgressEye - 대기 중")
+            self._set_runtime_hint(t("title_standby"))
             self._set_display_required(False)
             log.info("모니터링 자동 정지 (활성 영역 없음)")
             if self._device_manager:
@@ -2534,7 +2534,7 @@ class ProgressEyeApp:
             self._scheduler.stop()
             self._main_window.set_monitoring_state(False)
             self._set_display_required(False)
-            self._set_runtime_hint("ProgressEye - 대기 중")
+            self._set_runtime_hint(t("title_standby"))
             log.info("모니터링 정지")
             if self._device_manager:
                 self._device_manager.set_monitoring(False)
@@ -2563,11 +2563,18 @@ class ProgressEyeApp:
             ]
             for r in disabled:
                 self._main_window.set_region_task_status(r["id"], "idle")
-            self._set_runtime_hint("ProgressEye - 모니터링 중")
+            self._set_runtime_hint(t("title_monitoring"))
             log.info("모니터링 시작 (%d개 영역, %d초 주기)", len(regions), interval)
             self._set_display_required(True)
             if self._device_manager:
                 self._device_manager.set_monitoring(True)
+                # 모든 작업 라벨을 RTDB에 동기화 (재설치/재연결 후 누락 방지)
+                for r in self._config.regions:
+                    lbl = r.get("label", r["id"])
+                    try:
+                        self._device_manager.set_task_label(r["id"], str(lbl))
+                    except Exception:
+                        pass
                 # 미체크(비활성) 작업을 idle 상태로 RTDB에 기록
                 if disabled:
                     idle_batch = {r["id"]: {"s": "i"} for r in disabled}
