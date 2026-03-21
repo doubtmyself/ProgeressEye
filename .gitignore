@@ -36,6 +36,7 @@ pc-agent/token.json
 # Runtime-generated files
 pc-agent/templates/
 pc-agent/temp/
+pc-agent/nuitka-crash-report.xml
 
 # Test output images
 pc-agent/sampleBar/result/
