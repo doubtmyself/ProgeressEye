@@ -189,14 +189,6 @@ fun SettingsContent(
             )
         }
 
-        // ── APPEARANCE ──
-        item { Spacer(Modifier.height(24.dp)) }
-        item { SectionHeader(stringResource(R.string.settings_section_appearance)) }
-        item { Spacer(Modifier.height(8.dp)) }
-        item {
-            AppearanceCard()
-        }
-
         // ── ABOUT ──
         item { Spacer(Modifier.height(24.dp)) }
         item { SectionHeader(stringResource(R.string.settings_section_about)) }
@@ -569,40 +561,6 @@ private fun ToggleRow(
 }
 
 // ═════════════════════════════════════════════════════════
-// APPEARANCE card — theme (disabled)
-// ═════════════════════════════════════════════════════════
-
-/**
- * 테마 설정 등 앱의 외관 설정을 관리하는 카드입니다. (현재 다크 모드 고정)
- */
-@Composable
-private fun AppearanceCard(
-) {
-    SettingsCard {
-        // Theme row — dark only for now
-        // TODO: 라이트 모드 구현 시 Theme 선택 드롭다운 활성화
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_theme),
-                style = MaterialTheme.typography.bodyLarge,
-                color = OnSurfaceDark,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(R.string.settings_theme_dark),
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceVariantDark,
-            )
-        }
-    }
-}
-
-// ═════════════════════════════════════════════════════════
 // Generic clickable row — reused in AboutCard
 // ═════════════════════════════════════════════════════════
 
@@ -881,11 +839,6 @@ private fun SettingsPreviewBody(modifier: Modifier = Modifier) {
                 onToggleStall = {},
             )
         }
-
-        item { Spacer(Modifier.height(24.dp)) }
-        item { SectionHeader(stringResource(R.string.settings_section_appearance)) }
-        item { Spacer(Modifier.height(8.dp)) }
-        item { AppearanceCard() }
 
         item { Spacer(Modifier.height(24.dp)) }
         item { SectionHeader(stringResource(R.string.settings_section_about)) }

@@ -77,7 +77,6 @@
     <!-- ── Settings ── -->
     <string name="settings_section_account">계정</string>
     <string name="settings_section_notifications">알림</string>
-    <string name="settings_section_appearance">외관</string>
     <string name="settings_section_about">정보</string>
     <string name="settings_no_email">이메일 없음</string>
     <string name="settings_free_plan">무료 플랜</string>
@@ -98,9 +97,6 @@
     <string name="settings_logout">로그아웃</string>
     <string name="settings_completion_alerts">완료 알림</string>
     <string name="settings_stall_warnings">멈춤 경고</string>
-
-    <string name="settings_theme">테마</string>
-    <string name="settings_theme_dark">다크</string>
     <string name="settings_version">버전</string>
     <string name="settings_privacy_policy">개인정보처리방침</string>
     <string name="settings_ad_privacy">광고 개인정보 설정</string>
