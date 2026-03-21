@@ -58,6 +58,8 @@ data class SettingsUiState(
     val isBillingReady: Boolean = false,
     val isPurchaseLoading: Boolean = false,
     val billingMessage: String? = null,
+    val showLogoutDialog: Boolean = false,
+    val showDeleteAccountDialog: Boolean = false,
 )
 
 @HiltViewModel
@@ -264,6 +266,11 @@ class SettingsViewModel @Inject constructor(
     fun clearBillingMessage() {
         _uiState.update { it.copy(billingMessage = null) }
     }
+
+    fun showLogoutDialog() { _uiState.update { it.copy(showLogoutDialog = true) } }
+    fun dismissLogoutDialog() { _uiState.update { it.copy(showLogoutDialog = false) } }
+    fun showDeleteAccountDialog() { _uiState.update { it.copy(showDeleteAccountDialog = true) } }
+    fun dismissDeleteAccountDialog() { _uiState.update { it.copy(showDeleteAccountDialog = false) } }
 
     /**
      * 현재 구독 상태를 강제로 새로고침합니다.

@@ -84,6 +84,10 @@ class DashboardViewModel @Inject constructor(
 
     private val _defaultDeviceId = MutableStateFlow<String?>(null)
     val defaultDeviceId: StateFlow<String?> = _defaultDeviceId.asStateFlow()
+
+    private val _selectedDeviceIndex = MutableStateFlow(0)
+    val selectedDeviceIndex: StateFlow<Int> = _selectedDeviceIndex.asStateFlow()
+
     private var isAdFreeMode: Boolean = false
 
     private val _isRewardedAdReady = MutableStateFlow(false)
@@ -99,7 +103,8 @@ class DashboardViewModel @Inject constructor(
     /**
      * 선택된 기기를 기본 기기로 저장합니다.
      */
-    fun saveDefaultDevice(deviceId: String) {
+    fun selectDevice(index: Int, deviceId: String) {
+        _selectedDeviceIndex.value = index
         _defaultDeviceId.value = deviceId
         viewModelScope.launch { adPrefsRepository.setDefaultDeviceId(deviceId) }
     }
@@ -152,6 +157,11 @@ class DashboardViewModel @Inject constructor(
             Timber.d("[Dashboard] observeDevices 구독 시작")
             observeDevicesUseCase(uid).collect { devices ->
                 Timber.d("[Dashboard] observeDevices emit: devices.size=${devices.size}")
+                val savedId = _defaultDeviceId.value
+                if (savedId != null) {
+                    val idx = devices.indexOfFirst { it.id == savedId }
+                    if (idx >= 0) _selectedDeviceIndex.value = idx
+                }
                 val currentLoading = _uiState.value.screenshotLoadingDeviceId
                 val stillLoading = if (currentLoading != null) {
                     val dev = devices.find { it.id == currentLoading }

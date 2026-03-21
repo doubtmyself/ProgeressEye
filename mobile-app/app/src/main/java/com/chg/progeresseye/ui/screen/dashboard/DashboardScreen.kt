@@ -69,7 +69,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -159,8 +158,8 @@ fun DashboardContent(
     isAdFreeMode: Boolean = false,
     isAdLoading: Boolean = false,
     showAllPcs: Boolean = false,
-    defaultDeviceId: String? = null,
-    onSelectDevice: (deviceId: String) -> Unit = {},
+    selectedDeviceIndex: Int = 0,
+    onSelectDevice: (index: Int, deviceId: String) -> Unit = { _, _ -> },
     onRequestScreenshot: (deviceId: String) -> Unit = {},
     onSleep: (deviceId: String) -> Unit = {},
     onShutdown: (deviceId: String) -> Unit = {},
@@ -234,15 +233,7 @@ fun DashboardContent(
 
         else -> {
             val isFreeWithMultiPc = userPlan == "free" && !isAdFreeMode && uiState.devices.size > 1 && !showAllPcs
-            var selectedDeviceIndex by rememberSaveable { mutableIntStateOf(0) }
             val safeDeviceIndex = selectedDeviceIndex.coerceIn(0, uiState.devices.lastIndex)
-
-            LaunchedEffect(defaultDeviceId, uiState.devices) {
-                if (defaultDeviceId != null) {
-                    val idx = uiState.devices.indexOfFirst { it.id == defaultDeviceId }
-                    if (idx >= 0) selectedDeviceIndex = idx
-                }
-            }
 
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
@@ -258,8 +249,7 @@ fun DashboardContent(
                             devices = uiState.devices,
                             selectedIndex = safeDeviceIndex,
                             onSelect = { idx ->
-                                selectedDeviceIndex = idx
-                                uiState.devices.getOrNull(idx)?.id?.let { onSelectDevice(it) }
+                                uiState.devices.getOrNull(idx)?.id?.let { onSelectDevice(idx, it) }
                             },
                         )
                     }

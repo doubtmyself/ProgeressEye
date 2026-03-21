@@ -43,7 +43,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,13 +104,11 @@ fun SettingsContent(
     val context = LocalContext.current
     val currentUser = FirebaseAuth.getInstance().currentUser
     val activity = context as? Activity
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentUser?.uid) {
         if (currentUser == null) {
-            showLogoutDialog = false
-            showDeleteAccountDialog = false
+            viewModel.dismissLogoutDialog()
+            viewModel.dismissDeleteAccountDialog()
         }
     }
 
@@ -122,24 +119,24 @@ fun SettingsContent(
     }
 
     // ── Logout confirmation dialog ──
-    if (showLogoutDialog) {
+    if (state.showLogoutDialog) {
         LogoutConfirmDialog(
             onConfirm = {
-                showLogoutDialog = false
+                viewModel.dismissLogoutDialog()
                 onSignOut()
             },
-            onDismiss = { showLogoutDialog = false },
+            onDismiss = { viewModel.dismissLogoutDialog() },
         )
     }
 
     // ── Delete account confirmation dialog ──
-    if (showDeleteAccountDialog) {
+    if (state.showDeleteAccountDialog) {
         DeleteAccountConfirmDialog(
             onConfirm = {
-                showDeleteAccountDialog = false
+                viewModel.dismissDeleteAccountDialog()
                 onDeleteAccount()
             },
-            onDismiss = { showDeleteAccountDialog = false },
+            onDismiss = { viewModel.dismissDeleteAccountDialog() },
         )
     }
 
@@ -170,8 +167,8 @@ fun SettingsContent(
                 onStartSubscription = {
                     activity?.let { viewModel.startProSubscription(it) }
                 },
-                onLogout = { showLogoutDialog = true },
-                onDeleteAccount = { showDeleteAccountDialog = true },
+                onLogout = { viewModel.showLogoutDialog() },
+                onDeleteAccount = { viewModel.showDeleteAccountDialog() },
             )
         }
 

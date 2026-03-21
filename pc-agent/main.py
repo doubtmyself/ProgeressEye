@@ -517,7 +517,8 @@ class ProgressEyeApp:
             return
         try:
             hwnd = int(window.winId())
-        except Exception:
+        except Exception as exc:
+            log.warning("창 핸들 획득 실패: %s", exc)
             return
         if hwnd <= 0:
             return
@@ -536,7 +537,8 @@ class ProgressEyeApp:
             user32.SetWindowPos(hwnd, hwnd_notopmost, 0, 0, 0, 0, flags)
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
-        except Exception:
+        except Exception as exc:
+            log.warning("창 전면 전환 실패: %s", exc)
             return
 
     def _handle_withdrawal_gate(self, uid: str, id_token: str, email: str = "") -> bool:
@@ -1400,8 +1402,8 @@ class ProgressEyeApp:
             if self._device_manager:
                 try:
                     self._device_manager.set_task_label(region_id, region_label)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("Firebase 라벨 전송 실패 (region=%s): %s", region_id, exc)
         elif dialog.reselect_requested:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_area_selection)
@@ -1493,8 +1495,8 @@ class ProgressEyeApp:
             if self._device_manager:
                 try:
                     self._device_manager.set_task_label(region_id, region_label)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("Firebase 라벨 전송 실패 (region=%s): %s", region_id, exc)
         elif dialog.reselect_requested:
             log.info("미리보기에서 재선택 요청")
             QTimer.singleShot(100, self._start_ocr_area_selection)
@@ -1899,8 +1901,8 @@ class ProgressEyeApp:
                     if self._config.get("plan", "free") == "free":
                         dm.clear_active_device()
                     dm.set_offline()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("Firebase 오프라인 정리 실패: %s", exc)
 
         threading.Thread(target=_cleanup_firebase, daemon=True).start()
 
@@ -2220,8 +2222,8 @@ class ProgressEyeApp:
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("Firebase 라벨 업데이트 실패 (region=%s): %s", region_id, exc)
             elif dialog.reselect_requested:
                 # 재선택 — 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
@@ -2305,8 +2307,8 @@ class ProgressEyeApp:
                 if self._device_manager:
                     try:
                         self._device_manager.set_task_label(region_id, new_label)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("Firebase 라벨 업데이트 실패 (region=%s): %s", region_id, exc)
             elif dialog.reselect_requested:
                 # 재선택 — 드래그로 새 영역 선택 후 기존 작업 업데이트
                 self._editing_region_id = region_id
@@ -2573,8 +2575,8 @@ class ProgressEyeApp:
                     lbl = r.get("label", r["id"])
                     try:
                         self._device_manager.set_task_label(r["id"], str(lbl))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("Firebase 라벨 동기화 실패 (region=%s): %s", r["id"], exc)
                 # 미체크(비활성) 작업을 idle 상태로 RTDB에 기록
                 if disabled:
                     idle_batch = {r["id"]: {"s": "i"} for r in disabled}
@@ -3147,8 +3149,8 @@ class ProgressEyeApp:
                 if self._config.get("plan", "free") == "free":
                     self._device_manager.clear_active_device()
                 self._device_manager.set_offline()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("종료 시 Firebase 정리 실패: %s", exc)
         self._do_quit()
 
     def _do_quit(self) -> None:
