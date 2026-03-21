@@ -181,9 +181,8 @@ play {
     // App Bundle(.aab) 사용
     defaultToAppBundles.set(true)
 
-    // 배포 트랙: internal (비공개 테스트)
-    track.set("alpha")
-
+    // 배포 트랙
+    track.set("production")
     // publishBundle 실행 시 즉시 배포
     releaseStatus.set(ReleaseStatus.COMPLETED)
 

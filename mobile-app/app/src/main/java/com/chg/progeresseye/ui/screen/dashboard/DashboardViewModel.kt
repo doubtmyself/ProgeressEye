@@ -2,6 +2,7 @@ package com.chg.progeresseye.ui.screen.dashboard
 
 import android.app.Application
 import android.app.Activity
+import android.content.Context
 import timber.log.Timber
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
