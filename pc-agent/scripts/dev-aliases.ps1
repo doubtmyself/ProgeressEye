@@ -100,7 +100,7 @@ function pe-kill {
 function pe-exe {
     Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast -NuitkaJobs 0
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Fast -NuitkaJobs 0 -EnablePyarmor
     } finally {
         Pop-Location
     }
@@ -110,7 +110,7 @@ function pe-exe-clean {
     Push-Location $global:PcAgentRoot
     try {
         pe-kill
-        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -Fast -NuitkaJobs 0
+        powershell -ExecutionPolicy Bypass -File ".\packaging\scripts\build_exe.ps1" -Clean -Fast -NuitkaJobs 0 -EnablePyarmor
     } finally {
         Pop-Location
     }
@@ -130,7 +130,7 @@ function pe-exe-run {
 function pe-msix {
     Push-Location $global:PcAgentRoot
     try {
-        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -FastExe -NuitkaJobs 0 -SkipSign
+        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -FastExe -NuitkaJobs 0 -SkipSign -EnablePyarmor
     } finally {
         Pop-Location
     }
@@ -140,7 +140,7 @@ function pe-msix-clean {
     Push-Location $global:PcAgentRoot
     try {
         pe-kill
-        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -CleanExe -FastExe -NuitkaJobs 0 -SkipSign
+        powershell -ExecutionPolicy Bypass -File ".\packaging\msix\build_store_msix.ps1" -BuildExe -CleanExe -FastExe -NuitkaJobs 0 -SkipSign -EnablePyarmor
     } finally {
         Pop-Location
     }

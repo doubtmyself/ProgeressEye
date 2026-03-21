@@ -6,7 +6,8 @@ Param(
     [int]$NuitkaJobs = 0,
     [switch]$SkipSign,
     [string]$PfxPath = "",
-    [string]$PfxPassword = ""
+    [string]$PfxPassword = "",
+    [switch]$EnablePyarmor
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,6 +49,9 @@ if ($BuildExe) {
     }
     if ($NuitkaJobs -gt 0) {
         $buildExeParams["NuitkaJobs"] = $NuitkaJobs
+    }
+    if ($EnablePyarmor) {
+        $buildExeParams["EnablePyarmor"] = $true
     }
     & $BuildExeScript @buildExeParams
 }
