@@ -411,31 +411,31 @@ class RegionCard(QFrame):
             status: "running" | "completed" | "stopped" | "frozen" | "idle"
         """
         if status == "running":
-            self._task_status_label.setText("● 진행 중")
+            self._task_status_label.setText(t("task_status_running"))
             self._task_status_label.setStyleSheet(
                 "color: #4ade80; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"
             )
         elif status == "completed":
-            self._task_status_label.setText("✓ 작업 완료")
+            self._task_status_label.setText(t("task_status_completed"))
             self._task_status_label.setStyleSheet(
                 "color: #4ade80; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"
             )
         elif status == "stopped":
-            self._task_status_label.setText("⚠ 작업 중지")
+            self._task_status_label.setText(t("task_status_stopped"))
             self._task_status_label.setStyleSheet(
                 "color: #f59e0b; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"
             )
         elif status == "frozen":
-            self._task_status_label.setText("⏸ 변화 없음")
+            self._task_status_label.setText(t("task_status_frozen"))
             self._task_status_label.setStyleSheet(
                 "color: #f59e0b; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"
             )
         elif status == "idle":
-            self._task_status_label.setText("— 대기 중")
+            self._task_status_label.setText(t("task_status_idle"))
             self._task_status_label.setStyleSheet(
                 "color: #6b7280; font-size: 12px; font-weight: bold;"
                 " background: transparent; border: none;"

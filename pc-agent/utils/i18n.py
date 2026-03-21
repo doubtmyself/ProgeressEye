@@ -198,6 +198,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "update_required_message": "새 버전이 필요합니다. 앱을 업데이트해 주세요.",
         "update_required_detail": "현재 버전: {current}\n최소 버전: {minimum}",
         "update_required_quit": "종료",
+        # Task status labels
+        "task_status_running": "● 진행 중",
+        "task_status_completed": "✓ 작업 완료",
+        "task_status_stopped": "⚠ 작업 중지",
+        "task_status_frozen": "⏸ 변화 없음",
+        "task_status_idle": "— 대기 중",
+        "title_standby": "ProgressEye - 대기 중",
+        "title_monitoring": "ProgressEye - 모니터링 중",
+        # Debug
+        "btn_reset_settings": "[DEBUG] 설정 초기화",
+        "tooltip_reset_settings": "설정 파일과 인증 토큰을 삭제하고 로그아웃합니다.",
     },
     "en": {
         "progress_monitoring": "Progress Monitoring",
@@ -391,6 +402,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "update_required_message": "A newer version is required. Please update the app.",
         "update_required_detail": "Current: {current}\nMinimum: {minimum}",
         "update_required_quit": "Quit",
+        # Task status labels
+        "task_status_running": "● Running",
+        "task_status_completed": "✓ Completed",
+        "task_status_stopped": "⚠ Stopped",
+        "task_status_frozen": "⏸ No Change",
+        "task_status_idle": "— Idle",
+        "title_standby": "ProgressEye - Standby",
+        "title_monitoring": "ProgressEye - Monitoring",
+        # Debug
+        "btn_reset_settings": "[DEBUG] Reset Settings",
+        "tooltip_reset_settings": "Deletes config file and auth tokens, then logs out.",
     },
 }
 

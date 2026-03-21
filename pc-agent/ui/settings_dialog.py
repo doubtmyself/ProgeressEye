@@ -334,9 +334,9 @@ class SettingsOverlay(QWidget):
             "  color: #ffffff;"
             "}"
         )
-        self._btn_reset_settings = QPushButton("[DEBUG] 설정 초기화")
+        self._btn_reset_settings = QPushButton(t("btn_reset_settings"))
         self._btn_reset_settings.setStyleSheet(btn_style_reset)
-        self._btn_reset_settings.setToolTip("설정 파일과 인증 토큰을 삭제하고 로그아웃합니다.")
+        self._btn_reset_settings.setToolTip(t("tooltip_reset_settings"))
         self._btn_reset_settings.clicked.connect(self._on_reset_settings_clicked)
         self._btn_reset_settings.setVisible(self._show_debug_buttons)
         acc.addWidget(self._btn_reset_settings)
