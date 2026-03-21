@@ -65,10 +65,13 @@ private data class OssLibrary(
 
 private val ossLibraries = listOf(
     OssLibrary("Kotlin", "Apache-2.0", "https://github.com/JetBrains/kotlin/blob/master/license/LICENSE.txt"),
+    OssLibrary("Kotlinx Coroutines", "Apache-2.0", "https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt"),
     OssLibrary("AndroidX", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support/+/androidx-main/LICENSE.txt"),
     OssLibrary("Jetpack Compose", "Apache-2.0", "https://android.googlesource.com/platform/frameworks/support/+/androidx-main/LICENSE.txt"),
     OssLibrary("Firebase Android SDK", "Apache-2.0", "https://github.com/firebase/firebase-android-sdk/blob/master/LICENSE"),
+    OssLibrary("Hilt (Dagger)", "Apache-2.0", "https://github.com/google/dagger/blob/master/LICENSE.txt"),
     OssLibrary("Coil", "Apache-2.0", "https://github.com/coil-kt/coil/blob/main/LICENSE.txt"),
+    OssLibrary("OkHttp", "Apache-2.0", "https://github.com/square/okhttp/blob/master/LICENSE.txt"),
     OssLibrary("Timber", "Apache-2.0", "https://github.com/JakeWharton/timber/blob/trunk/LICENSE.txt"),
 )
 
