@@ -140,6 +140,15 @@ class ProgressEyeApp:
     """
 
     def __init__(self, debug_mode: bool = False) -> None:
+        # Set AppUserModelID before QApplication so Windows taskbar groups
+        # the process correctly and does not add an automatic background plate.
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "CHG.ProgressEye.App"
+            )
+        except (AttributeError, OSError):
+            pass
+
         # Initialize OCR backend before QApplication to avoid Windows DLL
         # initialization conflicts between Qt runtime and onnxruntime.
         self._ocr_reader = OcrReader()
