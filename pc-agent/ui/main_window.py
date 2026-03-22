@@ -116,7 +116,8 @@ class RegionCard(QFrame):
             mode_key = "bar_mode_color" if bar_mode == "color" else "bar_mode_auto"
             mode_row = QHBoxLayout()
             mode_row.setSpacing(6)
-            mode_lbl = QLabel(f"· {t('bar_analysis_mode')}: {t(mode_key)}")
+            self._mode_lbl = QLabel(f"· {t('bar_analysis_mode')}: {t(mode_key)}")
+            mode_lbl = self._mode_lbl
             mode_lbl.setStyleSheet(
                 f"color: {SUBTITLE_TEXT}; font-size: 11px; background: transparent; border: none;"
             )
@@ -462,6 +463,11 @@ class RegionCard(QFrame):
         self._btn_test_stall.setToolTip(t("tooltip_test_stall"))
         self._btn_test_complete.setText(t("btn_test_complete"))
         self._btn_test_complete.setToolTip(t("tooltip_test_complete"))
+        if self._region_type == "bar" and hasattr(self, "_mode_lbl"):
+            mode_key = "bar_mode_color" if self._bar_mode == "color" else "bar_mode_auto"
+            self._mode_lbl.setText(f"· {t('bar_analysis_mode')}: {t(mode_key)}")
+        self._delay_spin.setSuffix(t("alert_delay_suffix"))
+        self._threshold_spin.setSuffix(t("alert_threshold_suffix"))
 
     def set_warning(self, message: str) -> None:
         """카드에 경고 상태를 표시한다."""

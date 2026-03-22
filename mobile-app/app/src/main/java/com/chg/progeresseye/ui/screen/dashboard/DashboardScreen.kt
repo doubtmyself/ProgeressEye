@@ -150,7 +150,6 @@ private const val PC_APP_STORE_URL = "https://apps.microsoft.com/detail/9NGF92B1
  * @param onUpgradeToPro Pro 업그레이드 화면 이동 콜백
  * @param modifier 컴포저블에 적용할 Modifier
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardContent(
     uiState: DashboardUiState,
