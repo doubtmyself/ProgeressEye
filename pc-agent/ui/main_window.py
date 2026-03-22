@@ -985,6 +985,8 @@ class MainWindow(QMainWindow):
         for card in self._region_cards.values():
             card.refresh_texts()
         self._login_panel.refresh_texts()
+        self._settings_overlay._refresh_dialog_texts()
+        self._tutorial_page.refresh_texts()
         self._btn_settings.setToolTip(t("tooltip_settings"))
         self._btn_add_bar.setToolTip(t("tooltip_add_bar"))
         self._btn_add_ocr.setToolTip(t("tooltip_add_ocr"))
