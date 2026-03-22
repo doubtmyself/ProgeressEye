@@ -58,3 +58,6 @@ pc-agent/packaging/msix/*.pfx
 
 # antigravity
 .agent/
+
+# private
+._private/
