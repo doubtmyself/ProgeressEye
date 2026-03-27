@@ -216,6 +216,7 @@ export const onAlertCreated = onValueCreated(
             token,
             notification: { title: fcmData.title, body: fcmData.body },
             data: fcmData,
+            android: { priority: "high" },
           });
           logger.info("FCM sent", { token: token.slice(-8) });
         } catch (err: unknown) {
@@ -309,6 +310,7 @@ export const onErrorReport = onDocumentCreated(
               traceback: tracebackStr.slice(0, 3000),
               ts: String(Date.now()),
             },
+            android: { priority: "high" },
           });
         } catch (err: unknown) {
           const code = (err as { code?: string }).code;
