@@ -1,7 +1,7 @@
 """ProgressEye PC Agent 엔트리포인트.
 
 영역 선택 → 바 탐지 → 전환점 분석 → 진행률 표시 파이프라인을 실행한다.
-MVP 단계: Firebase 연동 없이 로컬 동작만 구현.
+영역 선택 → 캡처 → 진행률 감지 → Firebase RTDB → Android 푸시 파이프라인을 실행한다.
 """
 
 # pyright: reportMissingImports=false, reportMissingModuleSource=false, reportMissingTypeArgument=false

@@ -1,10 +1,11 @@
 package com.chg.progeresseye.data.repository
 
+import com.chg.progeresseye.data.util.FirebaseConstants
 import com.chg.progeresseye.domain.repository.PolicyRepository
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenSource
+import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.SnapshotListenOptions
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -12,37 +13,29 @@ import timber.log.Timber
 import javax.inject.Inject
 
 /**
- * Firebase Realtime Database에서 앱 전역 정책 상태를 수집하는 [PolicyRepository]의 구체화 클래스입니다.
+ * Firestore appConfig/policies 문서에서 전역 광고 제거 정책을 수집하는 [PolicyRepository] 구현체입니다.
  */
 class PolicyRepositoryImpl @Inject constructor() : PolicyRepository {
-    private val db = FirebaseDatabase.getInstance()
+    private val firestore = FirebaseFirestore.getInstance(FirebaseConstants.FIRESTORE_DB)
 
-    /**
-     * Observe policy
-     * 광거 제거 강제 실행
-     * @return
-     */
-//    override fun observePolicy(): Flow<Boolean> = kotlinx.coroutines.flow.flow {
-//        emit(true)
-//        return@flow
-//    }
-
-//
     override fun observePolicy(): Flow<Boolean> = callbackFlow {
         Timber.d("[PolicyRepo] observePolicy callbackFlow 시작")
-        val ref = db.reference.child("policy").child("isAdFreeModeEnabled")
-        val listener = ref.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val value = snapshot.getValue(Boolean::class.java) ?: false
-                Timber.d("[PolicyRepo] onDataChange: adFreeMode=$value")
-                trySend(value)
+        val docRef = firestore.collection("appConfig").document("policies")
+        val options = SnapshotListenOptions.Builder()
+            .setMetadataChanges(MetadataChanges.INCLUDE)
+            .setSource(ListenSource.DEFAULT)
+            .build()
+        val registration = docRef.addSnapshotListener(options) { snapshot, error ->
+            if (error != null) {
+                Timber.e("[PolicyRepo] snapshot error: ${error.message}")
+                return@addSnapshotListener
             }
-            override fun onCancelled(error: DatabaseError) {
-                Timber.e("[PolicyRepo] onCancelled: ${error.message}")
-            }
-        })
-        awaitClose { ref.removeEventListener(listener) }
+            val value = snapshot?.getBoolean("adFreeModeGlobal") ?: false
+            Timber.d("[PolicyRepo] onSnapshot: adFreeModeGlobal=$value")
+            trySend(value)
+        }
+        awaitClose { registration.remove() }
     }
 
-        override fun reset() {}
+    override fun reset() {}
 }
