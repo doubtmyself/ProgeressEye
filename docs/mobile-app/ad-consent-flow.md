@@ -1,6 +1,6 @@
 # 광고 동의 흐름 (Ad Consent Flow)
 
-> 최종 업데이트: 2026-03-19
+> 최종 업데이트: 2026-05-05
 > 관련 커밋: `a76dfab`, `f03db42`
 
 ---
@@ -9,6 +9,15 @@
 
 ProgressEye Android 앱은 UMP (User Messaging Platform) SDK 3.x를 사용해 GDPR(EEA)·CCPA/MSPA(미국) 규정을 준수한다.
 **맞춤형 광고 동의 없이는 Pro 구독을 유도**하는 "Consent or Pay" 모델을 채택한다.
+
+## 동의 절차 생략 조건
+
+다음 조건 중 하나라도 충족되면 UMP 동의 요청을 완전히 건너뛴다 (`MainActivity.requestConsentAndInitAds`).
+
+- `currentPlan.isPro() == true` — Pro 구독자
+- `isAdFreeMode == true` — `appConfig/policies.adFreeModeGlobal` 전역 광고 제거 모드
+
+런타임 중 둘 중 하나가 활성화되면 `handleSettingsStateChange`에서 진행 중인 동의 다이얼로그도 닫고 `consentObtained = true`로 전환한다.
 
 ---
 

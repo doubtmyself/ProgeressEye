@@ -9,6 +9,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 대시보드/UI: `docs/mobile-app/topics/dashboard-ui.md`
 - 원격명령/스크린샷: `docs/mobile-app/topics/commands-screenshot.md`
 - 구독/결제: `docs/mobile-app/topics/subscription-billing.md`
+- 광고 동의(UMP/GDPR/MSPA): `docs/mobile-app/ad-consent-flow.md`
 - 빌드/배포: `docs/mobile-app/topics/build-deploy.md`
 
 ## 1) 개요/구조
