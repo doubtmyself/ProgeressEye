@@ -1,21 +1,10 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("progeresseye.android.library")
+    id("progeresseye.android.hilt")
 }
 
 android {
     namespace = "com.chg.progeresseye.data"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 24
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
 }
 
 dependencies {
@@ -26,9 +15,6 @@ dependencies {
     implementation(libs.firebase.database)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

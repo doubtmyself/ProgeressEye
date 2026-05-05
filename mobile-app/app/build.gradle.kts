@@ -4,13 +4,12 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
+    id("progeresseye.android.application")
+    id("progeresseye.android.compose")
+    id("progeresseye.android.hilt")
     alias(libs.plugins.google.services)
     alias(libs.plugins.gradle.play.publisher)
     alias(libs.plugins.firebase.crashlytics.plugin)
-    alias(libs.plugins.hilt)
 }
 
 // --- 버전 관리 로직 시작 ---
@@ -61,8 +60,6 @@ android {
 
     defaultConfig {
         applicationId = "com.chg.progeresseye"
-        minSdk = 24
-        targetSdk = 36
         versionCode = vCode
         versionName = vName
 
@@ -109,14 +106,6 @@ android {
             }
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
 }
 
 dependencies {
@@ -160,9 +149,7 @@ dependencies {
     // Modules
     implementation(project(":domain"))
     implementation(project(":data"))
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    // Hilt navigation (hilt-android/ksp는 컨벤션 플러그인에서 처리)
     implementation(libs.hilt.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
