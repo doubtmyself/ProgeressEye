@@ -11,6 +11,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 - 구독/결제: `docs/mobile-app/topics/subscription-billing.md`
 - 광고 동의(UMP/GDPR/MSPA): `docs/mobile-app/ad-consent-flow.md`
 - 빌드/배포: `docs/mobile-app/topics/build-deploy.md`
+- 테스트/TDD: `docs/mobile-app/topics/testing-tdd.md`
 
 ## 1) 개요/구조
 - 기능 요구사항: `docs/mobile-app/requirements.md`
@@ -19,6 +20,7 @@ Android 앱 관련 문서를 기능 항목별로 정리한 안내 문서입니�
 
 ## 2) 실행/빌드/배포
 - 기본 빌드: `docs/mobile-app/topics/build-deploy.md`
+- 테스트 실행/TDD: `docs/mobile-app/topics/testing-tdd.md`
 - Play 자동배포(GPP): `docs/mobile-app/topics/build-deploy.md`
 - 비공개 테스트 자동출시(`publishBundle`): `docs/mobile-app/topics/build-deploy.md`
 - 릴리즈 Google 로그인 트러블슈팅(SHA-1/SHA-256): `docs/mobile-app/topics/build-deploy.md`

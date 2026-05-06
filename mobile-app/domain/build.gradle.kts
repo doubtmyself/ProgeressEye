@@ -16,5 +16,6 @@ kotlin {
 
 dependencies {
     api(libs.kotlinxCoroutinesCore)
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javaxInject)
+    testImplementation(libs.junit)
 }
