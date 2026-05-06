@@ -61,3 +61,5 @@ pc-agent/packaging/msix/*.pfx
 
 # private
 _private/
+.agents/
+docs/architecture.md
