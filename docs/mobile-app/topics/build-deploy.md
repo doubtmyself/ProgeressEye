@@ -5,8 +5,14 @@ Android 빌드, Play 배포 경로를 빠르게 찾는다.
 
 ## 핵심 파일
 - `mobile-app/app/build.gradle.kts`
+- `mobile-app/data/build.gradle.kts`
+- `mobile-app/domain/build.gradle.kts`
 - `mobile-app/app/version.properties`
 - `mobile-app/gradlew.bat`
+
+## 빌드 설정 원칙
+- `build-logic` composite build를 사용하지 않는다.
+- 모듈별 Gradle 설정은 각 모듈의 `build.gradle.kts`에서 직접 관리한다.
 
 ## 주요 명령
 - 디버그 빌드: `./gradlew :app:assembleDebug`
@@ -23,4 +29,3 @@ Android 빌드, Play 배포 경로를 빠르게 찾는다.
 ## 관련 문서
 - 프로젝트 개요: `docs/overview.md`
 - 기술설계: `docs/mobile-app/technical-spec.md` (빌드/배포)
-
