@@ -250,10 +250,10 @@ class MainActivity : ComponentActivity() {
         val justFinishedBilling = prevIsPurchaseLoading && !state.isPurchaseLoading
         prevIsPurchaseLoading = state.isPurchaseLoading
 
-        // 1. Pro 구독 성공 시
-        if (state.currentPlan.isPro()) {
+        // 1. Pro 구독 성공 또는 전역 광고 제거 모드 시
+        if (state.currentPlan.isPro() || state.isAdFreeMode) {
             if (!consentObtained) {
-                Timber.d("User is Pro, skipping ad consent")
+                Timber.d("Skipping ad consent: pro=${state.currentPlan.isPro()}, adFreeMode=${state.isAdFreeMode}")
                 consentObtained = true
                 consentDialog?.dismiss()
                 consentDialog = null
@@ -279,8 +279,9 @@ class MainActivity : ComponentActivity() {
      * 디버그 모드에서는 테스트 설정을 적용할 수 있습니다.
      */
     private fun requestConsentAndInitAds() {
-        // 이미 Pro인 경우 광고 동의 절차 생략
-        if (settingsViewModel.uiState.value.currentPlan.isPro()) {
+        // 이미 Pro이거나 전역 광고 제거 모드인 경우 광고 동의 절차 생략
+        val state = settingsViewModel.uiState.value
+        if (state.currentPlan.isPro() || state.isAdFreeMode) {
             consentObtained = true
             return
         }
@@ -292,11 +293,11 @@ class MainActivity : ComponentActivity() {
             // EEA 테스트:  DEBUG_GEOGRAPHY_EEA
             // 미국 테스트: DEBUG_GEOGRAPHY_REGULATED_US_STATE
             // 기타(광고):  DEBUG_GEOGRAPHY_OTHER
-            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_REGULATED_US_STATE
+            val debugGeography = ConsentDebugSettings.DebugGeography.DEBUG_GEOGRAPHY_EEA
             // ─────────────────────────────────────────────────────────────
             val debugSettings = ConsentDebugSettings.Builder(this)
                 .setDebugGeography(debugGeography)
-                .addTestDeviceHashedId("83FD2E2863804C0E51D7CB9BEFB41759")
+//                .addTestDeviceHashedId("83FD2E2863804C0E51D7CB9BEFB41759")
                 .build()
             // consentInformation.reset() // 동의 폼 강제 재표시 (테스트 시에만 주석 해제)
             ConsentRequestParameters.Builder()
