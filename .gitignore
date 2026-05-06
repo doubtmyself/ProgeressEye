@@ -60,4 +60,4 @@ pc-agent/packaging/msix/*.pfx
 .agent/
 
 # private
-._private/
+_private/
